@@ -8,13 +8,21 @@
       url = "github:mitchellh/zig-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, zig-overlay }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+        };
         zig = zig-overlay.packages.${system}."0.16.0";
+        rustToolchain = pkgs.rust-bin.stable."1.97.1".default;
 
         cosmoccVersion = "4.0.2";
         cosmoccHash = "sha256-6KZv7KU2rJhwfc9k6z9I6ZdfIS1KqRFLZUo8YyuD7ZY=";
@@ -203,15 +211,10 @@
               # WebAssembly toolchain
               emscripten
 
-              # Rust toolchain (native Rust GUI<->core transport implementation)
-              cargo
-              rustc
-              clippy
-              rustfmt
-
               # Elixir/Erlang (the ~PB compile-time sigil demo)
               elixir
-            ]  ++ lib.optionals stdenv.isDarwin [ lldb ]
+            ]  ++ [ rustToolchain ]
+               ++ lib.optionals stdenv.isDarwin [ lldb ]
                ++ lib.optionals (!stdenv.isDarwin) [ gdb ]
                ++ linuxOnly;
 
@@ -272,6 +275,20 @@
         };
 
         checks = {
+          rust-toolchain-pin = pkgs.runCommand "printable-binary-rust-toolchain-pin" {
+            nativeBuildInputs = [ rustToolchain ];
+          } ''
+            actual="$(rustc --version)"
+            case "$actual" in
+              "rustc 1.97.1 "*) ;;
+              *)
+                echo "expected rustc 1.97.1, got $actual" >&2
+                exit 1
+                ;;
+            esac
+            mkdir -p "$out"
+          '';
+
           # Documentation and benchmark inventory stay in sync with the supported
           # implementations and the 256-row source-byte mapping reference.
           test-docs-benchmark-contract = pkgs.stdenvNoCC.mkDerivation {
@@ -482,7 +499,7 @@
           test-rust = pkgs.stdenv.mkDerivation {
             name = "test-rust";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ cargo rustc zig ];
+            nativeBuildInputs = [ rustToolchain zig ];
             buildPhase = ''
               export HOME=$TMPDIR
               export CARGO_HOME=$TMPDIR/cargo

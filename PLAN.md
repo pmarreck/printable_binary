@@ -6,6 +6,15 @@ maintained_by: agent
 
 # PLAN — issue #1: decode workflow + printable-binary-file.json
 
+## Rust 1.97.1 toolchain (completed 2026-08-27 16:46 EDT)
+
+- [x] Pin the Rust transport implementation's dev shell and Nix check to
+      1.97.1, with an executable exact-version gate.
+- [x] Run all 24 flake checks, including the Rust↔Zig all-256-byte
+      differential test.
+      Curiosity poke: keep Cargo.toml's MSRV separate from the compiler pin
+      unless source changes genuinely require a newer language version.
+
 ## Mechatron Prime CI — active (2026-07-22 EDT)
 
 - [x] Add the exact-commit Mechatron target manifest and dynamic README badge.
