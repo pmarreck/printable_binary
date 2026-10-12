@@ -13,7 +13,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     rocSource = {
-      url = "github:pmarreck/roc/fbc131fe353ccbad9ca2f77ab652b6f75d5180fe";
+      # The published native compiler package snapshot. `flake.lock` records
+      # its immutable revision and content hash.
+      url = "github:pmarreck/roc_luajit/cfd57c1f319df2782e4188618dba9d4a6c0fbd22";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     rocPlatformTemplate = {
@@ -350,14 +352,15 @@
         packages = {
           printableBinaryNative = printableBinaryNative;
           printableBinaryWasm = printableBinaryWasm;
-          printableBinaryApe = printableBinaryApe;
           printableBinaryZig = printableBinaryZig;
-          printableBinaryRoc = printableBinaryRoc;
           default = pkgs.symlinkJoin {
             name = "printable-binary-suite";
             paths = [ printableBinaryNative printableBinaryWasm printableBinaryZig ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ printableBinaryApe printableBinaryRoc ];
           };
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          printableBinaryApe = printableBinaryApe;
+          printableBinaryRoc = printableBinaryRoc;
         };
 
         checks = {
@@ -422,34 +425,6 @@
             installPhase = "mkdir -p $out && touch $out/passed";
           };
 
-          test-roc = pkgs.stdenvNoCC.mkDerivation {
-            name = "test-roc";
-            src = ./.;
-            strictDeps = true;
-			nativeBuildInputs = with pkgs; [ hexdump luajit python3 xxd zig rocCompiler ];
-            buildPhase = ''
-				export HOME="$TMPDIR/home"
-				export XDG_CACHE_HOME="$HOME/.cache"
-				mkdir -p "$XDG_CACHE_HOME"
-              cp -R ${printableBinaryRocPlatform}/platform roc/platform
-              roc test roc/TestCodec.roc
-              roc test roc/TestMap.roc
-              roc test roc/TestCrc.roc
-              roc test roc/TestContainer.roc
-              roc test roc/TestCliCore.roc
-              roc test roc/TestCliOutput.roc
-              bash test/test_roc_map_sync
-              roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
-              zig build -Doptimize=ReleaseFast
-              bash test/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
-              for muted in 1 true yes; do
-                printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
-                test ! -s muted.stderr
-              done
-            '';
-            installPhase = "mkdir -p $out && touch $out/passed";
-          };
-
           # The installed command name is a compatibility contract: Zig is the
           # default CLI, while the source-distributed LuaJIT implementation
           # remains explicitly selectable for comparison and fallback.
@@ -466,17 +441,6 @@
               bash ./test/test_cli_layout \
                 ./zig-out/bin/printable-binary \
                 ./bin/printable-binary-luajit
-            '';
-            installPhase = "mkdir -p $out && touch $out/passed";
-          };
-
-          test-build-all = pkgs.stdenvNoCC.mkDerivation {
-            name = "test-build-all";
-            src = ./.;
-            nativeBuildInputs = with pkgs; [ bash ];
-            buildPhase = ''
-              bash ./test/test_build_all
-              test -x ${printableBinaryApe}/bin/printable-binary-ape.com
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -738,6 +702,46 @@
             installPhase = "mkdir -p $out && touch $out/passed";
           };
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # Roc's currently patched native platform is Linux-only.
+          test-roc = pkgs.stdenvNoCC.mkDerivation {
+            name = "test-roc";
+            src = ./.;
+            strictDeps = true;
+            nativeBuildInputs = with pkgs; [ hexdump luajit python3 xxd zig rocCompiler ];
+            buildPhase = ''
+              export HOME="$TMPDIR/home"
+              export XDG_CACHE_HOME="$HOME/.cache"
+              mkdir -p "$XDG_CACHE_HOME"
+              cp -R ${printableBinaryRocPlatform}/platform roc/platform
+              roc test roc/TestCodec.roc
+              roc test roc/TestMap.roc
+              roc test roc/TestCrc.roc
+              roc test roc/TestContainer.roc
+              roc test roc/TestCliCore.roc
+              roc test roc/TestCliOutput.roc
+              bash test/test_roc_map_sync
+              roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
+              zig build -Doptimize=ReleaseFast
+              bash test/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
+              for muted in 1 true yes; do
+                printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
+                test ! -s muted.stderr
+              done
+            '';
+            installPhase = "mkdir -p $out && touch $out/passed";
+          };
+
+          test-build-all = pkgs.stdenvNoCC.mkDerivation {
+            name = "test-build-all";
+            src = ./.;
+            nativeBuildInputs = with pkgs; [ bash ];
+            buildPhase = ''
+              bash ./test/test_build_all
+              test -x ${printableBinaryApe}/bin/printable-binary-ape.com
+            '';
+            installPhase = "mkdir -p $out && touch $out/passed";
+          };
+
           # Architecture invariant: importing the `printable_binary` Zig module
           # must emit ZERO `pb_*` C symbols (the C ABI lives only in the FFI-root
           # static lib). Two static (musl) consumers of pb otherwise collide on
