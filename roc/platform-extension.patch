@@ -1,0 +1,236 @@
+--- a/build.zig
++++ b/build.zig
+@@ -253,6 +253,7 @@
+             .root_source_file = b.path("src/host.zig"),
+             .target = target,
+             .optimize = optimize,
++			.link_libc = true,
+             .strip = optimize != .Debug,
+             .pic = true,
+         }),
+--- a/platform/Host.roc
++++ b/platform/Host.roc
+@@ -2,8 +2,11 @@
+ ##
+ ## Applications should import `Stdout`, `Stderr`, and `Stdin` instead.
+ Host := [].{
++	clock_monotonic_nanoseconds! : {} => Try(U64, [ClockErr(Str)])
++	environment_stats_muted! : {} => Try(Bool, [EnvironmentErr(Str)])
+ 	stderr_bytes! : List(U8) => Try({}, [StderrErr(Str)])
+ 	stderr_line! : Str => Try({}, [StderrErr(Str)])
++	file_read_bytes! : Str => Try(List(U8), [FileReadErr(Str)])
+ 	stdin_bytes! : {} => Try(List(U8), [StdinErr(Str)])
+ 	stdin_line! : {} => Try(Str, [StdinErr(Str)])
+ 	stdout_bytes! : List(U8) => Try({}, [StdoutErr(Str)])
+--- a/platform/main.roc
++++ b/platform/main.roc
+@@ -1,42 +1,50 @@
+ platform ""
+-    # Applications may return their own error tags; main_for_host! reports them.
+-    requires {} { main! : List(Str) => Try({}, _) }
+-    exposes [Stdout, Stderr, Stdin]
+-    packages { roc: "nightly-2026-10-04-130536d" }
+-    provides { "roc_main": main_for_host! }
+-    hosted {
+-        "roc_stderr_bytes": Host.stderr_bytes!,
+-        "roc_stderr_line": Host.stderr_line!,
+-        "roc_stdin_bytes": Host.stdin_bytes!,
+-        "roc_stdin_line": Host.stdin_line!,
+-        "roc_stdout_bytes": Host.stdout_bytes!,
+-        "roc_stdout_line": Host.stdout_line!,
+-    }
+-    targets: {
+-        inputs_dir: "targets/",
+-        x64mac: { inputs: ["libhost.a", app] },
+-        arm64mac: { inputs: ["libhost.a", app] },
+-        x64musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
+-        x64v1musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
+-        arm64musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
+-        arm64v1musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
+-        x64win: { inputs: ["host.lib", app] },
+-    }
++# Applications may return their own error tags; main_for_host! reports them.
++	requires {
++		main! : List(Str) => Try({}, _)
++	}
++	exposes [Clock, Environment, Stdout, Stderr, Stdin, File]
++	packages { roc: "nightly-2026-10-04-130536d" }
++	provides { "roc_main": main_for_host! }
++	hosted {
++		"roc_stderr_bytes": Host.stderr_bytes!,
++		"roc_stderr_line": Host.stderr_line!,
++		"roc_clock_monotonic_nanoseconds": Host.clock_monotonic_nanoseconds!,
++		"roc_environment_stats_muted": Host.environment_stats_muted!,
++		"roc_file_read_bytes": Host.file_read_bytes!,
++		"roc_stdin_bytes": Host.stdin_bytes!,
++		"roc_stdin_line": Host.stdin_line!,
++		"roc_stdout_bytes": Host.stdout_bytes!,
++		"roc_stdout_line": Host.stdout_line!,
++	}
++	targets: {
++		inputs_dir: "targets/",
++		x64mac: { inputs: ["libhost.a", app] },
++		arm64mac: { inputs: ["libhost.a", app] },
++		x64musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
++		x64v1musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
++		arm64musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
++		arm64v1musl: { inputs: ["crt1.o", "libhost.a", app, "libc.a", "libzigc.a", "libcompiler_rt.a"] },
++		x64win: { inputs: ["host.lib", app] },
++	}
+ 
+ import Stdout
+ import Stderr
+ import Stdin
+ import Host
++import File
++import Clock
++import Environment
+ 
+ main_for_host! : List(Str) => I32
+ main_for_host! = |args| {
+-    result = main!(args)
+-    match result {
+-        Ok({}) => 0
+-        Err(Exit(code)) => code
+-        Err(other) => {
+-            _ = Stderr.line!("ERROR: ${Str.inspect(other)}")
+-            -1
+-        }
+-    }
++	result = main!(args)
++	match result {
++		Ok({}) => 0
++		Err(Exit(code)) => code
++		Err(other) => {
++			_ = Stderr.line!("ERROR: ${Str.inspect(other)}")
++			-1
++		}
++	}
+ }
+--- a/src/host.zig
++++ b/src/host.zig
+@@ -50,6 +50,20 @@
+ 	return result;
+ }
+ 
++fn clockMonotonicNanosecondsOk(nanoseconds: u64) abi.HostClock_monotonic_nanosecondsResult {
++	var result = std.mem.zeroes(abi.HostClock_monotonic_nanosecondsResult);
++	result.payload = .{ .ok = nanoseconds };
++	result.tag = .@"Ok";
++	return result;
++}
++
++fn environmentStatsMutedOk(muted: bool) abi.HostEnvironment_stats_mutedResult {
++	var result = std.mem.zeroes(abi.HostEnvironment_stats_mutedResult);
++	result.payload = .{ .ok = muted };
++	result.tag = .@"Ok";
++	return result;
++}
++
+ fn stderrBytesErr(err: anyerror, roc_host: *abi.RocHost) abi.HostStderr_bytesResult {
+ 	var result = std.mem.zeroes(abi.HostStderr_bytesResult);
+ 	result.payload = .{ .err = abi.RocStr.fromSlice(@errorName(err), roc_host) };
+@@ -57,6 +71,20 @@
+ 	return result;
+ }
+ 
++fn fileReadBytesOk(bytes: abi.RocListWith(u8, false)) abi.HostFile_read_bytesResult {
++	var result = std.mem.zeroes(abi.HostFile_read_bytesResult);
++	result.payload = .{ .ok = bytes };
++	result.tag = .@"Ok";
++	return result;
++}
++
++fn fileReadBytesErr(err: anyerror, roc_host: *abi.RocHost) abi.HostFile_read_bytesResult {
++	var result = std.mem.zeroes(abi.HostFile_read_bytesResult);
++	result.payload = .{ .err = abi.RocStr.fromSlice(@errorName(err), roc_host) };
++	result.tag = .@"Err";
++	return result;
++}
++
+ fn stdinBytesOk(bytes: abi.RocListWith(u8, false)) abi.HostStdin_bytesResult {
+ 	var result = std.mem.zeroes(abi.HostStdin_bytesResult);
+ 	result.payload = .{ .ok = bytes };
+@@ -136,6 +164,21 @@
+ 	return stderrBytesOk();
+ }
+ 
++/// Hosted function: Host.clock_monotonic_nanoseconds!
++fn hostedClockMonotonicNanoseconds() callconv(.c) abi.HostClock_monotonic_nanosecondsResult {
++	const io = std.Io.Threaded.global_single_threaded.io();
++	const nanoseconds: u64 = @intCast(std.Io.Timestamp.now(io, .awake).toNanoseconds());
++	return clockMonotonicNanosecondsOk(nanoseconds);
++}
++
++/// Hosted function: Host.environment_stats_muted!
++fn hostedEnvironmentStatsMuted() callconv(.c) abi.HostEnvironment_stats_mutedResult {
++	const value = std.c.getenv("PRINTABLE_BINARY_MUTE_STATS") orelse return environmentStatsMutedOk(false);
++	const text = std.mem.span(value);
++	const muted = std.mem.eql(u8, text, "1") or std.ascii.eqlIgnoreCase(text, "true") or std.ascii.eqlIgnoreCase(text, "yes");
++	return environmentStatsMutedOk(muted);
++}
++
+ /// Hosted function: Host.stderr_line!
+ fn hostedStderrLine(str: abi.RocStr) callconv(.c) abi.HostStderr_lineResult {
+     const roc_host = g_roc_host.?;
+@@ -150,6 +193,20 @@
+     return stderrLineOk();
+ }
+ 
++/// Hosted function: Host.file_read_bytes!
++fn hostedFileReadBytes(path: abi.RocStr) callconv(.c) abi.HostFile_read_bytesResult {
++	const roc_host = g_roc_host.?;
++	var owned = path;
++	defer owned.decref(roc_host);
++
++	const io = std.Io.Threaded.global_single_threaded.io();
++	const roc_env: *abi.RocEnv = @ptrCast(@alignCast(roc_host.env));
++	const allocator = roc_env.allocator;
++	const input = std.Io.Dir.cwd().readFileAlloc(io, owned.asSlice(), allocator, .limited(std.math.maxInt(usize))) catch |err| return fileReadBytesErr(err, roc_host);
++	defer allocator.free(input);
++	return fileReadBytesOk(abi.RocListWith(u8, false).fromSlice(input, roc_host));
++}
++
+ /// Hosted function: Host.stdin_bytes!
+ fn hostedStdinBytes() callconv(.c) abi.HostStdin_bytesResult {
+ 	const roc_host = g_roc_host.?;
+@@ -251,6 +308,9 @@
+     if (!builtin.is_test) {
+ 		@export(&hostedStderrBytes, .{ .name = "roc_stderr_bytes", .visibility = .hidden });
+         @export(&hostedStderrLine, .{ .name = "roc_stderr_line", .visibility = .hidden });
++		@export(&hostedClockMonotonicNanoseconds, .{ .name = "roc_clock_monotonic_nanoseconds", .visibility = .hidden });
++		@export(&hostedEnvironmentStatsMuted, .{ .name = "roc_environment_stats_muted", .visibility = .hidden });
++		@export(&hostedFileReadBytes, .{ .name = "roc_file_read_bytes", .visibility = .hidden });
+ 		@export(&hostedStdinBytes, .{ .name = "roc_stdin_bytes", .visibility = .hidden });
+         @export(&hostedStdinLine, .{ .name = "roc_stdin_line", .visibility = .hidden });
+ 		@export(&hostedStdoutBytes, .{ .name = "roc_stdout_bytes", .visibility = .hidden });
+--- /dev/null
++++ b/platform/File.roc
+@@ -0,0 +1,7 @@
++import Host
++
++File := [].{
++	read_bytes! : Str => Try(List(U8), [FileReadErr(Str)])
++	read_bytes! = |path|
++		Host.file_read_bytes!(path)
++}
+--- /dev/null
++++ b/platform/Clock.roc
+@@ -0,0 +1,7 @@
++import Host
++
++Clock := [].{
++	monotonic_nanoseconds! : {} => Try(U64, [ClockErr(Str)])
++	monotonic_nanoseconds! = |{}|
++		Host.clock_monotonic_nanoseconds!({})
++}
+--- /dev/null
++++ b/platform/Environment.roc
+@@ -0,0 +1,7 @@
++import Host
++
++Environment := [].{
++	stats_muted! : {} => Try(Bool, [EnvironmentErr(Str)])
++	stats_muted! = |{}|
++		Host.environment_stats_muted!({})
++}

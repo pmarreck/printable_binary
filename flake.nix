@@ -12,9 +12,17 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    rocSource = {
+      url = "github:pmarreck/roc/fbc131fe353ccbad9ca2f77ab652b6f75d5180fe";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    rocPlatformTemplate = {
+      url = "github:lukewilliamboswell/roc-platform-template-zig/4915dc3812b8525bbb8ff17ce0fe3c61ca9e2966";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay, rocSource, rocPlatformTemplate }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -23,6 +31,12 @@
         };
         zig = zig-overlay.packages.${system}."0.16.0";
         rustToolchain = pkgs.rust-bin.stable."1.97.1".default;
+        rocCompiler = rocSource.packages.${system}.roc;
+        rocLinkerInputs = pkgs.fetchurl {
+          url = "https://github.com/lukewilliamboswell/roc-platform-template-zig/releases/download/link-inputs-sha256-2df3df339dfb1ad4ae1fad0f382cc100c5b31b3921cdeff939f6aea51457886d/link-inputs-all.tar";
+          hash = "sha256-5U5u0Q/UM/VcmrnRuP80Zzm1ydIfJMgzzQvkeFOTrvQ=";
+        };
+        rocLinkerInputsHash = "e54e6ed10fd433f55c9ab9d1b8ff346739b5c9d21f24c833cd0be4785393aef4";
 
         cosmoccVersion = "4.0.2";
         cosmoccHash = "sha256-6KZv7KU2rJhwfc9k6z9I6ZdfIS1KqRFLZUo8YyuD7ZY=";
@@ -162,6 +176,70 @@
             platforms = platforms.unix;
           };
         };
+
+        printableBinaryRocPlatform = pkgs.stdenvNoCC.mkDerivation {
+          pname = "printable-binary-roc-platform";
+          version = "0.1.0";
+          src = rocPlatformTemplate;
+          strictDeps = true;
+          nativeBuildInputs = [ pkgs.gnutar pkgs.patch pkgs.python3 rocCompiler zig ];
+
+          unpackPhase = ''
+            cp -R "$src" source
+            chmod -R u+w source
+            cd source
+          '';
+
+          patchPhase = ''
+            patch -p1 < ${./roc/platform.patch}
+            patch -p1 < ${./roc/platform-extension.patch}
+          '';
+
+          buildPhase = ''
+			export HOME="$TMPDIR/home"
+			export XDG_CACHE_HOME="$HOME/.cache"
+			mkdir -p "$XDG_CACHE_HOME"
+            linker_cache=".zig-cache/linker-inputs/${rocLinkerInputsHash}"
+            mkdir -p "$linker_cache/tree"
+            cp ${rocLinkerInputs} "$linker_cache/archive.tar.gz"
+            tar -xf "$linker_cache/archive.tar.gz" -C "$linker_cache/tree"
+            roc glue ${rocSource}/src/glue/src/ZigGlue.roc ./src ./platform/main.roc
+            roc fmt platform/main.roc platform/Host.roc platform/Clock.roc platform/Environment.roc
+            zig build native -Doptimize=ReleaseFast
+          '';
+
+          installPhase = ''
+            mkdir -p "$out"
+            cp -R platform "$out/platform"
+          '';
+        };
+
+        printableBinaryRoc = pkgs.stdenvNoCC.mkDerivation {
+          pname = "printable-binary-roc";
+          version = "1.0.0";
+          src = ./.;
+          strictDeps = true;
+          nativeBuildInputs = [ rocCompiler ];
+
+          buildPhase = ''
+			export HOME="$TMPDIR/home"
+			export XDG_CACHE_HOME="$HOME/.cache"
+			mkdir -p "$XDG_CACHE_HOME"
+            cp -R ${printableBinaryRocPlatform}/platform roc/platform
+            roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
+          '';
+
+          installPhase = ''
+            mkdir -p "$out/bin"
+            cp printable-binary-roc "$out/bin/"
+          '';
+
+          meta = with pkgs.lib; {
+            description = "PrintableBinary Roc implementation";
+            license = licenses.mit;
+            platforms = platforms.linux;
+          };
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -214,6 +292,7 @@
               # Elixir/Erlang (the ~PB compile-time sigil demo)
               elixir
             ]  ++ [ rustToolchain ]
+			   ++ lib.optionals stdenv.isLinux [ rocCompiler ]
                ++ lib.optionals stdenv.isDarwin [ lldb ]
                ++ lib.optionals (!stdenv.isDarwin) [ gdb ]
                ++ linuxOnly;
@@ -224,6 +303,9 @@
             echo "Available compilers:"
             echo "  gcc: $(gcc --version | head -n1)"
             echo "  clang: $(clang --version | head -n1)"
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              echo "  roc: $(roc version)"
+            ''}
             echo ""
             echo "Available tools:"
             echo "  make, cmake, ninja"
@@ -244,7 +326,10 @@
             echo "  CONFIRM_BIG_DEP_DOWNLOAD=1 make -B ape                       # uses pinned cosmocc"
             echo "  nix build .#printableBinaryApe    # fat APE (pinned cosmocc ${cosmoccVersion})"
             echo "  nix build .#printableBinaryWasm   # wasm"
-            echo "  nix build .#default               # suite (native+wasm+ape)"
+            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              echo "  nix build .#printableBinaryRoc    # Roc CLI (Linux)"
+            ''}
+            echo "  nix build .#default               # suite (native+roc+wasm+ape)"
             echo ""
             echo "Test JavaScript implementation:"
             echo "  deno run --allow-read --allow-env test/js/test_printable_binary.js"
@@ -267,10 +352,11 @@
           printableBinaryWasm = printableBinaryWasm;
           printableBinaryApe = printableBinaryApe;
           printableBinaryZig = printableBinaryZig;
+          printableBinaryRoc = printableBinaryRoc;
           default = pkgs.symlinkJoin {
             name = "printable-binary-suite";
             paths = [ printableBinaryNative printableBinaryWasm printableBinaryZig ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ printableBinaryApe ];
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ printableBinaryApe printableBinaryRoc ];
           };
         };
 
@@ -332,6 +418,34 @@
               export HOME=$TMPDIR
               zig build -Doptimize=ReleaseFast
               IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./test/test
+            '';
+            installPhase = "mkdir -p $out && touch $out/passed";
+          };
+
+          test-roc = pkgs.stdenvNoCC.mkDerivation {
+            name = "test-roc";
+            src = ./.;
+            strictDeps = true;
+			nativeBuildInputs = with pkgs; [ hexdump luajit python3 xxd zig rocCompiler ];
+            buildPhase = ''
+				export HOME="$TMPDIR/home"
+				export XDG_CACHE_HOME="$HOME/.cache"
+				mkdir -p "$XDG_CACHE_HOME"
+              cp -R ${printableBinaryRocPlatform}/platform roc/platform
+              roc test roc/TestCodec.roc
+              roc test roc/TestMap.roc
+              roc test roc/TestCrc.roc
+              roc test roc/TestContainer.roc
+              roc test roc/TestCliCore.roc
+              roc test roc/TestCliOutput.roc
+              bash test/test_roc_map_sync
+              roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
+              zig build -Doptimize=ReleaseFast
+              bash test/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
+              for muted in 1 true yes; do
+                printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
+                test ! -s muted.stderr
+              done
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

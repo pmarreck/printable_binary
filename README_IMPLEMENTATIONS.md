@@ -1,6 +1,6 @@
 # PrintableBinary Implementations Guide
 
-A guide to the LuaJIT, C, Cosmopolitan APE, Zig, Rust, JavaScript/Node, and WebAssembly implementations of PrintableBinary—a tool for encoding binary data into human-readable UTF-8 and decoding it back.
+A guide to the LuaJIT, C, Cosmopolitan APE, Zig, Roc, Rust, JavaScript/Node, and WebAssembly implementations of PrintableBinary—a tool for encoding binary data into human-readable UTF-8 and decoding it back.
 
 ## Overview
 
@@ -29,6 +29,12 @@ PrintableBinary is available in multiple high-performance implementations:
 - **Cross-compilation**: Easy cross-compilation to many platforms from a single host
 - **Fast compilation**: Incremental builds and fast compile times
 - **CLI parity**: Same flags and behavior as C implementation
+
+### Roc Implementation
+- **Full CLI**: Supports the shared file, formatting, mapping, container, and stderr input-throughput contracts.
+- **Functional core**: The byte codec, container codec, option parser, and output rendering are tested as pure Roc modules.
+- **Native platform**: The bundled Zig platform provides raw-byte stdin, stdout, stderr, file reads, a monotonic clock, and status suppression.
+- **Current support**: Reproducibly packaged and tested on Linux; the platform host determines additional target availability.
 
 ### 🦀 **Rust Implementation** (Embedded Raw Codec)
 - **Byte-identical core**: Compile-time tables generated from `character_map.txt`
@@ -59,12 +65,12 @@ nix develop -c ./bm/benchmark-zig-opt --quick --sizes "1M"
 
 | Implementation | Included in comparison runner | Measurement boundary |
 | --- | --- | --- |
-| C (native), Zig, LuaJIT, Node.js | Yes, direct when built | CLI process and file I/O |
+| C (native), Zig, Roc, LuaJIT, Node.js | Yes, direct when built | CLI process and file I/O |
 | APE | Yes, through a clean-environment adapter | Cosmopolitan process and file I/O |
 | Rust | Yes, through an stdin adapter | Rust process and stdin/stdout I/O |
 | WebAssembly | Yes, through wazero | WASM runtime startup plus CLI I/O |
 
-`--impls rust,wasm,ape` makes those three targets mandatory, so a missing artifact fails instead of producing a misleading partial result. The runner round-trips a deterministic random input before it invokes `hyperfine`; it also includes an ASCII input set. Rust's `cargo run --release --example bench` is a separate in-process codec microbenchmark and should not be compared directly with CLI timings.
+`--impls roc,rust,wasm,ape` makes those targets mandatory, so a missing artifact fails instead of producing a misleading partial result. The runner round-trips a deterministic random input before it invokes `hyperfine`; it also includes an ASCII input set. Rust's `cargo run --release --example bench` is a separate in-process codec microbenchmark and should not be compared directly with CLI timings.
 
 ## Quick Start
 
@@ -137,6 +143,20 @@ nix develop -c cargo run --release --manifest-path rust/Cargo.toml --example ben
 
 Use Rust as an embedded codec or a Rust↔Zig transport boundary. Its CLI currently supports only raw stdin encode and `-d`/`--decode`; use a full CLI for file arguments, format options, mapping reports, containers, or runtime map overrides.
 
+### Roc Implementation
+
+```bash
+# Build the Linux-native full CLI through the pinned Roc compiler and platform.
+nix build .#printableBinaryRoc
+./result/bin/printable-binary-roc file.bin > encoded.pbt
+./result/bin/printable-binary-roc -d encoded.pbt > restored.bin
+
+# Or build into the local artifact directory used by the benchmark runner.
+./build roc
+```
+
+The Roc CLI follows the shared CLI and container contracts, including mapping reports and the input-throughput line on stderr. `nix build .#checks.x86_64-linux.test-roc` runs its pure-module tests plus the parameterized CLI, container, map-synchronization, and cross-implementation checks.
+
 ### LuaJIT Implementation
 
 ```bash
@@ -186,7 +206,8 @@ nix develop
 nix build .#printableBinaryNative   # ELF/Mach-O binary
 nix build .#printableBinaryApe      # Cosmopolitan APE fat binary (x86_64 + arm64, pinned cosmocc 4.0.2)
 nix build .#printableBinaryWasm     # WebAssembly module
-nix build .#default                 # Suite: native + APE + WASM
+nix build .#printableBinaryRoc      # Linux-native Roc CLI
+nix build .#default                 # Suite: native + APE + Roc + WASM
 
 # Rust is a Cargo crate; the Nix development shell provides its offline toolchain.
 nix develop -c cargo build --release --manifest-path rust/Cargo.toml
@@ -194,7 +215,7 @@ nix develop -c cargo build --release --manifest-path rust/Cargo.toml
 
 ## Command-Line Usage
 
-The full compiled variants (native C, APE, Zig, and WASM via wazero) share the user-facing command-line interface. The Rust transport CLI is intentionally narrower: raw stdin encode plus `-d`/`--decode`.
+The full compiled variants (native C, APE, Zig, Roc, and WASM via wazero) share the user-facing command-line interface. The Rust transport CLI is intentionally narrower: raw stdin encode plus `-d`/`--decode`.
 
 ### Basic Operations
 
@@ -311,6 +332,7 @@ The Rust crate consumes its map at compile time and has no runtime map/environme
 | Native C | Yes | Yes | Fast direct native executable |
 | Cosmopolitan APE | Yes | Yes | One portable executable across major desktop OSes |
 | Zig | Yes | Yes | Safe native CLI and broad cross-compilation |
+| Roc | Yes | Linux | Full CLI through the pinned native platform |
 | JavaScript / Node | Yes | Yes | Browser UI and Node automation share a core |
 | WebAssembly | Yes | Yes | WASI sandbox via wazero; includes runtime startup cost |
 | Rust | Yes | No—raw stdin codec only | Embedded transport API with reusable buffers |
@@ -332,6 +354,7 @@ All implementations produce **byte-for-byte identical raw codec** outputs:
 # Run comprehensive compatibility tests
 ./test/test                                      # LuaJIT CLI suite
 nix build .#checks.x86_64-linux.test-rust        # Rust + Zig differential guard (Linux)
+nix build .#checks.x86_64-linux.test-roc         # Roc full CLI and differential checks (Linux)
 nix develop -c ./bm/benchmark-zig-opt --quick    # Per-implementation round trips before timing
 ```
 
@@ -602,9 +625,9 @@ When reporting issues, please include:
 
 PrintableBinary offers a byte-identical raw codec through several deliberate deployment choices:
 
-- **Native C / Zig / LuaJIT / Node**: full CLIs for direct use
+- **Native C / Zig / Roc / LuaJIT / Node**: full CLIs for direct use
 - **Cosmopolitan APE**: the full C CLI in one portable executable
 - **WebAssembly**: the full C CLI under a WASI runtime
 - **Rust**: an embedded, reusable-buffer raw codec and narrow stdin transport CLI
 
-Choose a full CLI for files, formatting, mappings, containers, and interactive workflows. Choose Rust when the raw codec belongs inside a Rust process or transport boundary. Use `bm/benchmark-zig-opt` on the deployment hardware before making a performance claim—its adapters make Rust, WASM, and APE first-class comparison targets.
+Choose a full CLI for files, formatting, mappings, containers, and interactive workflows. Choose Rust when the raw codec belongs inside a Rust process or transport boundary. Use `bm/benchmark-zig-opt` on the deployment hardware before making a performance claim; its adapters make Roc, Rust, WASM, and APE first-class comparison targets.

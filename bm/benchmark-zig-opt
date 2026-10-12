@@ -44,7 +44,7 @@ Options:
   --quick             Fewer warmup and measurement runs (2 warmups, 5 runs)
   --sizes LIST        Space-separated sizes (default: "1K 100K 1M 10M")
   --impls LIST        Comma- or space-separated implementations to require
-                      (c, zig, lua, node, rust, wasm, ape, ffi, pgo)
+                      (c, zig, roc, lua, node, rust, wasm, ape, ffi, pgo)
   --list-impls        Report every implementation and its availability; do not run
   --save TAG          Write hyperfine JSON to bm/results/TAG/
   -h, --help          Show this help
@@ -94,7 +94,7 @@ done
 
 is_known_implementation() {
 	case "$1" in
-		c|zig|lua|node|rust|wasm|ape|ffi|pgo) return 0 ;;
+		c|zig|roc|lua|node|rust|wasm|ape|ffi|pgo) return 0 ;;
 		*) return 1 ;;
 	esac
 }
@@ -209,6 +209,12 @@ discover_implementations() {
 		record_available zig "$binary"
 	else
 		record_unavailable zig 'build with ./build zig'
+	fi
+
+	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-roc" "$PROJ_ROOT/result-roc/bin/printable-binary-roc"); then
+		record_available roc "$binary"
+	else
+		record_unavailable roc 'build with ./build roc'
 	fi
 
 	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-luajit"); then

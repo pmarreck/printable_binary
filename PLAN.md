@@ -6,6 +6,10 @@ maintained_by: agent
 
 # PLAN — issue #1: decode workflow + printable-binary-file.json
 
+## Roc implementation
+
+- [x] Add a Nix-pinned Roc full CLI that matches the shared printable-binary CLI, container, mapping, and input-throughput contracts; prove it with the parameterized CLI, container, and cross-implementation checks before wiring it into docs, benchmarks, and Mechatron CI. Roc's platform boundary preserves raw stdin/stdout bytes; the clean Nix check runs the full shared CLI, container, and cross-implementation contracts. (2026-10-11 11:09 PM EDT)
+
 ## Rust 1.97.1 toolchain (completed 2026-08-27 16:46 EDT)
 
 - [x] Pin the Rust transport implementation's dev shell and Nix check to

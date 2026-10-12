@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Runs the shared PrintableBinary CLI and container contracts against Roc,
+# then differentially exchanges containers with an independently built CLI.
+
+set -u
+
+roc_cli="${1:?Usage: test/test_roc ROC_CLI REFERENCE_CLI}"
+reference_cli="${2:?Usage: test/test_roc ROC_CLI REFERENCE_CLI}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# The project-local helper keeps stdout, stderr, and status assertions
+# hermetic in the Nix sandbox.
+source "$repo_root/test/capture.bash"
+
+failures=0
+
+pass() {
+	printf 'PASS: %s\n' "$1"
+}
+
+fail() {
+	printf 'FAIL: %s\n' "$1" >&2
+	failures=$((failures + 1))
+}
+
+run_contract() {
+	local label="$1"
+	shift
+	local out=""
+	local err=""
+	local rc=0
+	capture "$@"
+	if [[ "$rc" -eq 0 ]]; then
+		pass "$label"
+	else
+		fail "$label (exit $rc)"
+		[[ -n "$out" ]] && printf '%s\n' "$out" >&2
+		[[ -n "$err" ]] && printf '%s\n' "$err" >&2
+	fi
+}
+
+if [[ ! -x "$roc_cli" ]]; then
+	fail "Roc CLI is executable: $roc_cli"
+else
+	pass "Roc CLI is executable"
+fi
+
+if [[ ! -x "$reference_cli" ]]; then
+	fail "reference CLI is executable: $reference_cli"
+else
+	pass "reference CLI is executable"
+fi
+
+run_contract \
+	"Roc map is synchronized with character_map.txt" \
+	bash "$repo_root/test/test_roc_map_sync"
+
+if [[ -x "$roc_cli" ]]; then
+	out=""
+	err=""
+	rc=0
+	capture "$roc_cli" --about
+	if [[ "$rc" -eq 0 && "$out" == *"printable-binary"* && "$out" == *"Roc"* && "$out" != *$'\n'* ]]; then
+		pass "Roc CLI reports one-line --about metadata"
+	else
+		fail "Roc CLI reports one-line --about metadata"
+		[[ -n "$out" ]] && printf '%s\n' "$out" >&2
+		[[ -n "$err" ]] && printf '%s\n' "$err" >&2
+	fi
+
+	run_contract \
+		"Roc passes the shared CLI contract" \
+		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/test/test"
+	run_contract \
+		"Roc passes the shared container contract" \
+		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/test/test_container"
+
+	if [[ -x "$reference_cli" ]]; then
+		run_contract \
+			"Roc and the reference CLI exchange containers byte-for-byte" \
+			env "IMPL_A=$reference_cli" "IMPL_B=$roc_cli" bash "$repo_root/test/test_container_cross"
+	fi
+fi
+
+exit "$failures"

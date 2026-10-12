@@ -21,5 +21,6 @@ checks.x86_64-linux.test-leak
 checks.x86_64-linux.test-lua
 checks.x86_64-linux.test-no-ffi-symbols
 checks.x86_64-linux.test-rust
+checks.x86_64-linux.test-roc
 checks.x86_64-linux.test-zig
 checks.x86_64-linux.test-zig-unit

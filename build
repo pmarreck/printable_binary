@@ -18,9 +18,10 @@ usage() {
     echo "Usage: $0 [target...]"
     echo ""
     echo "Targets:"
-    echo "  all       Build all targets (native, zig, wasm, ape) - default"
+    echo "  all       Build all targets (native, zig, roc, wasm, ape) - default"
     echo "  native    Build native C binary"
     echo "  zig       Build Zig binary"
+    echo "  roc       Build Roc binary (Linux)"
     echo "  wasm      Build WebAssembly module"
     echo "  ape       Build Actually Portable Executable"
     echo "  test      Run tests against all built implementations"
@@ -94,6 +95,19 @@ build_zig() {
     fi
 }
 
+build_roc() {
+    log_info "Building Roc binary..."
+    if nix build .#printableBinaryRoc -o result-roc 2>&1; then
+        mkdir -p bin
+        cp -f result-roc/bin/printable-binary-roc bin/
+        chmod +x bin/printable-binary-roc
+        log_success "Roc binary: bin/printable-binary-roc"
+    else
+        log_error "Roc build failed"
+        return 1
+    fi
+}
+
 build_wasm() {
     log_info "Building WebAssembly module..."
     if nix build .#printableBinaryWasm -o result-wasm 2>&1; then
@@ -157,10 +171,11 @@ build_all() {
         cp -f result/bin/printable-binary bin/ 2>/dev/null || true
         cp -f result/bin/printable-binary.wasm bin/ 2>/dev/null || true
         cp -f result/bin/printable-binary-ape.com bin/ 2>/dev/null || true
+        cp -f result/bin/printable-binary-roc bin/ 2>/dev/null || true
         cp -f result/bin/character_map.txt bin/ 2>/dev/null || true
         chmod +x bin/printable-binary-c bin/printable-binary 2>/dev/null || true
         if [[ "$(uname -s)" == "Linux" ]]; then
-            log_success "Native C, Zig, WASM, and APE built successfully"
+            log_success "Native C, Zig, Roc, WASM, and APE built successfully"
         else
             log_success "Native C, Zig, and WASM built successfully"
         fi
@@ -180,7 +195,7 @@ build_all() {
 
     echo ""
     echo "Built artifacts:"
-    ls -la bin/printable-binary bin/printable-binary-c bin/printable-binary.wasm bin/printable-binary-ape.com bin/printable-binary-luajit 2>/dev/null || true
+    ls -la bin/printable-binary bin/printable-binary-c bin/printable-binary-roc bin/printable-binary.wasm bin/printable-binary-ape.com bin/printable-binary-luajit 2>/dev/null || true
 }
 
 run_tests() {
@@ -220,6 +235,17 @@ run_tests() {
         fi
     fi
 
+    # Test Roc implementation
+    if [[ -x bin/printable-binary-roc ]]; then
+        log_info "Testing Roc implementation..."
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-roc ./test/test; then
+            log_success "Roc tests passed"
+        else
+            log_error "Roc tests failed"
+            failed=1
+        fi
+    fi
+
     # Test WASM via wazero wrapper
     if [[ -f bin/printable-binary.wasm ]]; then
         log_info "Testing WASM implementation..."
@@ -250,8 +276,8 @@ WASM_EOF
 
 clean() {
     log_info "Cleaning build artifacts..."
-    rm -f result result-native result-wasm result-ape 2>/dev/null || true
-    rm -f bin/printable-binary bin/printable-binary-c bin/printable-binary.wasm bin/printable-binary-ape.com 2>/dev/null || true
+    rm -f result result-native result-roc result-wasm result-ape 2>/dev/null || true
+    rm -f bin/printable-binary bin/printable-binary-c bin/printable-binary-roc bin/printable-binary.wasm bin/printable-binary-ape.com 2>/dev/null || true
     log_success "Cleaned"
 }
 
@@ -273,6 +299,9 @@ for target in "$@"; do
             ;;
         zig)
             build_zig
+            ;;
+        roc)
+            build_roc
             ;;
         wasm)
             build_wasm

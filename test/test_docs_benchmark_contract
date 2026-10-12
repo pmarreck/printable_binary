@@ -31,9 +31,11 @@ guide="$repo_root/README_IMPLEMENTATIONS.md"
 mechatron_targets="$repo_root/.mechatron-prime/targets"
 
 expect_file_contains "$readme" "Rust" "README identifies the Rust implementation"
+expect_file_contains "$readme" "Roc" "README identifies the Roc implementation"
 expect_file_contains "$readme" "WebAssembly" "README identifies the WebAssembly implementation"
 expect_file_contains "$readme" "Actually Portable Executable" "README identifies the APE implementation"
 expect_file_contains "$guide" "Rust Implementation" "implementation guide has a Rust section"
+expect_file_contains "$guide" "Roc Implementation" "implementation guide has a Roc section"
 expect_file_contains "$guide" "WebAssembly Implementation" "implementation guide has a WebAssembly section"
 expect_file_contains "$guide" "Cosmopolitan APE" "implementation guide has an APE section"
 
@@ -69,6 +71,7 @@ expected_mechatron_targets="$(printf '%s\n' \
 	'checks.x86_64-linux.test-lua' \
 	'checks.x86_64-linux.test-no-ffi-symbols' \
 	'checks.x86_64-linux.test-rust' \
+	'checks.x86_64-linux.test-roc' \
 	'checks.x86_64-linux.test-zig' \
 	'checks.x86_64-linux.test-zig-unit' | LC_ALL=C sort)"
 
@@ -110,7 +113,7 @@ if [[ $benchmark_status -ne 0 ]]; then
 	fail "benchmark implementation inventory exits successfully"
 else
 	pass "benchmark implementation inventory exits successfully"
-	for implementation in rust wasm ape; do
+	for implementation in roc rust wasm ape; do
 		if grep -Fq -- "$implementation" <<<"$benchmark_inventory"; then
 			pass "benchmark inventory includes $implementation"
 		else

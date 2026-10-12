@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# The generated Roc map must stay byte-for-byte derived from the shared mapping
+# source; this catches accidental hand edits and generator drift.
+
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp_map="$(mktemp)"
+trap 'rm -f "$tmp_map"' EXIT
+
+if ! luajit "$repo_root/utils/generate_roc_map.lua" "$repo_root/character_map.txt" "$tmp_map"; then
+	echo "FAIL: Roc mapping generator exited nonzero" >&2
+	exit 1
+fi
+
+if cmp -s "$tmp_map" "$repo_root/roc/Map.roc"; then
+	echo "PASS: Roc map is synchronized with character_map.txt"
+	exit 0
+fi
+
+echo "FAIL: roc/Map.roc is stale; run utils/generate_roc_map.lua" >&2
+exit 1

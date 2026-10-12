@@ -3,7 +3,7 @@
 [![Mechatron Prime CI](https://img.shields.io/endpoint?url=https%3A%2F%2Fthelio-nixos.tail66c90.ts.net%2Fbadges%2Fprintable_binary.json&style=for-the-badge)](https://thelio-nixos.tail66c90.ts.net/mechatron-prime/)
 [![GitHub CI](https://github.com/pmarreck/printable_binary/actions/workflows/ci.yml/badge.svg?branch=yolo)](https://github.com/pmarreck/printable_binary/actions/workflows/ci.yml)
 
-A cross-platform utility with LuaJIT, C, Zig, JavaScript/Node, Rust, WebAssembly, and Cosmopolitan **Actually Portable Executable (APE)** variants for encoding arbitrary binary data into human-readable UTF-8 text, and then decoding it back to the original binary data.
+A cross-platform utility with LuaJIT, C, Zig, Roc, JavaScript/Node, Rust, WebAssembly, and Cosmopolitan **Actually Portable Executable (APE)** variants for encoding arbitrary binary data into human-readable UTF-8 text, and then decoding it back to the original binary data.
 
 ## Overview
 
@@ -20,7 +20,7 @@ This implementation allows you to view binary data directly in a terminal (it ev
 
 ## Features
 
-- **Multiple Implementations**: Available as a LuaJIT script, native C CLI, Cosmopolitan APE, Zig CLI, JavaScript module/Node CLI, WebAssembly CLI, and Rust raw codec for maximum flexibility
+- **Multiple Implementations**: Available as a LuaJIT script, native C CLI, Cosmopolitan APE, Zig CLI, Roc CLI, JavaScript module/Node CLI, WebAssembly CLI, and Rust raw codec for maximum flexibility
 - **Web & Node.js Tooling**: Drag-and-drop browser interface and a Node-based CLI wrapper share the same encode/decode core for cross-platform workflows
 - **Visually Distinct Characters**: Each of the 256 possible byte values maps to a unique, visually distinct UTF-8 character
 - **ASCII Passthrough**: Standard printable ASCII characters (32-126) largely remain themselves for immediate recognition
@@ -50,17 +50,17 @@ This implementation allows you to view binary data directly in a terminal (it ev
 
 ## Performance
 
-The comparative benchmark is intentionally machine-local: it verifies a round trip before timing and reports median distribution data from `hyperfine`, rather than presenting stale throughput as a property of an implementation. It covers every available CLI path, including Rust, WebAssembly, and the Cosmopolitan APE:
+The comparative benchmark is intentionally machine-local: it verifies a round trip before timing and reports median distribution data from `hyperfine`, rather than presenting stale throughput as a property of an implementation. It covers every available CLI path, including Roc, Rust, WebAssembly, and the Cosmopolitan APE:
 
 | Target | Benchmark invocation | What is measured |
 | --- | --- | --- |
-| C, Zig, LuaJIT, Node | Direct CLI | End-to-end process + file I/O |
+| C, Zig, Roc, LuaJIT, Node | Direct CLI | End-to-end process + file I/O |
 | APE | Clean-environment adapter | End-to-end Cosmopolitan process + file I/O |
 | Rust | stdin adapter around its raw-codec CLI | End-to-end process + stdin/stdout I/O |
 | WebAssembly | `wazero run` adapter | End-to-end WASM runtime + CLI I/O |
 
 ```bash
-# Build the native, Zig, WASM, and APE artifacts; build Rust separately.
+# Build the native, Zig, Roc, WASM, and APE artifacts; build Rust separately.
 ./build
 nix develop -c cargo build --release --manifest-path rust/Cargo.toml
 
@@ -69,7 +69,7 @@ nix develop -c ./bm/benchmark-zig-opt --list-impls
 nix develop -c ./bm/benchmark-zig-opt --quick --sizes "1M"
 
 # Require a focused comparison; this fails rather than silently omitting a target.
-nix develop -c ./bm/benchmark-zig-opt --impls rust,wasm,ape --sizes "10M"
+nix develop -c ./bm/benchmark-zig-opt --impls roc,rust,wasm,ape --sizes "10M"
 ```
 
 The Rust crate also has an in-process codec microbenchmark (`nix develop -c cargo run --release --manifest-path rust/Cargo.toml --example bench`). It deliberately excludes CLI and runtime startup costs, so it should be compared only with the Zig `--bench` core measurement—not with the cross-CLI table above.
@@ -92,6 +92,7 @@ The optional PGO path (`make pgo-ffi`) adds a further ~1–3% via profile-guided
 ```bash
 # Use any implementation:
 # Zig CLI (default):  ./build zig && ./bin/printable-binary
+# Roc CLI:            ./build roc && ./bin/printable-binary-roc
 # LuaJIT CLI:         ./bin/printable-binary-luajit
 # Node.js CLI:         ./bin/printable-binary-node.js
 # C version:           ./build native && ./bin/printable-binary-c
@@ -103,7 +104,7 @@ The optional PGO path (`make pgo-ffi`) adds a further ~1–3% via profile-guided
 # stdin→stdout encoding and -d/--decode; the other listed CLI variants share
 # the full option surface.)
 
-# Build every compiled distribution on Linux (C, Zig, WASM, and APE).
+# Build every compiled distribution on Linux (C, Zig, Roc, WASM, and APE).
 ./build_all
 
 # Encode binary data
@@ -200,7 +201,7 @@ original file and verify it round-tripped exactly.
 ./bin/printable-binary -d -C photo.png.pbf.json > photo.png
 ```
 
-Every full implementation understands it (Lua, Node, native C, APE, WASM, Zig,
+Every full implementation understands it (Lua, Node, native C, APE, WASM, Zig, Roc,
 the C-FFI CLI, and the browser demo) and they produce **mutually-decodable**
 containers. The Rust raw codec intentionally operates below this envelope layer.
 The format is
