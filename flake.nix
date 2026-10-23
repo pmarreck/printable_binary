@@ -55,6 +55,20 @@
           installPhase = ''
             mkdir -p $out
             cp -r $src/* $out/
+          '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+            # WSL's MZ handler can intercept APE helpers inside the sandbox.
+            # Bootstrap through the native ELF loader, including assimilate
+            # itself, and convert build tools only. Compiler outputs stay APE.
+            cp "$out/bin/assimilate" "$TMPDIR/assimilate"
+            find "$out" -type f -perm /111 -print0 | while IFS= read -r -d "" tool; do
+              if [[ $(head -c 2 "$tool") == MZ ]]; then
+                chmod u+w "$tool"
+                "$out/bin/ape-${pkgs.stdenv.hostPlatform.parsed.cpu.name}.elf" \
+                  "$TMPDIR/assimilate" -e -c \
+                  ${if pkgs.stdenv.hostPlatform.isAarch64 then "-a" else "-x"} "$tool"
+              fi
+            done
+            bash ${./test/test_cosmocc_host_tools} "$out"
           '';
         };
 
@@ -770,6 +784,8 @@
               export HOME=$TMPDIR
               unset C_INCLUDE_PATH CPATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
               cosmocc -O3 -DNDEBUG -I. -o printable-binary-ape.com src/printable_binary.c
+              # Host-native build tools must still produce a portable APE.
+              test "$(head -c 2 printable-binary-ape.com)" = MZ
               chmod +x printable-binary-ape.com
               IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./test/test
             '';

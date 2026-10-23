@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Linux build helpers must not depend on an MZ/binfmt handler.
+set -u
+set -o pipefail
+
+if [[ $# != 1 || ! -d "$1/bin" || ! -d "$1/libexec" ]]; then
+	printf 'Usage: %s COSMOCC_ROOT (with bin and libexec directories)\n' "$0" >&2
+	exit 1
+fi
+toolchain=$1
+
+for required in mktemper fixupobj x86_64-linux-cosmo-gcc aarch64-linux-cosmo-gcc; do
+	if [[ ! -x "$toolchain/bin/$required" ]]; then
+		printf 'Missing executable cosmocc helper: %s\n' "$required" >&2
+		exit 1
+	fi
+done
+
+# Include compiler subprocesses and both target architectures, not just bin/.
+find "$toolchain" -type f -perm /111 -print0 | (
+	count=0
+	failures=0
+	while IFS= read -r -d '' tool; do
+		count=$((count + 1))
+		if ! magic=$(head -c 2 "$tool"); then
+			printf 'Cannot inspect helper: %s\n' "$tool" >&2
+			failures=$((failures + 1))
+		elif [[ "$magic" == MZ ]]; then
+			printf 'MZ helper still depends on host executable dispatch: %s\n' "${tool#"$toolchain/"}" >&2
+			failures=$((failures + 1))
+		fi
+	done
+	if (( count == 0 || failures != 0 )); then
+		printf 'cosmocc helper check failed: %s of %s executable files\n' "$failures" "$count" >&2
+		exit 1
+	fi
+	printf 'cosmocc helper check passed: %s executable files contain no MZ headers\n' "$count"
+)
