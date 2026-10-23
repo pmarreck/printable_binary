@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Behavioral checks for build selection, scope flags, and host normalization.
+
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ ! -f "$repo_root/build-support/config.bash" ]]; then
+	printf 'FAIL: build configuration core is missing\n' >&2
+	exit 1
+fi
+source "$repo_root/build-support/config.bash"
+source "$repo_root/test/capture.bash"
+
+test_root="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$test_root"' EXIT
+mkdir -p "$test_root/project with spaces"
+selector="$test_root/project with spaces/CANONICAL_IMPL"
+cd "$test_root/project with spaces" || exit 1
+failures=0
+checks=0
+
+expect_result() {
+	local description="$1" expected_rc="$2" expected_out="$3"
+	checks=$((checks + 1))
+	if [[ "$rc" != "$expected_rc" || "$out" != "$expected_out" ]]; then
+		printf 'FAIL: %s (rc=%s, stdout=%q, stderr=%q)\n' "$description" "$rc" "$out" "$err" >&2
+		failures=$((failures + 1))
+	elif [[ "$expected_rc" == 0 && -n "$err" ]]; then
+		printf 'FAIL: %s wrote unexpected stderr: %q\n' "$description" "$err" >&2
+		failures=$((failures + 1))
+	elif [[ "$expected_rc" != 0 && -z "$err" ]]; then
+		printf 'FAIL: %s did not explain the error\n' "$description" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+capture pb_read_canonical "$repo_root/CANONICAL_IMPL" zig c ffi rust roc luajit node
+checks=$((checks + 1))
+if [[ "$rc" != 0 || -n "$err" ]]; then
+	printf 'FAIL: the project must track a valid canonical selection (stderr=%q)\n' "$err" >&2
+	failures=$((failures + 1))
+fi
+
+# The registry is passed by the build graph, never guessed from directories.
+for implementation in zig c ffi rust roc luajit node; do
+	printf '%s' "$implementation" > "$selector"
+	capture pb_read_canonical "$selector" zig c ffi rust roc luajit node
+	expect_result "selector without LF: $implementation" 0 "$implementation"
+	printf '%s\n' "$implementation" > "$selector"
+	capture pb_read_canonical "$selector" zig c ffi rust roc luajit node
+	expect_result "selector with one LF: $implementation" 0 "$implementation"
+done
+
+for invalid in '' 'unknown' ' zig' 'zig ' $'zig\n\n' $'zig\nrust' $'zig\r\n' '$(touch SHOULD_NOT_EXIST)' '`touch SHOULD_NOT_EXIST`' 'zig; touch SHOULD_NOT_EXIST'; do
+	printf '%s' "$invalid" > "$selector"
+	capture pb_read_canonical "$selector" zig rust
+	expect_result "reject invalid selector: $(printf %q "$invalid")" 1 ''
+done
+
+# Bash reads silently discard NUL bytes; the parser must validate exact bytes.
+printf 'zi\0g\n' > "$selector"
+capture pb_read_canonical "$selector" zig rust
+expect_result 'reject embedded NUL' 1 ''
+capture pb_read_canonical "$test_root/missing" zig rust
+expect_result 'missing selector is actionable, without a default' 1 ''
+mkdir "$test_root/directory-selector"
+capture pb_canonize "$test_root/directory-selector" zig zig rust
+expect_result 'canonization rejects an existing directory' 1 ''
+
+printf 'zig\n' > "$test_root/external-selection"
+ln -s ../external-selection "$selector.link"
+capture pb_read_canonical "$selector.link" zig rust
+expect_result 'reject a symlink selector' 1 ''
+
+# Canonization is a configuration-only operation. A builder function that fails
+# if called establishes that no builder is needed, even in a missing project.
+nix() { printf 'unexpected builder invocation\n' >&2; return 99; }
+capture pb_canonize "$selector" rust zig rust
+expect_result 'canonize records a registered implementation' 0 'rust implementation canonized. Rerun ./build to rebuild.'
+capture pb_read_canonical "$selector" zig rust
+expect_result 'canonized file is readable' 0 rust
+cp -p "$selector" "$test_root/before"
+capture pb_canonize "$selector" rust zig rust
+expect_result 'repeated canonize succeeds' 0 'rust implementation canonized. Rerun ./build to rebuild.'
+checks=$((checks + 1))
+if ! cmp -s "$selector" "$test_root/before"; then
+	printf 'FAIL: repeated canonize changed the existing selection\n' >&2
+	failures=$((failures + 1))
+fi
+
+# A hardlink catches even an identical-content rewrite without clock sleeps.
+ln "$selector" "$test_root/same-inode"
+capture pb_canonize "$selector" rust zig rust
+expect_result 'repeated canonize leaves the file in place' 0 'rust implementation canonized. Rerun ./build to rebuild.'
+checks=$((checks + 1))
+if [[ ! "$selector" -ef "$test_root/same-inode" ]]; then
+	printf 'FAIL: repeated canonize replaced the selection inode\n' >&2
+	failures=$((failures + 1))
+fi
+
+printf zig > "$selector"
+capture pb_canonize "$selector" zig zig rust
+expect_result 'canonize accepts an existing selection without LF' 0 'zig implementation canonized. Rerun ./build to rebuild.'
+checks=$((checks + 1))
+if ! cmp -s "$selector" <(printf zig); then
+	printf 'FAIL: canonize rewrote a valid selection without LF\n' >&2
+	failures=$((failures + 1))
+fi
+capture pb_canonize "$selector" rust zig rust
+expect_result 'canonize switches a previous selection' 0 'rust implementation canonized. Rerun ./build to rebuild.'
+
+capture pb_canonize "$selector" 'zig; touch SHOULD_NOT_EXIST' zig rust
+expect_result 'unknown canonization cannot execute input' 1 ''
+capture pb_read_canonical "$selector" zig rust
+expect_result 'invalid canonization preserves the previous selection' 0 rust
+capture pb_canonize "$selector.link" rust zig rust
+expect_result 'canonization does not follow a selector symlink' 1 ''
+checks=$((checks + 1))
+if [[ -e SHOULD_NOT_EXIST ]]; then
+	printf 'FAIL: selector content was executed\n' >&2
+	failures=$((failures + 1))
+fi
+
+# Exercise the platform classifier over supported and rejected input sets.
+while IFS='|' read -r os arch platform; do
+	capture pb_host_platform "$os" "$arch"
+	expect_result "host $os/$arch" 0 "$platform"
+done <<'EOF'
+Linux|x86_64|linux-amd64
+linux|amd64|linux-amd64
+Linux|AMD64|linux-amd64
+Linux|aarch64|linux-arm64
+linux|arm64|linux-arm64
+Linux|ARM64|linux-arm64
+Darwin|arm64|macos-arm64
+macos|aarch64|macos-arm64
+Windows_NT|AMD64|mswin-amd64
+mswin|arm64|mswin-arm64
+MSYS_NT-10.0|x86_64|mswin-amd64
+MINGW64_NT-10.0|x86_64|mswin-amd64
+MINGW32_NT-10.0|aarch64|mswin-arm64
+CYGWIN_NT-10.0|ARM64|mswin-arm64
+EOF
+
+while IFS='|' read -r os arch; do
+	capture pb_host_platform "$os" "$arch"
+	expect_result "reject host $os/$arch" 1 ''
+done <<'EOF'
+Darwin|x86_64
+Linux|i686
+Linux|riscv64
+FreeBSD|amd64
+SunOS|arm64
+Plan9|x86_64
+|arm64
+Linux|
+EOF
+
+capture pb_build_scope
+expect_result 'default scope is canonical and host' 0 'canonical host'
+for implementations_flag in --all-impls --all-implementations; do
+	capture pb_build_scope "$implementations_flag" "$implementations_flag"
+	expect_result "$implementations_flag is idempotent" 0 'all host'
+	for platforms_flag in --all-plats --all-platforms; do
+		capture pb_build_scope "$implementations_flag" "$platforms_flag"
+		expect_result 'scope flags combine' 0 'all all'
+		capture pb_build_scope "$platforms_flag" "$implementations_flag"
+		expect_result 'scope flags are order independent' 0 'all all'
+	done
+done
+for platforms_flag in --all-plats --all-platforms; do
+	capture pb_build_scope "$platforms_flag" "$platforms_flag"
+	expect_result "$platforms_flag is idempotent" 0 'canonical all'
+done
+capture pb_build_scope --all --all --all-impls --all-platforms
+expect_result '--all combines both scopes idempotently' 0 'all all'
+for invalid in canonize all --all-platform --unknown ''; do
+	capture pb_build_scope "$invalid"
+	expect_result "reject non-scope argument: $invalid" 1 ''
+done
+
+if [[ "$failures" == 0 ]]; then
+	printf 'PASS: %s build configuration checks\n' "$checks"
+fi
+exit "$failures"

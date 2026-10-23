@@ -4,6 +4,7 @@
 set -u
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bash "$repo_root/tests/unit/test-build-config" || exit "$?"
 test_root="$(mktemp -d)"
 trap 'rm -rf "$test_root"' EXIT
 

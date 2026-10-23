@@ -2,10 +2,14 @@
 ver=1.2
 annotate=[
 	.mechatron-prime/targets = Exact Nix package and check targets that Mechatron Prime builds from each pushed commit.
+	CANONICAL_IMPL = Initial canonical executable implementation selection (Zig)
 	MEMORIES/WASM benchmarks must stream inputs and APE needs a clean environment = WASI and Cosmopolitan runtime requirements for benchmark adapters.
-	PLAN.md = Active project plan; records measured Zig codec performance wins, a rejected scalar ASCII experiment, and remaining API-design questions.
+	PLAN.md = Short actionable queue for build portability, deferred features, and explicit holds
 	bm/benchmark-zig-opt = Benchmarks all available CLI variants, including Rust stdin, WASM, and APE adapters.
+	build-support/config.bash = Build selection, scope flags, and host platform normalization without invoking builders
 	build_all = Builds the current-platform C, Zig, WASM, and Linux APE distributions through the canonical build script.
+	docs/PLAN_LOG.md = Retired completed plan items and reconciled delivery history
+	docs/plan_context/current-work.md = Retained decisions, build evidence, and explicit work holds
 	docs/plans/2026-06-26-printable-binary-file-container-design.md = Design spec: printable-binary-file.json container + web decode workflow (issue #1)
 	elixir/lib/printable_binary.ex = Elixir ~PB compile-time sigil: decodes printable-binary glyphs to raw bytes at compile time (reads character_map.txt via @external_resource); decode/1 runtime helper (whitespace-tolerant)
 	elixir/mix.exs = Mix project for the ~PB sigil demo (no deps)
@@ -40,9 +44,11 @@ annotate=[
 	test/test_cli_layout = Nix-backed behavioral test for canonical Zig and retained LuaJIT executable names.
 	test/test_container = Container (.pbf.json) CLI round-trip + self-verify test, parameterized by IMPLEMENTATION_TO_TEST (issue #1)
 	test/test_container_cross = Cross-impl container differential: impl-A container decodes via impl-B (MFIC, issue #1)
+	test/test_cosmocc_host_tools = Reject Linux cosmocc build helpers that depend on MZ executable dispatch
 	test/test_docs_benchmark_contract = Guards implementation docs, mapping labels, benchmark inventory, and Mechatron CI manifest/badge contract.
 	test/test_module_no_ffi_symbols = Regression test (nm oracle): importing the module must emit 0 pb_* symbols while the FFI static lib keeps all 12 — guards the difz-blocking duplicate-symbol bug
 	test/test_roc = Roc full CLI and container contract runner
 	test/test_roc_map_sync = Roc mapping generator synchronization check
+	tests/unit/test-build-config = Behavioral regressions for the build configuration core
 	utils/generate_roc_map.lua = Generates Roc map module from canonical mapping
 ]
