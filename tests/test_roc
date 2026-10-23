@@ -4,13 +4,13 @@
 
 set -u
 
-roc_cli="${1:?Usage: test/test_roc ROC_CLI REFERENCE_CLI}"
-reference_cli="${2:?Usage: test/test_roc ROC_CLI REFERENCE_CLI}"
+roc_cli="${1:?Usage: tests/test_roc ROC_CLI REFERENCE_CLI}"
+reference_cli="${2:?Usage: tests/test_roc ROC_CLI REFERENCE_CLI}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # The project-local helper keeps stdout, stderr, and status assertions
 # hermetic in the Nix sandbox.
-source "$repo_root/test/capture.bash"
+source "$repo_root/tests/capture.bash"
 
 failures=0
 
@@ -53,7 +53,7 @@ fi
 
 run_contract \
 	"Roc map is synchronized with character_map.txt" \
-	bash "$repo_root/test/test_roc_map_sync"
+	bash "$repo_root/tests/test_roc_map_sync"
 
 if [[ -x "$roc_cli" ]]; then
 	out=""
@@ -70,15 +70,15 @@ if [[ -x "$roc_cli" ]]; then
 
 	run_contract \
 		"Roc passes the shared CLI contract" \
-		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/test/test"
+		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/tests/test"
 	run_contract \
 		"Roc passes the shared container contract" \
-		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/test/test_container"
+		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/tests/test_container"
 
 	if [[ -x "$reference_cli" ]]; then
 		run_contract \
 			"Roc and the reference CLI exchange containers byte-for-byte" \
-			env "IMPL_A=$reference_cli" "IMPL_B=$roc_cli" bash "$repo_root/test/test_container_cross"
+			env "IMPL_A=$reference_cli" "IMPL_B=$roc_cli" bash "$repo_root/tests/test_container_cross"
 	fi
 fi
 

@@ -81,7 +81,7 @@ Key optimizations in the Zig core:
 - **O(1) decode lookup**: direct tables for 1- and 2-byte UTF-8 sequences plus a compact 24 KiB table for the map's three 3-byte lead-byte planes, replacing the former binary search.
 - **No inner decode loop**: a single UTF-8 length check + direct lookup per character.
 
-The C and Lua decoders were tuned in a measured pass: C uses direct 1-/2-byte lookup tables (**1.9×** decode). Lua got two passes — resolving each glyph by its UTF-8 leading-byte length (instead of brute-forcing all four), then writing decoded bytes straight into a LuaJIT `string.buffer` via its FFI `reserve`/`commit` API (no per-byte `string.char`). Together that took Lua **decode from ~8 to ~91 MB/s** — now faster than its own encode (which uses `string.buffer:put`, ~1.2×). Every optimization is benchmarked before and after (hyperfine), and a continuous memory-leak suite (`test/leak_test`) guards the FFI/C paths against regressions.
+The C and Lua decoders were tuned in a measured pass: C uses direct 1-/2-byte lookup tables (**1.9×** decode). Lua got two passes — resolving each glyph by its UTF-8 leading-byte length (instead of brute-forcing all four), then writing decoded bytes straight into a LuaJIT `string.buffer` via its FFI `reserve`/`commit` API (no per-byte `string.char`). Together that took Lua **decode from ~8 to ~91 MB/s** — now faster than its own encode (which uses `string.buffer:put`, ~1.2×). Every optimization is benchmarked before and after (hyperfine), and a continuous memory-leak suite (`tests/leak_test`) guards the FFI/C paths against regressions.
 
 The optional PGO path (`make pgo-ffi`) adds a further ~1–3% via profile-guided branch layout, dogfooding the Zig library through its public C ABI.
 

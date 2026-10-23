@@ -9,7 +9,7 @@ if [[ ! -f "$repo_root/build-support/config.bash" ]]; then
 	exit 1
 fi
 source "$repo_root/build-support/config.bash"
-source "$repo_root/test/capture.bash"
+source "$repo_root/tests/capture.bash"
 
 test_root="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$test_root"' EXIT

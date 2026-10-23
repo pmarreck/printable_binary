@@ -205,7 +205,7 @@ run_tests() {
     # Test Lua implementation (original)
     if [[ -x bin/printable-binary-luajit ]]; then
         log_info "Testing Lua implementation..."
-        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit ./test/test; then
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit ./tests/test; then
             log_success "Lua tests passed"
         else
             log_error "Lua tests failed"
@@ -216,7 +216,7 @@ run_tests() {
     # Test native C implementation
     if [[ -x bin/printable-binary-c ]]; then
         log_info "Testing native C implementation..."
-        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-c ./test/test; then
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-c ./tests/test; then
             log_success "Native C tests passed"
         else
             log_error "Native C tests failed"
@@ -227,7 +227,7 @@ run_tests() {
     # Test Zig implementation
     if [[ -x bin/printable-binary ]]; then
         log_info "Testing Zig implementation..."
-        if IMPLEMENTATION_TO_TEST=./bin/printable-binary ./test/test; then
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary ./tests/test; then
             log_success "Zig tests passed"
         else
             log_error "Zig tests failed"
@@ -238,7 +238,7 @@ run_tests() {
     # Test Roc implementation
     if [[ -x bin/printable-binary-roc ]]; then
         log_info "Testing Roc implementation..."
-        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-roc ./test/test; then
+        if IMPLEMENTATION_TO_TEST=./bin/printable-binary-roc ./tests/test; then
             log_success "Roc tests passed"
         else
             log_error "Roc tests failed"
@@ -256,7 +256,7 @@ run_tests() {
 exec nix develop -c wazero run bin/printable-binary.wasm "$@" 2>/dev/null
 WASM_EOF
         chmod +x "$wasm_wrapper"
-        if IMPLEMENTATION_TO_TEST="$wasm_wrapper" ./test/test 2>/dev/null; then
+        if IMPLEMENTATION_TO_TEST="$wasm_wrapper" ./tests/test 2>/dev/null; then
             log_success "WASM tests passed"
         else
             log_warn "WASM tests inconclusive (may need wazero in path)"

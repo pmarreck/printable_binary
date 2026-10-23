@@ -25,7 +25,7 @@ The project includes implementations and adapters in languages and runtimes that
 
 ## Success evidence
 
-The parameterized CLI and container tests, exhaustive mapping checks, independent cross-implementation differentials, and documented Nix/Mechatron Prime CI targets establish the executable contract. The current test and build wiring live in [`flake.nix`](flake.nix), [`test/`](test/), and [`.mechatron-prime/targets`](.mechatron-prime/targets).
+The parameterized CLI and container tests, exhaustive mapping checks, independent cross-implementation differentials, and documented Nix/Mechatron Prime CI targets establish the executable contract. The current test and build wiring live in [`flake.nix`](flake.nix), [`tests/`](tests/), and [`.mechatron-prime/targets`](.mechatron-prime/targets).
 
 ## Current direction
 

@@ -1,6 +1,6 @@
 /*
  * leak_harness — drives the printable_binary C FFI in a tight, time-bounded loop
- * and prints its own resident-set size (RSS) periodically, so test/leak_test can
+ * and prints its own resident-set size (RSS) periodically, so tests/leak_test can
  * watch for monotonically growing memory (a leak) vs. the flat, bounded memory of
  * correct streaming.
  *

@@ -16,11 +16,11 @@ This directory contains a web-based implementation of the PrintableBinary encode
   - Download encoded output
   - Responsive design
 
-- **`test/js/test_printable_binary.js`** - Comprehensive test suite
+- **`tests/js/test_printable_binary.js`** - Comprehensive test suite
   - 25 tests covering all edge cases
   - Can be run with Deno or Node.js
 
-- **`test/js/test_cross_compat.js`** - Cross-implementation compatibility test
+- **`tests/js/test_cross_compat.js`** - Cross-implementation compatibility test
   - Verifies that JavaScript and Lua implementations produce identical output
 
 ## Usage
@@ -75,13 +75,13 @@ const decoded2 = encoder.decodeToString(encoded2);
 Run the test suite with Deno:
 
 ```bash
-deno run --allow-read --allow-env test/js/test_printable_binary.js
+deno run --allow-read --allow-env tests/js/test_printable_binary.js
 ```
 
 Test cross-compatibility with the Lua implementation:
 
 ```bash
-deno run --allow-read --allow-run test/js/test_cross_compat.js
+deno run --allow-read --allow-run tests/js/test_cross_compat.js
 ```
 
 ## Features

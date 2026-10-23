@@ -5,7 +5,7 @@
 //! API lives in printable_binary.zig, which downstream Zig packages import
 //! directly. Keeping the C exports out of the importable module is what lets
 //! multiple static (musl) consumers link without colliding on
-//! `duplicate symbol: pb_*` (see test/test_module_no_ffi_symbols, and the difz
+//! `duplicate symbol: pb_*` (see tests/test_module_no_ffi_symbols, and the difz
 //! static-link failure that motivated this split).
 const std = @import("std");
 const pb = @import("printable_binary.zig");

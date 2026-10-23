@@ -5,7 +5,7 @@
 //! consumer is statically linked (musl) alongside another copy of
 //! printable_binary (e.g. blip's vendored instance), duplicate `export fn pb_*`
 //! symbols make ld.lld abort. The C ABI must live ONLY in the FFI-root static
-//! library, never in the importable module. test/test_module_no_ffi_symbols
+//! library, never in the importable module. tests/test_module_no_ffi_symbols
 //! nm-checks the static lib built from this root.
 const pb = @import("printable_binary");
 

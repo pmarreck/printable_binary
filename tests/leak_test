@@ -6,7 +6,7 @@
 # streaming). The target self-terminates, so nothing can run away.
 #
 # Two modes (both supported):
-#   1. FFI mode (default): drives the Zig static lib via test/leak_harness.c —
+#   1. FFI mode (default): drives the Zig static lib via tests/leak_harness.c —
 #      the truest leak surface, exercising every pb_* alloc/free path.
 #   2. CLI mode: set IMPLEMENTATION_TO_TEST=<cli> to drive a CLI binary's
 #      long-lived --leak-seconds loop (env-selectable across implementations).

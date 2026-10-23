@@ -35,7 +35,7 @@ test_implementation() {
 
     IMPLEMENTATIONS_TESTED=$((IMPLEMENTATIONS_TESTED + 1))
 
-    if IMPLEMENTATION_TO_TEST="$binary" ./test/test; then
+    if IMPLEMENTATION_TO_TEST="$binary" ./tests/test; then
         echo -e "\n${GREEN}✓ $name: ALL TESTS PASSED${NC}"
         IMPLEMENTATIONS_PASSED=$((IMPLEMENTATIONS_PASSED + 1))
         return 0

@@ -352,7 +352,7 @@ All implementations produce **byte-for-byte identical raw codec** outputs:
 
 ```bash
 # Run comprehensive compatibility tests
-./test/test                                      # LuaJIT CLI suite
+./tests/test                                      # LuaJIT CLI suite
 nix build .#checks.x86_64-linux.test-rust        # Rust + Zig differential guard (Linux)
 nix build .#checks.x86_64-linux.test-roc         # Roc full CLI and differential checks (Linux)
 nix develop -c ./bm/benchmark-zig-opt --quick    # Per-implementation round trips before timing
@@ -490,11 +490,11 @@ make memcheck
 
 ```bash
 # LuaJIT implementation (from repo root)
-./test/test                 # Deterministic suite
-./test/test_all             # Full runner (fuzz, WASM, JS, etc.)
+./tests/test                 # Deterministic suite
+./tests/test_all             # Full runner (fuzz, WASM, JS, etc.)
 
 # C implementation
-make test                   # Builds bin/printable-binary-c and runs ./test/test_all against it
+make test                   # Builds bin/printable-binary-c and runs ./tests/test_all against it
 cd test && IMPLEMENTATION_TO_TEST=../bin/printable-binary-c ./test_all
 
 # Compatibility verification

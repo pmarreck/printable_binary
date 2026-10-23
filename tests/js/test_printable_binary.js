@@ -2,8 +2,8 @@
 
 /**
  * Test harness for PrintableBinary JavaScript implementation
- * Can be run with Deno: deno run --allow-read --allow-env test/js/test_printable_binary.js
- * Or with Node.js: node test/js/test_printable_binary.js
+ * Can be run with Deno: deno run --allow-read --allow-env tests/js/test_printable_binary.js
+ * Or with Node.js: node tests/js/test_printable_binary.js
  */
 
 import PrintableBinary from '../../js/printable_binary.js';

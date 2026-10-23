@@ -195,7 +195,7 @@ Namespaced (`--key-namespace provenance …`):
 ## Cross-implementation scope
 
 Five container surfaces, each already exercised by the parameterized
-`test/test_container` (run per-impl via the flake `test-container-*` checks):
+`tests/test_container` (run per-impl via the flake `test-container-*` checks):
 
 | Surface        | File(s)                                   | Notes |
 |----------------|-------------------------------------------|-------|
@@ -209,7 +209,7 @@ Shared JSON helpers live in `src/container_json.h` (both C surfaces) — add a
 JSON-string emit + escape helper there if not already present (`cj_fputs_escaped`
 exists for values).
 
-## TDD test plan (write FIRST, in `test/test_container`; red before green)
+## TDD test plan (write FIRST, in `tests/test_container`; red before green)
 
 Derive any impl-specific glyphs from the impl under test (as the `--spaces`
 ambiguity test does), never hardcode. Concrete cases:

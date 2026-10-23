@@ -122,7 +122,7 @@ cannot silently disagree (MFIC: external oracle).
    identical metadata (modulo platform-omitted fields). RED first.
 3. **Self-verify negative tests**: flip a byte in `data`, or corrupt a CRC
    field, → decode errors (proves the check isn't vacuous).
-4. **Cross-impl differential** (added to `test/test_cross_implementation.sh`):
+4. **Cross-impl differential** (added to `tests/test_cross_implementation.sh`):
    a container emitted by the C CLI decodes correctly in JS, and a
    JS/Node-emitted container decodes correctly via the C CLI — byte + metadata
    identical. External oracle against envelope drift.
@@ -184,7 +184,7 @@ Awaiting Peter's pick before building index.html.
 
 ## Transport resistance (whitespace) — added 2026-06-27
 The container must survive being pasted into email bodies / reflowed by text
-transports that inject whitespace. Empirically (test/js + test/test_container):
+transports that inject whitespace. Empirically (tests/js + tests/test_container):
 - Whitespace BETWEEN JSON tokens (reindent, CRLF, trailing spaces) was always
   fine — `JSON.parse` ignores it.
 - Whitespace landing INSIDE `data` originally broke decode two ways, both fixed:
@@ -206,4 +206,4 @@ transports that inject whitespace. Empirically (test/js + test/test_container):
 (`strip [\r\n\t ]`) for the `crc32_encoded` check + before decoding, and parse
 leniently (hand-rolled C/Lua parsers get this free by skipping whitespace while
 scanning `data`; strict parsers like JS `JSON.parse` / Zig `std.json` need the
-strip-and-retry fallback). `test/test_container` enforces this per impl.
+strip-and-retry fallback). `tests/test_container` enforces this per impl.

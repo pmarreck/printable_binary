@@ -355,8 +355,8 @@ test-zig: zig-cli
 test-validate: $(BIN_DIR)/test_validate
 	$(BIN_DIR)/test_validate
 
-$(BIN_DIR)/test_validate: test/test_validate.c $(SOURCE) | $(BIN_DIR)
-	$(CC) $(CFLAGS_DEBUG) -DPRINTABLE_BINARY_NO_MAIN -I$(CURDIR)/src -o $@ test/test_validate.c $(SOURCE)
+$(BIN_DIR)/test_validate: tests/test_validate.c $(SOURCE) | $(BIN_DIR)
+	$(CC) $(CFLAGS_DEBUG) -DPRINTABLE_BINARY_NO_MAIN -I$(CURDIR)/src -o $@ tests/test_validate.c $(SOURCE)
 
 # Performance comparison test
 .PHONY: benchmark

@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
     // It imports printable_binary.zig (relative), so the C ABI is emitted ONLY
     // here, never in the importable `printable_binary` module above. This is
     // what keeps static (musl) downstreams from colliding on duplicate pb_*
-    // symbols. See src/zig/ffi.zig and test/test_module_no_ffi_symbols.
+    // symbols. See src/zig/ffi.zig and tests/test_module_no_ffi_symbols.
     const static_lib_mod = b.createModule(.{
         .root_source_file = b.path("src/zig/ffi.zig"),
         .target = target,
@@ -119,12 +119,12 @@ pub fn build(b: *std.Build) void {
     // Module-consumer static lib (FFI-symbol-leak regression test)
     // =========================================================================
     // Builds a downstream consumer that imports the `printable_binary` module
-    // the way sibling Zig projects do. test/test_module_no_ffi_symbols asserts
+    // the way sibling Zig projects do. tests/test_module_no_ffi_symbols asserts
     // the resulting archive carries NO `pb_*` C symbols — they must originate
     // only in the FFI-root static library (libprintable_binary.a). See
-    // test/module_consumer.zig.
+    // tests/module_consumer.zig.
     const consumer_mod = b.createModule(.{
-        .root_source_file = b.path("test/module_consumer.zig"),
+        .root_source_file = b.path("tests/module_consumer.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{

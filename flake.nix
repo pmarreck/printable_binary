@@ -68,7 +68,7 @@
                   ${if pkgs.stdenv.hostPlatform.isAarch64 then "-a" else "-x"} "$tool"
               fi
             done
-            bash ${./test/test_cosmocc_host_tools} "$out"
+            bash ${./tests/test_cosmocc_host_tools} "$out"
           '';
         };
 
@@ -348,7 +348,7 @@
             echo "  nix build .#default               # suite (native+roc+wasm+ape)"
             echo ""
             echo "Test JavaScript implementation:"
-            echo "  deno run --allow-read --allow-env test/js/test_printable_binary.js"
+            echo "  deno run --allow-read --allow-env tests/js/test_printable_binary.js"
             echo ""
             echo "Serve web interface (requires simple http server):"
             echo "  python3 -m http.server 8000"
@@ -400,7 +400,7 @@
             nativeBuildInputs = with pkgs; [ bash gawk gnugrep ];
             buildPhase = ''
               export HOME=$TMPDIR
-              bash ./test/test_docs_benchmark_contract
+              bash ./tests/test_docs_benchmark_contract
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -411,7 +411,7 @@
             nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump ];
             buildPhase = ''
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./test/test
+              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -434,7 +434,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               zig build -Doptimize=ReleaseFast
-              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./test/test
+              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -452,7 +452,7 @@
               zig build -Doptimize=ReleaseFast
               test -x ${printableBinaryZig}/bin/printable-binary
               test ! -e ${printableBinaryZig}/bin/printable-binary-zig
-              bash ./test/test_cli_layout \
+              bash ./tests/test_cli_layout \
                 ./zig-out/bin/printable-binary \
                 ./bin/printable-binary-luajit
             '';
@@ -466,8 +466,8 @@
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-node.js
-              IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./test/test
-              bash ./test/test_node_cli_stats
+              IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./tests/test
+              bash ./tests/test_node_cli_stats
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -481,7 +481,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-luajit
-              IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./test/test
+              IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -495,7 +495,7 @@
             nativeBuildInputs = with pkgs; [ nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
-              node test/js/test_printable_binary.js
+              node tests/js/test_printable_binary.js
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -509,7 +509,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-node.js
-              IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./test/test_container
+              IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -522,7 +522,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               zig build -Doptimize=ReleaseFast
-              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./test/test_container
+              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -539,7 +539,7 @@
               clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c zig-out/lib/libprintable_binary.a
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
               for impl in ./zig-out/bin/printable-binary ./pb-ffi ./printable-binary-c ./bin/printable-binary-luajit; do
-                IMPL_A=./bin/printable-binary-node.js IMPL_B="$impl" bash ./test/test_container_cross || exit 1
+                IMPL_A=./bin/printable-binary-node.js IMPL_B="$impl" bash ./tests/test_container_cross || exit 1
               done
             '';
 
@@ -555,7 +555,7 @@
               export HOME=$TMPDIR
               zig build
               clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c zig-out/lib/libprintable_binary.a
-              IMPLEMENTATION_TO_TEST=./pb-ffi bash ./test/test_container
+              IMPLEMENTATION_TO_TEST=./pb-ffi bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -568,7 +568,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./test/test_container
+              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -581,7 +581,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-luajit
-              IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./test/test_container
+              IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -690,11 +690,11 @@
             buildPhase = ''
               export HOME=$TMPDIR
               zig build
-              clang -O2 -Isrc -o leak_harness test/leak_harness.c zig-out/lib/libprintable_binary.a
-              LEAK_HARNESS=./leak_harness LEAK_SECONDS=6 bash test/leak_test
+              clang -O2 -Isrc -o leak_harness tests/leak_harness.c zig-out/lib/libprintable_binary.a
+              LEAK_HARNESS=./leak_harness LEAK_SECONDS=6 bash tests/leak_test
               # CLI mode: drive the C standalone's buffer_t path via --leak-seconds.
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c LEAK_SECONDS=6 bash test/leak_test
+              IMPLEMENTATION_TO_TEST=./printable-binary-c LEAK_SECONDS=6 bash tests/leak_test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -733,10 +733,10 @@
               roc test roc/TestContainer.roc
               roc test roc/TestCliCore.roc
               roc test roc/TestCliOutput.roc
-              bash test/test_roc_map_sync
+              bash tests/test_roc_map_sync
               roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
               zig build -Doptimize=ReleaseFast
-              bash test/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
+              bash tests/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
               for muted in 1 true yes; do
                 printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
                 test ! -s muted.stderr
@@ -750,7 +750,8 @@
             src = ./.;
             nativeBuildInputs = with pkgs; [ bash ];
             buildPhase = ''
-              bash ./test/test_build_all
+              patchShebangs tests/fixtures
+              bash ./tests/test_build_all
               test -x ${printableBinaryApe}/bin/printable-binary-ape.com
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
@@ -763,14 +764,14 @@
           # independent oracle. Linux-only: the dup-symbol hazard is specific to
           # static-musl linking (darwin links dynamically and tolerates dupes),
           # and the test's nm output parsing assumes ELF symbol naming (no Mach-O
-          # leading underscore). See test/test_module_no_ffi_symbols.
+          # leading underscore). See tests/test_module_no_ffi_symbols.
           test-no-ffi-symbols = pkgs.stdenv.mkDerivation {
             name = "test-no-ffi-symbols";
             src = ./.;
             nativeBuildInputs = with pkgs; [ zig binutils ];
             buildPhase = ''
               export HOME=$TMPDIR
-              bash ./test/test_module_no_ffi_symbols
+              bash ./tests/test_module_no_ffi_symbols
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -787,7 +788,7 @@
               # Host-native build tools must still produce a portable APE.
               test "$(head -c 2 printable-binary-ape.com)" = MZ
               chmod +x printable-binary-ape.com
-              IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./test/test
+              IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

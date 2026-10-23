@@ -1678,7 +1678,7 @@ static void print_input_throughput(bool enabled, size_t input_bytes_read, double
 #ifndef PRINTABLE_BINARY_NO_MAIN
 /* CLI-only leak-test support: the WASM build excludes the buffer_free/CLI path. */
 #ifndef __EMSCRIPTEN__
-/* ---- memory-leak suite support (driven by test/leak_test via --leak-seconds) ---- */
+/* ---- memory-leak suite support (driven by tests/leak_test via --leak-seconds) ---- */
 static long pb_now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -1735,7 +1735,7 @@ static void run_leak_loop(long seconds) {
 
 int main(int argc, char *argv[]) {
 #ifndef __EMSCRIPTEN__
-    // Leak-test mode (test/leak_test): long-lived encode/decode loop, then exit.
+    // Leak-test mode (tests/leak_test): long-lived encode/decode loop, then exit.
     for (int ai = 1; ai < argc; ai++) {
         if (strcmp(argv[ai], "--leak-seconds") == 0 && ai + 1 < argc) {
             init_tables(argv[0]);
