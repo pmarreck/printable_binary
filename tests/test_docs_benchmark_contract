@@ -60,6 +60,8 @@ expect_file_contains "$readme" "github.com/pmarreck/mechatron-prime/blob/yolo/ME
 
 expected_mechatron_targets="$(printf '%s\n' \
 	'packages.x86_64-linux.default' \
+	'checks.x86_64-linux.rust-toolchain-pin' \
+	'checks.x86_64-linux.test-tag-recognition' \
 	'checks.x86_64-linux.test-ape' \
 	'checks.x86_64-linux.test-c' \
 	'checks.x86_64-linux.test-container-c' \
@@ -83,6 +85,12 @@ expected_mechatron_targets="$(printf '%s\n' \
 	'checks.x86_64-linux.test-roc' \
 	'checks.x86_64-linux.test-zig' \
 	'checks.x86_64-linux.test-zig-unit' | LC_ALL=C sort)"
+
+# Nix supplies the actual complete check-name set, so new checks cannot be
+# omitted from both this fallback inventory and CI without failing the gate.
+if [[ -n "${PB_REQUIRED_CI_TARGETS:-}" ]]; then
+	expected_mechatron_targets="$(LC_ALL=C sort "$PB_REQUIRED_CI_TARGETS")" || exit 1
+fi
 
 if [[ -f "$mechatron_targets" ]]; then
 	actual_mechatron_targets="$(sed -E \
@@ -116,7 +124,7 @@ else
 	fail "mapping reference has $mapping_rows rows (expected 256)"
 fi
 
-benchmark_inventory=$(bash "$repo_root/bm/benchmark-zig-opt" --list-impls 2>&1)
+benchmark_inventory=$(bash "$repo_root/benchmarks/benchmark-zig-opt" --list-impls 2>&1)
 benchmark_status=$?
 if [[ $benchmark_status -ne 0 ]]; then
 	fail "benchmark implementation inventory exits successfully"

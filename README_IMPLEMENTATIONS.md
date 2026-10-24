@@ -139,8 +139,31 @@ The comparative runner covers Roc, Rust, WebAssembly, and APE as well as C, Zig,
 
 ```bash
 ./build --all-impls
-nix develop -c ./bm/benchmark-zig-opt --list-impls
-nix develop -c ./bm/benchmark-zig-opt --impls roc,rust,wasm,ape --sizes "10M"
+nix develop -c ./benchmarks/benchmark-zig-opt --list-impls
+nix develop -c ./benchmarks/benchmark-zig-opt --impls roc,rust,wasm,ape --sizes "10M"
 ```
+
+`./bm` runs the separate tag-recognition experiment through a pinned shared
+profiling engine. Set `PERFORMANCE_HISTORY_URL` to an existing writable
+`file:///absolute/directory` outside this repository, or pass `--history-url`.
+For example, `./bm --case alphabet-cpu-1 --history-url file:///path/to/history`.
+The default configuration names `/var/lib/performance-profiling`; the command
+does not create or change permissions on that directory.
+
+The experiment compares the raw Zig decoder with a benchmark-only copy that
+checks the seven-byte tag namespace on lookup misses. It verifies output against
+canonical-map fixtures after each sample and records both decoders' process CPU
+and monotonic wall samples. Each workload has one-core and twelve-core cases;
+the decoder itself remains single-threaded. Whole patterns fill approximately
+16 MiB of encoded input, with exact input and decoded byte counts recorded.
+Fixture construction, warmup, verification, and freeing output are excluded from
+the timed decoder call; allocation and shrinking its owned result are included.
+
+This measures namespace observation, not a complete framing parser or whole-CLI
+throughput. Historical records live outside the checkout. A new cohort reports
+`UNBASELINED` (exit 3), rather than approving its own baseline. Deterministic
+fixture, oracle, and adapter checks are part of `./test`; fresh host measurements
+run separately through `./bm`, outside cached Nix checks. The two older C/Lua
+comparison scripts and historical result directories remain under `benchmarks/`.
 
 The benchmark resolves and verifies exact host ReleaseFast products from this layout; it never falls back to generic binaries, Cargo caches, or `result/bin`. Inspect `--list-impls` before measuring. In-process codec microbenchmarks exclude startup and I/O and must not be compared directly with these end-to-end results. New performance gates and baseline changes follow the shared performance-profiling contract.

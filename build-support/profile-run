@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Called by ./bm inside the pinned profiling shell and one admission envelope.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || exit 1
+cd "$repo_root" || exit 1
+case "${PB_PROFILE_PF:-}" in linux-amd64|linux-arm64|macos-arm64) ;; *) printf 'Missing pinned profiling platform.\n' >&2; exit 1 ;; esac
+root="$repo_root/.nix-out/$PB_PROFILE_PF/ReleaseFast"
+mkdir -p "$root" || exit 1
+product="$(nix build "$repo_root#tagRecognition" --print-out-paths --out-link "$root/tag-recognition")" || exit "$?"
+export PATH="$product/bin:$PATH"
+exec performance-profile run --config "$repo_root/profiling.json" --mode bm "$@"

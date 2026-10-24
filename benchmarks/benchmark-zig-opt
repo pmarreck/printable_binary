@@ -14,7 +14,7 @@ source "$PROJ_ROOT/build-support/driver.bash"
 source "$PROJ_ROOT/build-support/benchmark-products.bash"
 BENCH_TMPDIR="${TMPDIR:-/tmp}"
 BM_DIR="$BENCH_TMPDIR/pb-benchmark-$$"
-RESULTS_DIR="$PROJ_ROOT/bm/results"
+RESULTS_DIR="$PROJ_ROOT/benchmarks/results"
 
 WARMUP=5
 MIN_RUNS=20
@@ -39,7 +39,7 @@ trap cleanup EXIT
 
 usage() {
 	cat <<'EOF'
-Usage: ./bm/benchmark-zig-opt [options]
+Usage: ./benchmarks/benchmark-zig-opt [options]
 
 Compare the available PrintableBinary CLI implementations with hyperfine.
 Rust is adapted from its stdin-only transport CLI; WASM runs through wazero.
@@ -50,13 +50,13 @@ Options:
   --impls LIST        Comma- or space-separated implementations to require
                       (c, zig, roc, lua, node, rust, wasm, ape, ffi)
   --list-impls        Report every implementation and its availability; do not run
-  --save TAG          Write hyperfine JSON to bm/results/TAG/
+  --save TAG          Write hyperfine JSON to benchmarks/results/TAG/
   -h, --help          Show this help
 
 Examples:
-  nix develop -c ./bm/benchmark-zig-opt --list-impls
-  nix develop -c ./bm/benchmark-zig-opt --quick --sizes "1M"
-  nix develop -c ./bm/benchmark-zig-opt --impls rust,wasm,ape --sizes "10M"
+  nix develop -c ./benchmarks/benchmark-zig-opt --list-impls
+  nix develop -c ./benchmarks/benchmark-zig-opt --quick --sizes "1M"
+  nix develop -c ./benchmarks/benchmark-zig-opt --impls rust,wasm,ape --sizes "10M"
 EOF
 }
 

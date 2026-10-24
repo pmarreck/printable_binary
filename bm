@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Prepare pinned tools and artifacts, then run fresh recognition measurements.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+	printf '%s\n' 'Usage: ./bm [performance-profile run options]' \
+		'Measure tag namespace recognition, not a complete framing parser.' \
+		'Use --case NAME, --seed N, or --history-url file:///existing/directory.' \
+		'Compare all CLI implementations with ./benchmarks/benchmark-zig-opt.'
+	exit 0
+fi
+command -v nix >/dev/null 2>&1 || { printf './bm requires Nix with flakes enabled.\n' >&2; exit 1; }
+command=(nix develop "$repo_root#profiling" -c bash "$repo_root/build-support/profile-run" "$@")
+if [[ "$(uname -s)" == Linux ]] && command -v build-budget >/dev/null 2>&1; then
+	exec build-budget --project printable_binary -- "${command[@]}"
+fi
+exec "${command[@]}"

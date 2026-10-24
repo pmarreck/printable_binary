@@ -73,3 +73,8 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 - [x] [Cross-platform build architecture] Derive each CLI's one-line --about PF and optional VARIANT from its actual target and test conflicting runtime environment values (done 2026-10-23 22:10 EDT).
 - [x] [Recent completions] Restore the executable root test entrypoint and migrate existing suites and callers under tests, with all 24 Linux checks passing (done 2026-10-23 19:00 EDT; commit 409e974).
 - [x] [Recent completions] Make Linux cosmocc build helpers host-native while preserving portable APE application output; pass all Linux Nix checks and build the canonical Zig package (done 2026-10-23 18:35 EDT; commit ce9ccf8).
+- [x] [Cross-platform build architecture] Verify advertised Debug and ReleaseSafe host products and test the required Debug stderr banner (done 2026-10-24 00:09 EDT).
+	- [x] Bundle the Zig compiler runtime in the C-linkable library so safety-enabled FFI products link without disabling stack probes (done 2026-10-24 00:09 EDT).
+	- [x] Preserve Debug banners, passthrough data, and inherited stdin/stdout positions by using streaming Zig standard-handle adapters (done 2026-10-24 00:09 EDT).
+- [x] [Cross-platform build architecture] Keep shared CLI suite output clean, remove binary-unsafe shebang probing, and replace its legacy errexit control with explicit assertions (done 2026-10-23 22:10 EDT).
+- [x] [Cross-platform build architecture] Verify a real canonical host build and publication; retain explicit gaps for foreign runtime verification and coordinate any global PATH cutover separately (done 2026-10-23 22:10 EDT).

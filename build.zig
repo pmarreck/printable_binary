@@ -147,4 +147,25 @@ pub fn build(b: *std.Build) void {
     });
     const consumer_lib_step = b.step("consumer-lib", "Build the module-consumer static lib (FFI-symbol-leak test fixture)");
     consumer_lib_step.dependOn(&b.addInstallArtifact(consumer_lib, .{}).step);
+
+    // Benchmark-only generated core/fixtures are supplied by the Nix derivation.
+    // Ordinary products never import the observer or acquire its mutable state.
+    if (b.option(bool, "tag-probe", "Enable the benchmark-only namespace observer") orelse false) {
+        const observer = b.createModule(.{ .root_source_file = b.path("tests/benchmark/tag_probe/observer.zig"), .target = target, .optimize = optimize });
+        const instrumented = b.createModule(.{ .root_source_file = b.path("tests/benchmark/tag_probe/core.zig"), .target = target, .optimize = optimize });
+        instrumented.addAnonymousImport("character_map.txt", .{ .root_source_file = b.path("character_map.txt") });
+        instrumented.addImport("tag_probe", observer);
+        const benchmark_module = b.createModule(.{
+            .root_source_file = b.path("tests/benchmark/tag_probe/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{ .{ .name = "baseline", .module = lib_mod }, .{ .name = "observed", .module = instrumented }, .{ .name = "tag_probe", .module = observer } },
+        });
+        benchmark_module.addCSourceFile(.{ .file = b.path("tests/benchmark/tag_probe/clock.c"), .flags = &.{"-std=c11"} });
+        const benchmark = b.addExecutable(.{ .name = "printable-binary-tag-probe", .root_module = benchmark_module });
+        b.step("tag-probe", "Build the optimized tag namespace recognition experiment").dependOn(&b.addInstallArtifact(benchmark, .{}).step);
+        const benchmark_tests = b.addTest(.{ .root_module = benchmark_module });
+        b.step("test-tag-probe", "Verify recognition fixtures, work oracle and observer controls").dependOn(&b.addRunArtifact(benchmark_tests).step);
+    }
 }

@@ -1,0 +1,55 @@
+{ pkgs, zig, source, rawProduct }:
+pkgs.stdenvNoCC.mkDerivation {
+	pname = "printable-binary-tag-recognition";
+	version = "1";
+	src = source;
+	strictDeps = true;
+	nativeBuildInputs = [ zig pkgs.luajit pkgs.jq ];
+	buildPhase = ''
+		runHook preBuild
+		export HOME="$TMPDIR/home" XDG_CACHE_HOME="$TMPDIR/cache"
+		mkdir -p "$HOME" "$XDG_CACHE_HOME" tests/benchmark/tag_probe/fixtures
+		luajit tests/benchmark/tag_probe/generate-fixtures.lua character_map.txt tests/benchmark/tag_probe/fixtures
+		cp src/zig/printable_binary.zig tests/benchmark/tag_probe/core.zig
+		test "$(grep -Fc '@memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);' tests/benchmark/tag_probe/core.zig)" = 1
+		substituteInPlace tests/benchmark/tag_probe/core.zig --replace-fail \
+			'@memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);' \
+			'@import("tag_probe").onMiss(input[i..]);
+		        @memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);'
+		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$out"
+		runHook postBuild
+	'';
+	doCheck = true;
+	checkPhase = ''
+		runHook preCheck
+		bash tests/benchmark/tag_probe/test-fixtures ${rawProduct}/bin/printable-binary
+		zig build test-tag-probe -Dtag-probe=true -Doptimize=ReleaseSafe \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"}
+		bash tests/benchmark/tag_probe/test-adapter "$out/bin/printable-binary-tag-probe"
+		# Exercise the real producer's work checks with deliberately broken kernels.
+		cp tests/benchmark/tag_probe/observer.zig "$TMPDIR/observer.original"
+		substituteInPlace tests/benchmark/tag_probe/observer.zig --replace-fail 'candidates += 1;' 'candidates += 0;'
+		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$TMPDIR/no-count"
+		if "$TMPDIR/no-count/bin/printable-binary-tag-probe" sparse 32768 23 > "$TMPDIR/record" 2> "$TMPDIR/diagnostic"; then
+			echo 'FAIL: skipped namespace counting must not produce a valid measurement' >&2; exit 1
+		fi
+		if [[ -s "$TMPDIR/record" ]] || ! grep -q WrongCount "$TMPDIR/diagnostic"; then
+			echo 'FAIL: skipped counting must report WrongCount without measurement JSON' >&2; exit 1
+		fi
+		cp "$TMPDIR/observer.original" tests/benchmark/tag_probe/observer.zig
+		substituteInPlace tests/benchmark/tag_probe/core.zig --replace-fail 'result[pos] = byte;' 'result[pos] = byte ^ 1;'
+		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$TMPDIR/wrong-byte"
+		if "$TMPDIR/wrong-byte/bin/printable-binary-tag-probe" alphabet 32768 23 > "$TMPDIR/record" 2> "$TMPDIR/diagnostic"; then
+			echo 'FAIL: incorrect decoded bytes must not produce a valid measurement' >&2; exit 1
+		fi
+		if [[ -s "$TMPDIR/record" ]] || ! grep -q WrongBytes "$TMPDIR/diagnostic"; then
+			echo 'FAIL: corrupted output must report WrongBytes without measurement JSON' >&2; exit 1
+		fi
+		echo 'PASS: real optimized producer rejects skipped counting and corrupted decode results'
+		runHook postCheck
+	'';
+	dontInstall = true;
+}

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Check prototype fixtures with the existing, independently built raw decoder.
+set -u
+binary="${1:?Usage: test-fixtures PREPARED_ZIG_CLI}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+mkdir "$scratch/fixtures" || exit 1
+if ! luajit "$repo_root/tests/benchmark/tag_probe/generate-fixtures.lua" "$repo_root/character_map.txt" "$scratch/fixtures" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	printf 'FAIL: generate the namespace-probe fixtures\n' >&2
+	exit 1
+fi
+cases=(ascii spaces alphabet unicode sparse dense encoded_header)
+counts=(0 0 0 0 1 2 0)
+for index in "${!cases[@]}"; do
+	name="${cases[index]}"
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" -d < "$scratch/fixtures/$name.input" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/fixtures/$name.expected" || [[ -s "$scratch/stderr" ]]; then
+		printf 'FAIL: %s fixture must match the prepared raw decoder\n' "$name" >&2; exit 1
+	fi
+	count="$(<"$scratch/fixtures/$name.count")"
+	if [[ "$count" != "${counts[index]}" ]]; then
+		printf 'FAIL: %s namespace candidate count differs from its declared case\n' "$name" >&2; exit 1
+	fi
+done
+LC_ALL=C awk 'NF && $0 !~ /^##/ { printf "%s", $1 }' "$repo_root/character_map.txt" > "$scratch/alphabet"
+cmp -s "$scratch/alphabet" "$scratch/fixtures/alphabet.input" || exit 1
+printf 'PASS: all seven prototype fixtures match the canonical map and prepared decoder\n'

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Controlled OS adapter for frontend routing tests.
+[[ "${1:-}" == -s ]] || exit 2
+printf '%s\n' "${TEST_UNAME:-Linux}"

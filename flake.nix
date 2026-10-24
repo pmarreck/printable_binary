@@ -12,6 +12,10 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    performance-profiling = {
+      url = "github:pmarreck/performance_profiling/ecf713b81a74a51f76719bf9debc44fe23a0b331";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     roc-overlay = {
       url = "github:roc-lang/roc-overlay/d0ad2328b1d81e2f6dcfcdf1fc800d9e74838a4d";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -27,7 +31,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay, roc-overlay, rocSource, rocPlatformTemplate }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay, roc-overlay, rocSource, rocPlatformTemplate, performance-profiling }:
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = import nixpkgs {
@@ -316,8 +320,13 @@
         printableBinaryZig = buildProducts."build-zig-${platform}-ReleaseFast";
         printableBinaryApe = buildProducts."build-ape-${platform}-ReleaseFast";
         printableBinaryRoc = buildProducts."build-roc-${platform}-ReleaseFast";
+        tagRecognition = import ./build-support/tag-recognition.nix {
+          inherit pkgs zig;
+          source = packageSource;
+          rawProduct = printableBinaryZig;
+        };
         allPackages = buildProducts // {
-          inherit printableBinaryNative printableBinaryWasm printableBinaryZig;
+          inherit printableBinaryNative printableBinaryWasm printableBinaryZig tagRecognition;
           default = canonicalPackage buildProducts.${selectedProduct} canonicalRow;
           allImplementations = pkgs.linkFarm "printable-binary-implementations-${platform}"
             (map (row: {
@@ -331,6 +340,10 @@
       {
         devShells.build = pkgs.mkShell {
           packages = with pkgs; [ bash binutils coreutils diffutils file jq ];
+        };
+        devShells.profiling = pkgs.mkShell {
+          packages = [ performance-profiling.packages.${system}.default pkgs.bash pkgs.gitMinimal ];
+          PB_PROFILE_PF = platform;
         };
         devShells.default = pkgs.mkShell {
           buildInputs =
@@ -442,6 +455,7 @@
           allPackages;
 
         checks = {
+          test-tag-recognition = tagRecognition;
           rust-toolchain-pin = pkgs.runCommand "printable-binary-rust-toolchain-pin" {
             nativeBuildInputs = [ rustToolchain ];
           } ''
@@ -462,6 +476,8 @@
             name = "test-docs-benchmark-contract";
             src = ./.;
             nativeBuildInputs = with pkgs; [ bash binutils file gawk gnugrep jq ];
+            PB_REQUIRED_CI_TARGETS = pkgs.writeText "printable-binary-required-ci-targets" (pkgs.lib.concatStringsSep "\n"
+              ([ "packages.x86_64-linux.default" ] ++ map (name: "checks.x86_64-linux.${name}") (builtins.attrNames self.checks.x86_64-linux)) + "\n");
             buildPhase = ''
               export HOME=$TMPDIR
               bash ./tests/test_docs_benchmark_contract
@@ -474,7 +490,10 @@
             src = ./.;
             nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump ];
             buildPhase = ''
+              clang -O2 -Wall -Wextra -I. -o test-c-two-byte-domain tests/unit/test-c-two-byte-domain.c
+              ./test-c-two-byte-domain
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
+              bash tests/cli/test-decoder-malformed-utf8 ./printable-binary-c
               IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/cli/test-suite-output bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
@@ -869,6 +888,7 @@
               # Host-native build tools must still produce a portable APE.
               test "$(head -c 2 printable-binary-ape.com)" = MZ
               chmod +x printable-binary-ape.com
+              bash tests/cli/test-decoder-malformed-utf8 ./printable-binary-ape.com
               IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./tests/cli/test-suite-output bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";

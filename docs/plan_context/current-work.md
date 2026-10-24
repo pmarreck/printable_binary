@@ -67,6 +67,10 @@ The requesting consumer needs a distributable Rust crate and spaces-preserving e
 
 The expanded milestone passed all 24 Linux Nix checks at 00:09 EDT on 2026-10-24 against frozen source `/nix/store/0md3pcpp72kkwd9ziyxqb1k9pqkb55w3-source`. The same admitted job then built and selected all nine host ReleaseFast products and published the canonical Zig command. Verification includes all eighteen host Debug/ReleaseSafe products, the official native Roc compiler and matching glue, the extracted self-contained Rust crate, Rust/Zig option comparisons, and raw literal-tag preservation across all nine products. Zig's ReleaseSafe unit suite exhausts all 65,536 two-byte and 16,777,216 three-byte lookup inputs; Rust exhausts all 65,536 two-byte inputs. Foreign Zig headers are checked for all five targets, without claiming foreign runtime execution. Standard-handle streaming adapters preserve inherited offsets; the current Zig CLI still buffers the complete input and result. This milestone does not implement framing or complete the global PATH cutover.
 
+Follow-up verification reproduced the malformed `C2 36` to LF alias in the shared standalone C/APE/WASM decoder. Its two-byte lookup now validates the lead and continuation bytes before masking. A C unit test exhausts all 65,536 two-byte inputs against exact embedded glyph bytes, alongside the independent canonical-map checks. At 01:00 EDT on 2026-10-24, the complete Linux run passed that test, all nine installed codec checks, and all eighteen safety/debug profiles. The run remained red on the benchmark's newly added default-seed regression: the shared engine supplies hexadecimal text while the probe parsed a number. The probe now preserves seed text, and another complete run must qualify that change before a new commit.
+
+The CI manifest now includes the previously omitted Rust toolchain-pin check and the new recognition check. The documentation check derives its required target set from Nix's actual Linux check names, preventing synchronized omissions in a manually maintained test list and manifest. The provisioning dry run and subsequent dedicated-webhook provisioning both succeeded for the canonical repository. Exact-commit CI verification still follows the authorized push.
+
 ## Build portability
 
 The Linux APE package failed on a WSL consumer at commit `cdefa95`. The reported build returned exit 127 from cosmocc's `mktemper` invocation, even though the same package built on native Linux CI. The bundled helper begins with an `MZ` executable header. The report's proposed cause is WSL's Windows-interoperability handler claiming the binary inside the Nix sandbox; that handler has not been inspected directly.
@@ -84,6 +88,43 @@ Upstream fixed one distributed macOS linking issue, including `roc glue`, in [PR
 The earlier unreachable source input was repaired in `cdefa95`. GitHub archive availability was checked directly. Cached local evaluation and CI do not independently prove a source remains downloadable, so a source-availability regression should bypass the existing source cache without altering the user's main Nix store.
 
 ## Optional type tag selected on 2026-10-20
+
+### Current v1 wire contract and implementation boundary
+
+The selected markers use exact UTF-8 bytes, independent of font rendering. Let `M` denote U+F000 (`EF 80 80`), `P` denote Greek rho U+03C1 (`CF 81`), and `B` denote Greek capital beta U+0392 (`CE 92`). The accepted opener is `MPB_` or `MPB1_`; the closer is `M/PB`. The ordinary ASCII underscore terminates the version. An omitted version and exactly ASCII `1` select v1; other spellings, including `01`, are unsupported. A complete reserved `MPB` prefix followed by a malformed or truncated header is an error in tag-aware mode. A reader can reject unsupported version spellings without buffering an arbitrary digit string.
+
+| Control | Visible spelling | UTF-8 bytes | Effect |
+| --- | --- | --- | --- |
+| Bare v1 opener | `ρΒ_` | `EF 80 80 CF 81 CE 92 5F` (8) | Begin PB decoding |
+| Explicit v1 opener | `ρΒ1_` | `EF 80 80 CF 81 CE 92 31 5F` (9) | Begin PB decoding |
+| Closer | `/ρΒ` | `EF 80 80 2F CF 81 CE 92` (8) | Begin literal passthrough |
+| Quoted marker | `` | `EF 80 80 EF 80 80` (6) | Emit one literal `M`; keep the current mode |
+
+A bare opener/closer pair costs 16 bytes; an explicit-v1 pair costs 17. The closer is optional for a whole-stream frame. Quoting adds three bytes per literal martini. It quotes only the marker, never a protected body. Thus `MM` followed by `PB1_` emits a literal martini and treats the remaining characters in the current mode, rather than recognizing an opener. A quote sequence is consumed once. Produced bytes are never scanned again for controls or decoded again as PB glyphs.
+
+There are two intended initial states: a tag-aware PB decoder begins in PB mode, while an excerpt decoder begins in literal mode. A closer switches either to literal passthrough until another opener. This is a two-state model without a nesting stack. Activation, final command spellings, redundant opener/closer policy, handling of incomplete prefixes shorter than the reserved namespace, and interactions with non-default preservation options must be qualified before implementing a public parser. These integration details are not silently resolved by the wire spelling.
+
+Encoding rejects an actual leading tag unless explicit raw-input intent overrides that guard. The remaining owner question is whether the guard applies to all CLI encoding, including untagged output, or only tagged-output mode. The raw library codec stays unconditional. Neither an ordinary byte-encoded tag nor a decoded output tag proves accidental double encoding: both can represent intentional literal source bytes. Preserve those raw payloads exactly, and never apply a recursive encoded-tag rejection rule.
+
+The recognition experiment observes the seven-byte opener namespace on the existing raw decoder's lookup-miss path, leaving production code unchanged. It preserves and independently verifies raw output; it counts namespace candidates, not validated frames. Version validation, quote handling, mode transitions, arbitrary-binary resynchronization, and incremental chunk boundaries are outside that prototype. Its timing cannot establish a complete framed decoder's slowdown. In particular, a malformed UTF-8 prefix can hide a marker within the existing raw fallback group; a future mixed-binary parser must scan literal bytes independently and carry partial marker state across chunks.
+
+The Nix-built recognition package passed its focused Linux check at 00:56 EDT on 2026-10-24, using source `qvspfghybmr9sfq6ziv1m1sg2mx28k2w-printable-binary-source`. All seven independently generated fixtures match the prepared raw CLI. ReleaseSafe tests verify the repeated outputs, exact candidate counts, prefix mutation set, and work oracle. The actual optimized producer rejects deliberately disabled counting with `WrongCount` and corrupted decoded bytes with `WrongBytes`, without emitting measurement JSON. Linux probes link statically against musl after the first safety-test run exposed an unavailable system dynamic loader in the Nix sandbox. Those cached build checks do not substitute for fresh host measurements. The complete suite and fresh timing run remain pending.
+
+The complete retry passed all 25 Linux Nix checks at 01:12 EDT on 2026-10-24, including the default hexadecimal-text seed regression and all C/APE/WASM malformed-input checks. Its complete check source is `/nix/store/2ysvvh714jymn82r4rrglb9m92xbrx72-xadskc5alg4kxp2j5lcm7svw5s4hdnm3-source`. The same admitted job then ran fourteen fresh recognition cases with the pinned shared engine. Every case verified work, completed in one attempt, and retained matching source fingerprints before/after (`726fb7a86b546535ec5f51ceb57ad328a6a5a010f42f1cafa6bdb5d6a94d214f`). The benchmark executable SHA-256 is `a1462de62b221fff33f596109c44fa5f93c55a90afbd435acde4d45b32b30360`. All records are `UNBASELINED`, with no approval or historical-pass claim; the campaign exits 3 for that reason. External history remains outside the repository.
+
+Measurements used Zig 0.16.0 ReleaseFast, Linux x86-64/musl, and an AMD Ryzen Threadripper 3990X. Each case warms both variants three times, then alternates their order for five paired samples over approximately 16 MiB of encoded input. Twelve-core cases permit scheduling on twelve CPUs; the decoder still uses one worker. CPU deltas compare mean process CPU duration against the unchanged raw decoder. Rates count encoded input bytes in decimal MB per process CPU second, not decoded output or end-to-end CLI throughput.
+
+| Input pattern | CPU delta, 1 allowed CPU | CPU delta, 12 allowed CPUs | Observer input MB/CPU s, 1 CPU |
+| --- | ---: | ---: | ---: |
+| Self-mapped ASCII | -0.45% | +3.86% | 1651.59 |
+| ASCII with literal spaces | +10.86% | +11.71% | 416.67 |
+| Complete mapping alphabet | +7.61% | +10.97% | 581.73 |
+| Unknown UTF-8 mixed with ASCII | -5.40% | -5.42% | 412.81 |
+| Sparse opener namespaces | +7.55% | +16.63% | 573.45 |
+| Dense opener namespaces | +5.95% | +12.18% | 568.45 |
+| Ordinary byte-encoded literal opener | +5.96% | +7.96% | 650.78 |
+
+This single campaign does not establish a universal overhead percentage or a speedup from framing. It includes code-generation and allocation effects that have not been attributed separately. Notably, alphabet-only input has zero namespace candidates but still shows a measurable delta. Baseline CPU sample coefficients of variation range from 0.11% to 1.78%; observer values range from 0.27% to 7.50%. CPU and wall samples, exact byte counts, fixture definitions, and source/executable identities are retained in the external records. Full framing, quoted-marker interpretation, literal-region scanning, and chunk-boundary state require their own implementation and measurements. Production raw decoding has no observer added.
 
 Encoder-ingress decision confirmed on 2026-10-23: v1 encoding rejects input that already starts with a tag, and offers an explicit raw-input override for literal source bytes. It does not parse and pass existing frames through during encoding. Together with reserved-prefix errors, exact v1 version spellings, and standard martini quoting, this settles the original two pending questions. One interface follow-up asks whether the guard covers all CLI encoding or only tagged-output mode; the raw library API remains unconditional. Parser implementation remains separate from the recognition measurement experiment.
 

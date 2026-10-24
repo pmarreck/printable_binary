@@ -1,0 +1,22 @@
+{
+	"schema": "performance-project/v1",
+	"project": "printable_binary",
+	"history_url": "file:///var/lib/performance-profiling",
+	"identity": {"runtime": "Zig-0.16.0", "build_mode": "ReleaseFast", "concurrency": 1, "measurement": "paired-owned-decode-namespace-v1"},
+	"cases": [
+		{"name":"ascii-cpu-1","cores":1,"definition":"raw-miss-namespace-ascii-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"ascii-cpu-12","cores":12,"definition":"raw-miss-namespace-ascii-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"spaces-cpu-1","cores":1,"definition":"raw-miss-namespace-spaces-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"spaces-cpu-12","cores":12,"definition":"raw-miss-namespace-spaces-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"alphabet-cpu-1","cores":1,"definition":"raw-miss-namespace-alphabet-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"alphabet-cpu-12","cores":12,"definition":"raw-miss-namespace-alphabet-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"unicode-cpu-1","cores":1,"definition":"raw-miss-namespace-unicode-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"unicode-cpu-12","cores":12,"definition":"raw-miss-namespace-unicode-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"sparse-cpu-1","cores":1,"definition":"raw-miss-namespace-sparse-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"sparse-cpu-12","cores":12,"definition":"raw-miss-namespace-sparse-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"dense-cpu-1","cores":1,"definition":"raw-miss-namespace-dense-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"dense-cpu-12","cores":12,"definition":"raw-miss-namespace-dense-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"encoded_header-cpu-1","cores":1,"definition":"raw-miss-namespace-encoded-header-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]},
+		{"name":"encoded_header-cpu-12","cores":12,"definition":"raw-miss-namespace-encoded-header-v1","mode":"bm","metric":"cpu_ns","comparison":"absolute","command":["printable-binary-tag-probe","{case}","{sizes}","{seed}"],"sizes":[16777216],"bounds":[1,2000000000]}
+	]
+}

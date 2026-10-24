@@ -51,7 +51,7 @@ result*
 .serena
 
 # benchmark results
-bm/results
+benchmarks/results
 
 # anything else
 ZIG_0.15_TO_0.16_MIGRATION.md

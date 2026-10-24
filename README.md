@@ -64,14 +64,14 @@ The comparative benchmark is intentionally machine-local: it verifies a round tr
 ./build --all-impls
 
 # Check exactly which implementations are ready, then compare all of them.
-nix develop -c ./bm/benchmark-zig-opt --list-impls
-nix develop -c ./bm/benchmark-zig-opt --quick --sizes "1M"
+nix develop -c ./benchmarks/benchmark-zig-opt --list-impls
+nix develop -c ./benchmarks/benchmark-zig-opt --quick --sizes "1M"
 
 # Require a focused comparison; this fails rather than silently omitting a target.
-nix develop -c ./bm/benchmark-zig-opt --impls roc,rust,wasm,ape --sizes "10M"
+nix develop -c ./benchmarks/benchmark-zig-opt --impls roc,rust,wasm,ape --sizes "10M"
 ```
 
-The Rust crate also has an in-process codec microbenchmark (`nix develop -c cargo run --release --manifest-path rust/Cargo.toml --example bench`). It deliberately excludes CLI and runtime startup costs, so it should be compared only with the Zig `--bench` core measurement—not with the cross-CLI table above.
+The Rust crate also retains an experimental in-process codec example. It excludes CLI and runtime startup costs and needs a declared Nix benchmark output before qualifying a current measurement. The separate `./bm` tag-recognition experiment uses pinned Nix artifacts and the shared profiling engine; see [the implementation guide](README_IMPLEMENTATIONS.md#tests-and-performance) for its scope and history setup.
 
 Key optimizations in the Zig core:
 - **Pre-allocated buffers**: encode/decode output sized upfront (no growth checks in the hot loop).

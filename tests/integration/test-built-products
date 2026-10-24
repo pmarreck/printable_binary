@@ -40,7 +40,7 @@ while IFS='|' read -r impl pf variant target builder package entry format; do
 		failures=$((failures + 1))
 	fi
 	case "$impl" in
-		zig|ffi|rust)
+		zig|ffi|rust|c|ape|wasm)
 			if ! bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$product/bin/$entry" > "$scratch/stdout" 2> "$scratch/stderr"; then
 				printf 'FAIL: installed %s malformed-byte contract: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
 				failures=$((failures + 1))

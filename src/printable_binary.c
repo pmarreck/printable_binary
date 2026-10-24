@@ -1037,7 +1037,8 @@ static buffer_t decode_data(const uint8_t *input, size_t input_len, bool spaces_
         if (seq_len == 1) {
             int16_t v = decode_1byte[first_byte];
             if (v >= 0) { buffer_append_char(&output, (char)(uint8_t)v); i += 1; matched = true; }
-        } else if (seq_len == 2) {
+        } else if (seq_len == 2 && first_byte >= 0xc2 && first_byte <= 0xdf &&
+                   (input[i + 1] & 0xc0) == 0x80) {
             int16_t v = decode_2byte[first_byte & 0x1F][input[i + 1] & 0x3F];
             if (v >= 0) { buffer_append_char(&output, (char)(uint8_t)v); i += 2; matched = true; }
         } else if (seq_len == 3) {
