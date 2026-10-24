@@ -26,6 +26,7 @@
 
 #include "printable_binary.h"
 #include "container_json.h"
+#include "platform_identity.h"
 
 /* Program options */
 typedef struct {
@@ -38,6 +39,7 @@ typedef struct {
     bool hexlike_mode;
     bool format_mode;
     bool help_mode;
+    bool about_mode;
     int format_group;
     int format_groups_per_line;
     int mappings_mode; /* 0=none, 1=table, 2=json, 3=csv */
@@ -121,6 +123,7 @@ static void print_usage(const char *name) {
     fprintf(stderr, "  --mappings         Show the byte-to-character mapping table\n");
     fprintf(stderr, "  --mappings-json    Output mappings as JSON\n");
     fprintf(stderr, "  --mappings-csv     Output mappings as CSV\n");
+    fprintf(stderr, "      --about        Print version and compilation target\n");
     fprintf(stderr, "  -h, --help         Show this help\n");
 }
 
@@ -219,6 +222,7 @@ static options_t parse_options(int argc, char *argv[]) {
         .strip_whitespace = false,
         .format_mode = false,
         .help_mode = false,
+        .about_mode = false,
         .format_group = 8,
         .format_groups_per_line = 10,
         .mappings_mode = 0,
@@ -350,6 +354,8 @@ static options_t parse_options(int argc, char *argv[]) {
                 opts.mappings_mode = 2;
             } else if (strcmp(name, "mappings-csv") == 0) {
                 opts.mappings_mode = 3;
+            } else if (strcmp(name, "about") == 0) {
+                opts.about_mode = true;
             } else if (strcmp(name, "help") == 0) {
                 opts.help_mode = true;
             } else {
@@ -510,6 +516,10 @@ static char *read_input(const char *filename, size_t *len_out) {
 
 int main(int argc, char *argv[]) {
     options_t opts = parse_options(argc, argv);
+    if (opts.about_mode) {
+        pb_print_about("C FFI");
+        return 0;
+    }
     const char *prog_name = argv[0] ? argv[0] : "printable-binary";
     bool stats_enabled = !env_var_truthy(getenv("PRINTABLE_BINARY_MUTE_STATS"));
 

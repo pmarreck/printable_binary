@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const pb = @import("printable_binary");
+const identity = @import("platform_identity.zig");
 
 const Options = struct {
     decode_mode: bool = false,
@@ -22,6 +23,7 @@ const Options = struct {
     format_group: usize = 8,
     format_groups_per_line: usize = 10,
     help_mode: bool = false,
+    about_mode: bool = false,
     mappings_mode: MappingsMode = .none,
     input_file: ?[]const u8 = null,
     preserve_chars: ?[]const u8 = null, // null = not set, allocated if set
@@ -248,6 +250,8 @@ fn parseArgs(allocator: std.mem.Allocator, args: []const []const u8) !Options {
                 } else {
                     return error.MissingValue;
                 }
+            } else if (std.mem.eql(u8, name, "about")) {
+                opts.about_mode = true;
             } else if (std.mem.eql(u8, name, "decode")) {
                 opts.decode_mode = true;
             } else if (std.mem.eql(u8, name, "passthrough")) {
@@ -417,6 +421,7 @@ fn printUsage(io: std.Io) void {
         \\  --mappings         Show the byte-to-character mapping table
         \\  --mappings-json    Output mappings as JSON
         \\  --mappings-csv     Output mappings as CSV
+        \\      --about        Print version and compilation target
         \\  -h, --help         Show this help
         \\
         \\If no file is specified, input is read from stdin.
@@ -430,22 +435,22 @@ fn printUsage(io: std.Io) void {
 
 // ASCII names for control characters and special bytes
 const ascii_names = [_][]const u8{
-    "NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL",
-    "BS", "TAB", "LF", "VT", "FF", "CR", "SO", "SI",
-    "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB",
-    "CAN", "EM", "SUB", "ESC", "FS", "GS", "RS", "US",
-    "SPACE", "'!'", "'\"'", "'#'", "'$'", "'%'", "'&'", "'\\''",
-    "'('", "')'", "'*'", "'+'", "','", "'-'", "'.'", "'/'",
-    "'0'", "'1'", "'2'", "'3'", "'4'", "'5'", "'6'", "'7'",
-    "'8'", "'9'", "':'", "';'", "'<'", "'='", "'>'", "'?'",
-    "'@'", "'A'", "'B'", "'C'", "'D'", "'E'", "'F'", "'G'",
-    "'H'", "'I'", "'J'", "'K'", "'L'", "'M'", "'N'", "'O'",
-    "'P'", "'Q'", "'R'", "'S'", "'T'", "'U'", "'V'", "'W'",
-    "'X'", "'Y'", "'Z'", "'['", "'\\\\'", "']'", "'^'", "'_'",
-    "'`'", "'a'", "'b'", "'c'", "'d'", "'e'", "'f'", "'g'",
-    "'h'", "'i'", "'j'", "'k'", "'l'", "'m'", "'n'", "'o'",
-    "'p'", "'q'", "'r'", "'s'", "'t'", "'u'", "'v'", "'w'",
-    "'x'", "'y'", "'z'", "'{'", "'|'", "'}'", "'~'", "DEL",
+    "NUL",   "SOH", "STX",  "ETX", "EOT",    "ENQ", "ACK", "BEL",
+    "BS",    "TAB", "LF",   "VT",  "FF",     "CR",  "SO",  "SI",
+    "DLE",   "DC1", "DC2",  "DC3", "DC4",    "NAK", "SYN", "ETB",
+    "CAN",   "EM",  "SUB",  "ESC", "FS",     "GS",  "RS",  "US",
+    "SPACE", "'!'", "'\"'", "'#'", "'$'",    "'%'", "'&'", "'\\''",
+    "'('",   "')'", "'*'",  "'+'", "','",    "'-'", "'.'", "'/'",
+    "'0'",   "'1'", "'2'",  "'3'", "'4'",    "'5'", "'6'", "'7'",
+    "'8'",   "'9'", "':'",  "';'", "'<'",    "'='", "'>'", "'?'",
+    "'@'",   "'A'", "'B'",  "'C'", "'D'",    "'E'", "'F'", "'G'",
+    "'H'",   "'I'", "'J'",  "'K'", "'L'",    "'M'", "'N'", "'O'",
+    "'P'",   "'Q'", "'R'",  "'S'", "'T'",    "'U'", "'V'", "'W'",
+    "'X'",   "'Y'", "'Z'",  "'['", "'\\\\'", "']'", "'^'", "'_'",
+    "'`'",   "'a'", "'b'",  "'c'", "'d'",    "'e'", "'f'", "'g'",
+    "'h'",   "'i'", "'j'",  "'k'", "'l'",    "'m'", "'n'", "'o'",
+    "'p'",   "'q'", "'r'",  "'s'", "'t'",    "'u'", "'v'", "'w'",
+    "'x'",   "'y'", "'z'",  "'{'", "'|'",    "'}'", "'~'", "DEL",
 };
 
 fn writeStdout(data: []const u8) void {
@@ -555,7 +560,10 @@ pub fn main(init: std.process.Init) !void {
 
     for (args_buf) |a| {
         if (std.mem.eql(u8, a, "--bench")) {
-            runBench(io, allocator) catch |e| { writeStats("bench error: {}\n", .{e}); std.process.exit(1); };
+            runBench(io, allocator) catch |e| {
+                writeStats("bench error: {}\n", .{e});
+                std.process.exit(1);
+            };
             return;
         }
     }
@@ -576,6 +584,10 @@ pub fn main(init: std.process.Init) !void {
 
     if (opts.help_mode) {
         printUsage(io);
+        return;
+    }
+    if (opts.about_mode) {
+        writeStdout("printable-binary 1.0.0 (Zig) Encode bytes as printable UTF-8; " ++ identity.fields ++ "\n");
         return;
     }
 

@@ -35,6 +35,7 @@ Options:
   --mappings-json       Output the mappings as JSON
   --mappings-csv        Output the mappings as CSV
   --no-double-encode-check   Skip detection of already-encoded input
+  --about               Print version and execution platform
   -h, --help            Show this help
 
 Encoding modes:
@@ -171,6 +172,15 @@ function parseArgs(argv) {
 
     if (arg === '-h' || arg === '--help') {
       printUsage();
+      process.exit(0);
+    } else if (arg === '--about') {
+      const os = { linux: 'linux', darwin: 'macos', win32: 'mswin' }[process.platform];
+      const arch = { x64: 'amd64', arm64: 'arm64' }[process.arch];
+      if (!os || !arch || (os === 'macos' && arch !== 'arm64')) {
+        process.stderr.write('Unsupported execution platform\n');
+        process.exit(1);
+      }
+      process.stdout.write(`printable-binary 1.0.0 (Node) Encode bytes as printable UTF-8; PF=${os}-${arch}\n`);
       process.exit(0);
     } else if (arg === '-d' || arg === '--decode') {
       decodeMode = true;

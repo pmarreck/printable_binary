@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Valid stdout must never hide an unsuccessful encoder exit status.
+set -u
+codec="${1:?Usage: test-shared-suite-failure PREPARED_CODEC}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run shared-suite fault tests through ./test or run-isolated\n' >&2
+	exit 1
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+export TEST_REAL_CODEC="$codec" TEST_FAILURE_MARKER="$scratch/failed-call"
+cp "$repo_root/tests/fixtures/fail-first-codec-call" "$scratch/codec with spaces" || exit 1
+IMPLEMENTATION_TO_TEST="$scratch/codec with spaces" bash "$repo_root/tests/test" > "$scratch/stdout" 2> "$scratch/stderr"
+status=$?
+if [[ "$status" == 0 || ! -f "$TEST_FAILURE_MARKER" ]] || ! grep -Fq 'Test #1:' "$scratch/stdout" || grep -Fq 'Test #2:' "$scratch/stdout"; then
+	printf 'FAIL: the shared suite must reject correct output with an unsuccessful first encoder status\n' >&2
+	exit 1
+fi
+printf 'PASS: valid codec output cannot conceal an unsuccessful exit status\n'

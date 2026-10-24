@@ -1,3 +1,7 @@
+#if defined(__COSMOPOLITAN__) && !defined(_COSMO_SOURCE)
+/* Expose Cosmopolitan's runtime OS accessors before system headers. */
+#define _COSMO_SOURCE
+#endif
 #define _POSIX_C_SOURCE 200809L
 /*
  * PrintableBinary C Implementation
@@ -27,6 +31,7 @@
 #include "character_map_embedded.h"
 #include "printable_binary.h"
 #include "container_json.h"
+#include "platform_identity.h"
 
 #ifdef __EMSCRIPTEN__
 // Standalone WASM builds shouldn't depend on host-provided env functions.
@@ -112,6 +117,7 @@ typedef struct {
     bool passthrough_mode;
     bool format_mode;
     bool help_mode;
+    bool about_mode;
     bool spaces_mode;
     bool tabs_mode;
     bool crlf_mode;
@@ -1287,6 +1293,7 @@ static void print_usage(const char *program_name) {
     fprintf(stderr, "  --mappings         Show the byte-to-character mapping table\n");
     fprintf(stderr, "  --mappings-json    Output mappings as JSON\n");
     fprintf(stderr, "  --mappings-csv     Output mappings as CSV\n");
+    fprintf(stderr, "      --about        Print version and target metadata\n");
     fprintf(stderr, "  -h, --help         Show this help\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "If no file is specified, input is read from stdin.\n");
@@ -1397,6 +1404,7 @@ static options_t parse_options(int argc, char *argv[]) {
         .passthrough_mode = false,
         .format_mode = false,
         .help_mode = false,
+        .about_mode = false,
         .spaces_mode = false,
         .tabs_mode = false,
         .crlf_mode = false,
@@ -1554,6 +1562,8 @@ static options_t parse_options(int argc, char *argv[]) {
                 opts.hexlike_mode = true;
             } else if (long_option_equals(name, name_len, "container")) {
                 opts.container_mode = true;
+            } else if (long_option_equals(name, name_len, "about")) {
+                opts.about_mode = true;
             } else if (long_option_equals(name, name_len, "help")) {
                 opts.help_mode = true;
             } else {
@@ -1746,6 +1756,16 @@ int main(int argc, char *argv[]) {
 #endif /* !__EMSCRIPTEN__ */
     // Parse command line options first (needed for help/usage)
     options_t opts = parse_options(argc, argv);
+    if (opts.about_mode) {
+#if defined(__COSMOPOLITAN__)
+        pb_print_about("APE");
+#elif defined(__EMSCRIPTEN__)
+        pb_print_about("WASM");
+#else
+        pb_print_about("C");
+#endif
+        return 0;
+    }
     const char *program_display_name = resolve_program_name(argv[0]);
     bool stats_enabled = !env_var_truthy(getenv("PRINTABLE_BINARY_MUTE_STATS"));
 

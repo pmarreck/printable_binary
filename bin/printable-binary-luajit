@@ -627,6 +627,7 @@ if arg then
     io.stderr:write("  --mappings                 Show the current byte-to-character mapping table\n")
     io.stderr:write("  --mappings-json            Output mappings as JSON\n")
     io.stderr:write("  --mappings-csv             Output mappings as CSV\n")
+    io.stderr:write("      --about                Print version and execution platform\n")
     io.stderr:write("  -h, --help                 Show this help\n")
     io.stderr:write("\n")
     io.stderr:write("Short flags can be combined: -stn is equivalent to -s -t -n\n")
@@ -856,6 +857,15 @@ if arg then
 
     if current_arg == "--help" or current_arg == "-h" then
       print_usage()
+      os.exit(0)
+    elseif current_arg == "--about" then
+      local os_name = ({ Linux = "linux", OSX = "macos", Windows = "mswin" })[jit.os]
+      local arch = ({ x64 = "amd64", arm64 = "arm64" })[jit.arch]
+      if not os_name or not arch or (os_name == "macos" and arch ~= "arm64") then
+        io.stderr:write("Unsupported execution platform\n")
+        os.exit(1)
+      end
+      io.write("printable-binary 1.0.0 (LuaJIT) Encode bytes as printable UTF-8; PF=" .. os_name .. "-" .. arch .. "\n")
       os.exit(0)
     elseif current_arg == "--decode" then
       decode_mode = true

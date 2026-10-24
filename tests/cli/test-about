@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Exercise the real command with deliberately conflicting platform environment.
+set -u
+binary="${1:?Usage: test-about BINARY IMPLEMENTATION PF VARIANT [PORTABLE_TARGET]}"
+implementation="${2:?}" expected_pf="${3:?}" expected_variant="${4:?}" expected_target="${5:-}"
+case "$implementation" in
+	zig) label=Zig ;; c) label=C ;; ffi) label='C FFI' ;; rust) label=Rust ;;
+	roc) label=Roc ;; luajit) label=LuaJIT ;; node) label=Node ;; ape) label=APE ;; wasm) label=WASM ;;
+	*) printf 'Unknown implementation in about contract\n' >&2; exit 2 ;;
+esac
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$repo_root/tests/capture.bash"
+capture env PF=wrong-platform OS=WrongOS ARCH=WrongArch PLATFORM=wrong-platform VARIANT=wrong PRINTABLE_BINARY_EXECUTION_PF=wrong PRINTABLE_BINARY_MUTE_STATS=1 "$binary" --about < /dev/null
+if [[ "$rc" != 0 || -n "$err" || "$out" == *$'\n'* || ! "$out" =~ ^printable-binary[[:space:]][0-9]+\.[0-9]+\.[0-9]+[[:space:]] || "$out" != *"PF=$expected_pf"* || "$out" != *"($label)"* ]]; then
+	printf 'FAIL: %s --about must report one-line version, description, and actual PF without environment overrides (rc=%s, stdout=%q, stderr=%q)\n' "$implementation" "$rc" "$out" "$err" >&2
+	exit 1
+fi
+read -r -a tokens <<< "$out"
+pf_tokens=0 variant_tokens=0
+for token in "${tokens[@]}"; do
+	case "$token" in
+		PF=*) pf_tokens=$((pf_tokens + 1)); [[ "$token" == "PF=$expected_pf" ]] || exit 1 ;;
+		VARIANT=*) variant_tokens=$((variant_tokens + 1)); [[ "$token" == "VARIANT=$expected_variant" ]] || exit 1 ;;
+	esac
+done
+if [[ "$pf_tokens" != 1 || ( "$expected_variant" == - && "$variant_tokens" != 0 ) || ( "$expected_variant" != - && "$variant_tokens" != 1 ) || ( -n "$expected_target" && "$out" != *"target=$expected_target"* ) ]]; then
+	printf 'FAIL: %s --about has incorrect PF, optional VARIANT, or portable target\n' "$implementation" >&2
+	exit 1
+fi
+capture "$binary" --help < /dev/null
+if [[ "$rc" != 0 || "$out$err" != *'--about'* ]]; then
+	printf 'FAIL: %s help must document --about\n' "$implementation" >&2
+	exit 1
+fi
+printf 'PASS: %s --about reports %s with the declared variant/runtime contract\n' "$implementation" "$expected_pf"

@@ -1,0 +1,6 @@
+#!@bash@
+set -u
+source '@config@'
+execution_pf="$(pb_host_platform "$('@uname@' -s)" "$('@uname@' -m)")" || exit 1
+# This host-derived value replaces caller-provided platform metadata.
+exec '@wazero@' run --env-inherit --env="PRINTABLE_BINARY_EXECUTION_PF=$execution_pf" '@module@' -- "$@"

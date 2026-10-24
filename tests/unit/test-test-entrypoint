@@ -29,6 +29,22 @@ if [[ "$?" != 7 ]]; then
 	failures=$((failures + 1))
 fi
 if [[ "$failures" == 0 ]]; then
+	mkdir -p "$scratch/project with spaces/tests" || exit 1
+	cp "$repo_root/tests/test-all" "$scratch/project with spaces/tests/test-all" || exit 1
+	printf '' > "$TEST_COMMAND_LOG"
+	bash "$scratch/project with spaces/tests/test-all" --max-jobs 2 > "$scratch/stdout" 2> "$scratch/stderr"
+	status=$?
+	if [[ "$status" != 0 ]] || ! cmp -s "$TEST_COMMAND_LOG" <(printf '%s\0' flake check --keep-going --print-build-logs --max-jobs 2); then
+		printf 'FAIL: the legacy suite helper must delegate to the complete Nix entrypoint without stale discovery or skips\n' >&2
+		failures=$((failures + 1))
+	fi
+	TEST_COMMAND_STATUS=7 bash "$scratch/project with spaces/tests/test-all" > "$scratch/stdout" 2> "$scratch/stderr"
+	if [[ "$?" != 7 ]]; then
+		printf 'FAIL: the legacy suite helper must propagate failures\n' >&2
+		failures=$((failures + 1))
+	fi
+fi
+if [[ "$failures" == 0 ]]; then
 	printf 'PASS: complete test entrypoint and failure propagation\n'
 fi
 exit "$failures"

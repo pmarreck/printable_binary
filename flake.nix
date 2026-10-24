@@ -208,6 +208,8 @@
           patchPhase = ''
             patch -p1 < ${./roc/platform.patch}
             patch -p1 < ${./roc/platform-extension.patch}
+            patch -p1 < ${./roc/platform-identity.patch}
+            cp ${./src/zig/platform_identity.zig} src/platform_identity.zig
           '';
 
           buildPhase = ''
@@ -422,7 +424,7 @@
             echo "  # Then open http://localhost:8000 in your browser"
             echo ""
             echo "Cross-compilation example:"
-            echo "  x86_64-w64-mingw32-gcc -O3 -o printable-binary.exe src/printable_binary.c"
+            echo "  ./build --platform=mswin-amd64"
             echo ""
           '';
 
@@ -432,6 +434,7 @@
 
         packages = assert (import ./tests/nix/build-matrix-contract.nix { packages = allPackages; inherit platform canonical; });
           assert (import ./tests/nix/source-filter-contract.nix (import ./build-support/source-filter.nix "/project"));
+          assert (import ./tests/nix/source-identity-contract.nix);
           allPackages;
 
         checks = {
@@ -468,7 +471,7 @@
             nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump ];
             buildPhase = ''
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/test
+              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/cli/test-suite-output bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -491,7 +494,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               zig build -Doptimize=ReleaseFast
-              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/test
+              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/cli/test-suite-output bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -523,7 +526,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-node.js
-              IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./tests/test
+              IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./tests/cli/test-suite-output bash ./tests/test
               bash ./tests/test_node_cli_stats
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
@@ -538,7 +541,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-luajit
-              IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./tests/test
+              IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./tests/cli/test-suite-output bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -852,7 +855,7 @@
               # Host-native build tools must still produce a portable APE.
               test "$(head -c 2 printable-binary-ape.com)" = MZ
               chmod +x printable-binary-ape.com
-              IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./tests/test
+              IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./tests/cli/test-suite-output bash ./tests/test
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

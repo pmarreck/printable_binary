@@ -1,0 +1,58 @@
+--- a/platform/Environment.roc
++++ b/platform/Environment.roc
+@@ -1,6 +1,10 @@
+ import Host
+ 
+ Environment := [].{
++	build_identity! : {} => Try(Str, [EnvironmentErr(Str)])
++	build_identity! = |{}|
++		Host.environment_build_identity!({})
++
+ 	stats_muted! : {} => Try(Bool, [EnvironmentErr(Str)])
+ 	stats_muted! = |{}|
+ 		Host.environment_stats_muted!({})
+--- a/platform/Host.roc
++++ b/platform/Host.roc
+@@ -4,6 +4,7 @@
+ Host := [].{
+ 	clock_monotonic_nanoseconds! : {} => Try(U64, [ClockErr(Str)])
+ 	environment_stats_muted! : {} => Try(Bool, [EnvironmentErr(Str)])
++	environment_build_identity! : {} => Try(Str, [EnvironmentErr(Str)])
+ 	stderr_bytes! : List(U8) => Try({}, [StderrErr(Str)])
+ 	stderr_line! : Str => Try({}, [StderrErr(Str)])
+ 	file_read_bytes! : Str => Try(List(U8), [FileReadErr(Str)])
+--- a/platform/main.roc
++++ b/platform/main.roc
+@@ -11,6 +11,7 @@
+ 		"roc_stderr_line": Host.stderr_line!,
+ 		"roc_clock_monotonic_nanoseconds": Host.clock_monotonic_nanoseconds!,
+ 		"roc_environment_stats_muted": Host.environment_stats_muted!,
++		"roc_environment_build_identity": Host.environment_build_identity!,
+ 		"roc_file_read_bytes": Host.file_read_bytes!,
+ 		"roc_stdin_bytes": Host.stdin_bytes!,
+ 		"roc_stdin_line": Host.stdin_line!,
+--- a/src/host.zig
++++ b/src/host.zig
+@@ -179,6 +179,14 @@
+ 	return environmentStatsMutedOk(muted);
+ }
+ 
++fn hostedEnvironmentBuildIdentity() callconv(.c) abi.HostEnvironment_build_identityResult {
++	const identity = @import("platform_identity.zig");
++	var result = std.mem.zeroes(abi.HostEnvironment_build_identityResult);
++	result.payload = .{ .ok = abi.RocStr.fromSlice(identity.fields, g_roc_host.?) };
++	result.tag = .@"Ok";
++	return result;
++}
++
+ /// Hosted function: Host.stderr_line!
+ fn hostedStderrLine(str: abi.RocStr) callconv(.c) abi.HostStderr_lineResult {
+     const roc_host = g_roc_host.?;
+@@ -310,6 +318,7 @@
+         @export(&hostedStderrLine, .{ .name = "roc_stderr_line", .visibility = .hidden });
+ 		@export(&hostedClockMonotonicNanoseconds, .{ .name = "roc_clock_monotonic_nanoseconds", .visibility = .hidden });
+ 		@export(&hostedEnvironmentStatsMuted, .{ .name = "roc_environment_stats_muted", .visibility = .hidden });
++		@export(&hostedEnvironmentBuildIdentity, .{ .name = "roc_environment_build_identity", .visibility = .hidden });
+ 		@export(&hostedFileReadBytes, .{ .name = "roc_file_read_bytes", .visibility = .hidden });
+ 		@export(&hostedStdinBytes, .{ .name = "roc_stdin_bytes", .visibility = .hidden });
+         @export(&hostedStdinLine, .{ .name = "roc_stdin_line", .visibility = .hidden });

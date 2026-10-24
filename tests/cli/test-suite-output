@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Expected child diagnostics must be captured and asserted within each test.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run suite-output checks through ./test or run-isolated\n' >&2
+	exit 1
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+"$@" > "$scratch/stdout" 2> "$scratch/stderr"
+status=$?
+if [[ "$status" != 0 ]]; then
+	printf 'FAIL: shared suite exited %s\n' "$status" >&2
+	tail -n 20 "$scratch/stdout" >&2
+	cat "$scratch/stderr" >&2
+	exit 1
+fi
+if [[ -s "$scratch/stderr" ]]; then
+	printf 'FAIL: shared suite leaked unasserted stderr (%s bytes)\n' "$(wc -c < "$scratch/stderr")" >&2
+	exit 1
+fi
+printf 'PASS: shared CLI suite completed with clean stderr\n'

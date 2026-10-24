@@ -16,7 +16,10 @@ main! : List(Str) => Try({}, [Exit(I32)])
 main! = |args| {
 	match CliCore.parse(List.drop_first(args, 1)) {
 		Help => write_stdout!(help_text.to_utf8())
-		About => write_stdout!("printable-binary Roc on native platform".to_utf8())
+		About => match Environment.build_identity!({}) {
+			Ok(identity) => write_stdout!("printable-binary 1.0.0 (Roc) Encode bytes as printable UTF-8; ${identity}\n".to_utf8())
+			Err(_) => fail!("Error: unable to report the compilation target\n")
+		}
 		MappingTable => write_stdout!(CliOutput.mapping_table(Map.glyphs, Map.ascii_names))
 		MappingJson => write_stdout!(CliOutput.mapping_json(Map.glyphs, Map.ascii_names))
 		MappingCsv => write_stdout!(CliOutput.mapping_csv(Map.glyphs, Map.ascii_names))

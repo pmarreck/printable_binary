@@ -77,7 +77,7 @@ nix build .#build-rust-linux-amd64-ReleaseFast
 nix build .#build-zig-mswin-arm64-ReleaseSafe
 ```
 
-`default` follows `CANONICAL_IMPL` and always exposes `bin/printable-binary`. Implementation packages retain their distinct command names. Changing the selector does not enter each product's filtered source closure, so canonization alone does not rebuild unrelated implementations. Existing `printableBinaryZig`, `printableBinaryNative`, `printableBinaryRoc`, `printableBinaryApe`, and `printableBinaryWasm` attributes select host ReleaseFast products where declared.
+`default` follows `CANONICAL_IMPL` and always exposes `bin/printable-binary`. Implementation packages retain their distinct command names. The selector and specifically listed non-runtime workflow files do not enter compiler source closures. Canonization and plan updates therefore avoid unrelated recompilation; checks still see the complete test/documentation source. Source-hash regressions verify that metadata-only changes preserve the filtered source and code changes alter it. Existing `printableBinaryZig`, `printableBinaryNative`, `printableBinaryRoc`, `printableBinaryApe`, and `printableBinaryWasm` attributes select host ReleaseFast products where declared.
 
 ## Implementation details
 
@@ -97,6 +97,8 @@ APE means Actually Portable Executable. It shares C source with the standalone C
 
 Emscripten compiles the full C CLI to `wasm32-unknown-emscripten`; the resulting standalone module runs through wazero's WASI interface. The Nix product includes `printable-binary.wasm` and a pinned `printable-binary-wasm` launcher. The launcher inherits environment variables; a direct `wazero run` invocation must pass them explicitly with `--env` or `--env-inherit`.
 
+The packaged launcher leaves the host filesystem unmounted. Use stdin/stdout by default; direct file access requires an explicit WASI mount when invoking the runtime. Sharing the C option parser does not grant the module host filesystem access.
+
 ### Roc Implementation
 
 Roc supplies a pure codec, container codec, argument parser, and output renderer. Its bundled Zig platform handles raw-byte I/O, files, clocks, and environment access. Linux is the required execution environment; no successful macOS runtime verification is claimed. Compiler and platform changes must pass Roc module tests plus the common CLI, container, map synchronization, and differential checks.
@@ -112,6 +114,8 @@ LuaJIT remains explicitly named `printable-binary-luajit`. It is useful as a mod
 ## CLI behavior
 
 Full CLIs support files/stdin, formatting, preservation modes, mapping reports, passthrough, byte ranges, hexlike encoding, and `.pbf.json` containers. See `--help` and [the main usage reference](README.md#usage) for exact arguments. Data goes to stdout; diagnostics and input-throughput statistics go to stderr.
+
+`--about` prints one line with version, implementation, description, `PF=<OS>-<ARCH>`, and an optional `VARIANT=gnu` or `VARIANT=musl`. Native executables report their compilation target. Node and LuaJIT report their runtime platform. APE and the WASM launcher report execution PF plus `target=cosmopolitan` or `target=wasm32-unknown-emscripten`; OS/ARCH/PF environment overrides do not select those fields. A directly invoked WASM module knows its compiler target, but needs its host launcher to supply execution PF.
 
 ```text
 Input throughput: 4999.36 MB read in 49.939 s (100.11 MB/s)

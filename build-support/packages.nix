@@ -92,8 +92,13 @@ let
             make build-wasm PREFIX="$out" PROFILE=${profile}
           '';
           installPhase = ''
-            makeWrapper ${pkgs.wazero}/bin/wazero "$out/bin/printable-binary-wasm" \
-              --add-flags "run --env-inherit $out/bin/printable-binary.wasm --"
+            substitute ${./wasm-launcher.in} "$out/bin/printable-binary-wasm" \
+              --subst-var-by bash ${pkgs.bash}/bin/bash \
+              --subst-var-by config ${./config.bash} \
+              --subst-var-by uname ${pkgs.coreutils}/bin/uname \
+              --subst-var-by wazero ${pkgs.wazero}/bin/wazero \
+              --subst-var-by module "$out/bin/printable-binary.wasm"
+            chmod +x "$out/bin/printable-binary-wasm"
           '' + commonInstall;
         } else if impl == "luajit" then {
           nativeBuildInputs = [ pkgs.makeWrapper ];

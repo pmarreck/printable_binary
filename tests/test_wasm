@@ -1,76 +1,41 @@
 #!/usr/bin/env bash
-# Tests printable-binary.wasm using wazero
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WASM_BIN="$REPO_ROOT/bin/printable-binary.wasm"
-WAZERO_BIN="$(command -v wazero || true)"
-
-if [[ -z "$WAZERO_BIN" ]]; then
-  echo "SKIP: wazero is required for WASM tests" >&2
-  exit 0
+# Required WASM checks use an exact prepared launcher, never a stale PATH/module.
+set -u
+wasm_cli="${1:?Usage: test_wasm NIX_BUILT_WASM_LAUNCHER}"
+if [[ ! -f "$wasm_cli" || ! -x "$wasm_cli" ]]; then
+	printf 'FAIL: required WASM launcher is unavailable\n' >&2
+	exit 1
 fi
-
-if [[ ! -f "$WASM_BIN" ]]; then
-  echo "SKIP: Missing $WASM_BIN. Build the WASM artifact first." >&2
-  exit 0
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run WASM tests through ./test or run-isolated\n' >&2
+	exit 1
 fi
-
-TMP_DIR="$(mktemp -d)"
-cleanup() {
-  rm -rf "$TMP_DIR"
-}
-trap cleanup EXIT
-
-run_wasm() {
-  local env_args=()
-  if [[ -n "${PRINTABLE_BINARY_MAP:-}" ]]; then
-    env_args+=("--env=PRINTABLE_BINARY_MAP=${PRINTABLE_BINARY_MAP}")
-  fi
-  if [[ -n "${PRINTABLE_BINARY_MUTE_STATS:-}" ]]; then
-    env_args+=("--env=PRINTABLE_BINARY_MUTE_STATS=${PRINTABLE_BINARY_MUTE_STATS}")
-  fi
-  "$WAZERO_BIN" run "${env_args[@]}" "$WASM_BIN" -- "$@"
-}
-
-HELP_OUTPUT=$(run_wasm --help 2>&1 || true)
-if [[ "$HELP_OUTPUT" != *"Usage: printable-binary"* ]]; then
-  echo "Help output did not mention printable-binary" >&2
-  exit 1
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+failures=0
+capture "$wasm_cli" --help
+if [[ "$rc" != 0 || "$out$err" != *'Usage: printable-binary'* ]]; then
+	printf 'FAIL: WASM help contract\n' >&2
+	failures=$((failures + 1))
 fi
-
-printf 'Hello WASM!' > "$TMP_DIR/input.bin"
-ENCODED_OUTPUT=$(cat "$TMP_DIR/input.bin" | run_wasm 2>/dev/null)
-printf "%s" "$ENCODED_OUTPUT" > "$TMP_DIR/encoded.txt"
-printf "%s" "$ENCODED_OUTPUT" | run_wasm -d > "$TMP_DIR/decoded.bin" 2>/dev/null
-
-if ! cmp -s "$TMP_DIR/input.bin" "$TMP_DIR/decoded.bin"; then
-  echo "Roundtrip via WASM failed" >&2
-  exit 1
+printf 'Hello WASM!' > "$scratch/input"
+capture env PRINTABLE_BINARY_MUTE_STATS= "$wasm_cli" < "$scratch/input"
+if [[ "$rc" != 0 ]] || ! grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' <<< "$err"; then
+	printf 'FAIL: WASM encode and stderr input-throughput contract\n' >&2
+	failures=$((failures + 1))
 fi
-
-MUTED_STDERR="$TMP_DIR/muted_encode.log"
-MUTED_STDERR_DECODE="$TMP_DIR/muted_decode.log"
-MUTED_ENCODED="$TMP_DIR/muted_encoded.txt"
-MUTED_DECODED="$TMP_DIR/muted_decoded.bin"
-
-PRINTABLE_BINARY_MUTE_STATS=1 run_wasm > "$MUTED_ENCODED" 2> "$MUTED_STDERR" < "$TMP_DIR/input.bin"
-if [[ -s "$MUTED_STDERR" ]]; then
-  echo "PRINTABLE_BINARY_MUTE_STATS failed to suppress encode stats in WASM" >&2
-  cat "$MUTED_STDERR" >&2
-  exit 1
+printf '%s' "$out" > "$scratch/encoded"
+capture env PRINTABLE_BINARY_MUTE_STATS=1 "$wasm_cli" -d < "$scratch/encoded"
+if [[ "$rc" != 0 || -n "$err" || "$out" != 'Hello WASM!' ]]; then
+	printf 'FAIL: WASM exact decode and muted diagnostics\n' >&2
+	failures=$((failures + 1))
 fi
-
-PRINTABLE_BINARY_MUTE_STATS=1 run_wasm -d > "$MUTED_DECODED" 2> "$MUTED_STDERR_DECODE" < "$MUTED_ENCODED"
-if [[ -s "$MUTED_STDERR_DECODE" ]]; then
-  echo "PRINTABLE_BINARY_MUTE_STATS failed to suppress decode stats in WASM" >&2
-  cat "$MUTED_STDERR_DECODE" >&2
-  exit 1
+capture env PRINTABLE_BINARY_MUTE_STATS=1 "$wasm_cli" < "$scratch/input"
+if [[ "$rc" != 0 || -n "$err" ]] || ! cmp -s <(printf '%s' "$out") "$scratch/encoded"; then
+	printf 'FAIL: WASM exact encode and muted diagnostics\n' >&2
+	failures=$((failures + 1))
 fi
-
-if ! cmp -s "$TMP_DIR/input.bin" "$MUTED_DECODED"; then
-  echo "Roundtrip with muted stats failed for WASM" >&2
-  exit 1
-fi
-
-echo "WASM tests passed"
+if [[ "$failures" == 0 ]]; then printf 'PASS: required WASM help, round trip, and statistics\n'; fi
+exit "$failures"

@@ -57,3 +57,8 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 
 - [x] Retire the stale web mockup gate: the approved Encode/Decode tabs and container restoration shipped in 7b70844c, followed by Node CLI support in 9dda0bbd (done 2026-06-26 EDT).
 - [x] Retire the duplicate pending Zig, C FFI, standalone C, Lua, container differential, and documentation tasks: the June 27 checkpoint records all full implementations and shared container checks as delivered (done 2026-06-27 EDT).
+
+## Retired 2026-10-23
+
+- [x] [Recent completions] Add the full Roc CLI and shared unit, CLI, container, and differential tests (done 2026-10-11 23:09 EDT; commit 8942124).
+- [x] [Recent completions] Restore the public Roc input and correct Linux-only flake output declarations (done 2026-10-12 14:23 EDT; commit cdefa95).

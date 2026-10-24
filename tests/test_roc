@@ -70,7 +70,7 @@ if [[ -x "$roc_cli" ]]; then
 
 	run_contract \
 		"Roc passes the shared CLI contract" \
-		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/tests/test"
+		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/tests/cli/test-suite-output" bash "$repo_root/tests/test"
 	run_contract \
 		"Roc passes the shared container contract" \
 		env "IMPLEMENTATION_TO_TEST=$roc_cli" bash "$repo_root/tests/test_container"

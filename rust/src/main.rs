@@ -13,12 +13,50 @@ fn stats_enabled() -> bool {
 }
 
 fn main() {
-    let decode_mode = std::env::args().skip(1).any(|a| a == "-d" || a == "--decode");
+    let mut decode_mode = false;
+    for argument in std::env::args().skip(1) {
+        match argument.as_str() {
+            "-d" | "--decode" => decode_mode = true,
+            "-h" | "--help" => {
+                println!("Usage: printable-binary-rs [-d|--decode] [--about]\nEncode or decode stdin to stdout.");
+                return;
+            }
+            "--about" => {
+                let pf = match (std::env::consts::OS, std::env::consts::ARCH) {
+                    ("linux", "x86_64") => "linux-amd64",
+                    ("linux", "aarch64") => "linux-arm64",
+                    ("macos", "aarch64") => "macos-arm64",
+                    ("windows", "x86_64") => "mswin-amd64",
+                    ("windows", "aarch64") => "mswin-arm64",
+                    _ => panic!("unsupported compilation platform"),
+                };
+                let variant = if cfg!(target_env = "gnu") {
+                    " VARIANT=gnu"
+                } else if cfg!(target_env = "musl") {
+                    " VARIANT=musl"
+                } else {
+                    ""
+                };
+                println!(
+                    "printable-binary {} (Rust) Encode bytes as printable UTF-8; PF={pf}{variant}",
+                    env!("CARGO_PKG_VERSION")
+                );
+                return;
+            }
+            _ => {}
+        }
+    }
     let started_at = Instant::now();
     let mut input = Vec::new();
-    std::io::stdin().read_to_end(&mut input).expect("read stdin");
+    std::io::stdin()
+        .read_to_end(&mut input)
+        .expect("read stdin");
     let input_bytes_read = input.len();
-    let out = if decode_mode { decode(&input) } else { encode(&input) };
+    let out = if decode_mode {
+        decode(&input)
+    } else {
+        encode(&input)
+    };
     let mut stdout = std::io::stdout().lock();
     stdout.write_all(&out).expect("write stdout");
     stdout.flush().expect("flush stdout");

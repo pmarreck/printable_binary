@@ -109,6 +109,13 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(ffi_tests).step);
 
+    const identity_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/zig/platform_identity.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    test_step.dependOn(&b.addRunArtifact(identity_tests).step);
+
     // =========================================================================
     // Library-only step (for Makefile integration)
     // =========================================================================

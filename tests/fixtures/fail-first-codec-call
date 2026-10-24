@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Preserve genuine output, then inject one ambiguous unsuccessful invocation.
+set -u
+"${TEST_REAL_CODEC:?}" "$@"
+status=$?
+[[ "$status" == 0 ]] || exit "$status"
+if [[ ! -e "${TEST_FAILURE_MARKER:?}" ]]; then
+	printf 'failed after output\n' > "$TEST_FAILURE_MARKER"
+	exit 7
+fi
