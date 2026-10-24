@@ -1744,6 +1744,7 @@ static void run_leak_loop(long seconds) {
 #endif /* !__EMSCRIPTEN__ */
 
 int main(int argc, char *argv[]) {
+    pb_announce_debug_build();
 #ifndef __EMSCRIPTEN__
     // Leak-test mode (tests/leak_test): long-lived encode/decode loop, then exit.
     for (int ai = 1; ai < argc; ai++) {

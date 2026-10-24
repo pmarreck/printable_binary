@@ -6,12 +6,12 @@
 //! ## Usage as a library
 //! ```zig
 //! const pb = @import("printable_binary");
-//! 
+//!
 //! // Encode
 //! const encoded = try pb.encode(allocator, input_bytes, .{});
 //! defer allocator.free(encoded);
 //!
-//! // Decode  
+//! // Decode
 //! const decoded = try pb.decode(allocator, encoded_string, .{});
 //! defer allocator.free(decoded);
 //! ```
@@ -201,6 +201,7 @@ const decode_3byte: [decode_3byte_lead_count][64][64]u16 = blk: {
 
 fn decode3ByteLookup(bytes: []const u8) ?u8 {
     if (bytes.len < 3) return null;
+    if (bytes[1] & 0xc0 != 0x80 or bytes[2] & 0xc0 != 0x80) return null;
     const lead = decode_3byte_lead_index[bytes[0]] orelse return null;
     const value = decode_3byte[lead][bytes[1] & 0x3F][bytes[2] & 0x3F];
     return if (value == 0x100) null else @intCast(value);
@@ -378,7 +379,10 @@ pub fn utf8SeqLen(first_byte: u8) u3 {
 fn decodeLookup(bytes: []const u8) ?u8 {
     switch (bytes.len) {
         1 => return decode_1byte[bytes[0]],
-        2 => return decode_2byte[bytes[0] & 0x1F][bytes[1] & 0x3F],
+        2 => {
+            if (bytes[0] < 0xc2 or bytes[0] > 0xdf or bytes[1] & 0xc0 != 0x80) return null;
+            return decode_2byte[bytes[0] & 0x1F][bytes[1] & 0x3F];
+        },
         3 => return decode3ByteLookup(bytes),
         else => return null,
     }
@@ -1283,6 +1287,40 @@ test "decodeLookup: every character_map entry has a valid reverse lookup" {
         const result = decodeLookup(utf8);
         try std.testing.expect(result != null);
         try std.testing.expectEqual(@as(u8, @intCast(i)), result.?);
+    }
+}
+
+test "decodeLookup: all two-byte inputs require an exact canonical glyph" {
+    const allocator = std.testing.allocator;
+    const expected = try allocator.alloc(?u8, 65536);
+    defer allocator.free(expected);
+    @memset(expected, null);
+    for (character_map, 0..) |glyph, byte| {
+        if (glyph.len == 2) {
+            expected[(@as(usize, glyph[0]) << 8) | glyph[1]] = @as(u8, @intCast(byte));
+        }
+    }
+    for (expected, 0..) |value, pair| {
+        const bytes = [_]u8{ @intCast(pair >> 8), @truncate(pair) };
+        try std.testing.expectEqual(value, decodeLookup(&bytes));
+    }
+}
+
+test "decodeLookup: exhaust three-byte inputs against exact canonical glyphs" {
+    const allocator = std.testing.allocator;
+    const expected = try allocator.alloc(?u8, 256 * 256);
+    defer allocator.free(expected);
+    for (0..256) |lead| {
+        @memset(expected, null);
+        for (character_map, 0..) |glyph, byte| {
+            if (glyph.len == 3 and glyph[0] == lead) {
+                expected[(@as(usize, glyph[1]) << 8) | glyph[2]] = @as(u8, @intCast(byte));
+            }
+        }
+        for (expected, 0..) |value, pair| {
+            const bytes = [_]u8{ @intCast(lead), @intCast(pair >> 8), @truncate(pair) };
+            try std.testing.expectEqual(value, decodeLookup(&bytes));
+        }
     }
 }
 

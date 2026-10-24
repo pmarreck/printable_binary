@@ -515,6 +515,7 @@ static char *read_input(const char *filename, size_t *len_out) {
 }
 
 int main(int argc, char *argv[]) {
+    pb_announce_debug_build();
     options_t opts = parse_options(argc, argv);
     if (opts.about_mode) {
         pb_print_about("C FFI");

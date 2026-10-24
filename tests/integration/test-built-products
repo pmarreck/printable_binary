@@ -35,6 +35,22 @@ while IFS='|' read -r impl pf variant target builder package entry format; do
 		printf 'FAIL: installed %s about contract: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
 		failures=$((failures + 1))
 	fi
+	if ! bash "$repo_root/tests/cli/test-raw-literal-tags" "$product/bin/$entry" "$impl" > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: installed %s raw literal-tag contract: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
+		failures=$((failures + 1))
+	fi
+	case "$impl" in
+		zig|ffi|rust)
+			if ! bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$product/bin/$entry" > "$scratch/stdout" 2> "$scratch/stderr"; then
+				printf 'FAIL: installed %s malformed-byte contract: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
+				failures=$((failures + 1))
+			fi
+			;;
+	esac
+	if [[ "$impl" == zig ]] && ! bash "$repo_root/tests/cli/test-zig-stream-offsets" "$product/bin/$entry" ReleaseFast > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: Zig inherited stream offsets: %s\n' "$(<"$scratch/stderr")" >&2
+		failures=$((failures + 1))
+	fi
 	if ! pb_verify_product "$product" "$impl" "$pf" "$variant" "$target" ReleaseFast "$entry" "$format" nix > "$scratch/stdout" 2> "$scratch/stderr"; then
 		printf 'FAIL: real %s product header/metadata: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
 		failures=$((failures + 1))

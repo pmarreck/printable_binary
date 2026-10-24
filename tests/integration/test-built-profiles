@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Exercise each advertised host safety/debug profile using exact Nix products.
+set -u
+products="${1:?Usage: test-built-profiles PROFILE_PRODUCTS}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/build-support/publication.bash"
+source "$repo_root/build-support/driver.bash"
+host="$(pb_host_platform "$(uname -s)" "$(uname -m)")" || exit 1
+rows="$(pb_build_plan "$repo_root/build-support/implementations" zig "$host" all host)" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+failures=0
+for profile in ReleaseSafe Debug; do
+	while IFS='|' read -r impl pf variant target builder package entry format; do
+		product="$products/$profile/$impl"
+		if ! pb_verify_product "$product" "$impl" "$pf" "$variant" "$target" "$profile" "$entry" "$format" nix > "$scratch/stdout" 2> "$scratch/stderr"; then
+			printf 'FAIL: %s %s product verification: %s\n' "$impl" "$profile" "$(<"$scratch/stderr")" >&2
+			failures=$((failures + 1))
+			continue
+		fi
+		if ! bash "$repo_root/tests/cli/test-build-profile" "$product/bin/$entry" "$profile" "$impl" > "$scratch/stdout" 2> "$scratch/stderr"; then
+			printf 'FAIL: %s %s CLI contract: %s\n' "$impl" "$profile" "$(<"$scratch/stderr")" >&2
+			failures=$((failures + 1))
+		fi
+	done <<< "$rows"
+done
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: all installed host Debug and ReleaseSafe profiles match their mapping/banner contracts\n'

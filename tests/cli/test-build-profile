@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Check the installed profile's observable contract against the source mapping.
+set -u
+binary="${1:?Usage: test-build-profile BINARY PROFILE [IMPLEMENTATION]}"
+profile="${2:?}"
+implementation="${3:-zig}"
+case "$profile" in Debug|ReleaseSafe|ReleaseFast) ;; *) exit 2 ;; esac
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+for byte in $(seq 0 255); do printf "\\$(printf '%03o' "$byte")"; done > "$scratch/raw"
+LC_ALL=C awk 'NF && $0 !~ /^##/ { printf "%s", $1 }' "$repo_root/character_map.txt" > "$scratch/encoded"
+if [[ "$profile" == Debug ]]; then
+	printf '\033[33mDEBUG BUILD!\033[0m\n' > "$scratch/expected-stderr"
+else
+	: > "$scratch/expected-stderr"
+fi
+for operation in encode decode about passthrough help; do
+	[[ "$operation" != passthrough || "$implementation" != rust ]] || continue
+	case "$operation" in
+		encode) args=(); input="$scratch/raw"; expected="$scratch/encoded" ;;
+		decode) args=(-d); input="$scratch/encoded"; expected="$scratch/raw" ;;
+		about) args=(--about); input=/dev/null; expected='' ;;
+		passthrough) args=(--passthrough); input="$scratch/raw"; expected="$scratch/raw" ;;
+		help) args=(--help); input=/dev/null; expected='' ;;
+	esac
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" "${args[@]}" < "$input" > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: %s %s failed\n' "$profile" "$operation" >&2
+		exit 1
+	fi
+	if [[ "$operation" == passthrough ]]; then
+		cat "$scratch/expected-stderr" "$scratch/encoded" > "$scratch/expected-passthrough" || exit 1
+		if ! cmp -s "$scratch/stderr" "$scratch/expected-passthrough"; then
+			printf 'FAIL: %s passthrough must preserve both its profile banner and encoded stderr\n' "$profile" >&2; exit 1
+		fi
+	elif [[ "$operation" == help ]]; then
+		stderr="$(<"$scratch/stderr")"
+		banner=$'\033[33mDEBUG BUILD!\033[0m'
+		if [[ "$profile" == Debug ]]; then
+			[[ "$stderr" == "$banner"* ]] || { printf 'FAIL: Debug help must start with its profile banner\n' >&2; exit 1; }
+			stderr="${stderr#"$banner"}"
+		fi
+		if [[ "$stderr" == *'DEBUG BUILD!'* ]] || ! grep -q -- '--about' "$scratch/stdout" "$scratch/stderr"; then
+			printf 'FAIL: help must document --about and emit its profile banner exactly once\n' >&2
+			exit 1
+		fi
+	elif ! cmp -s "$scratch/stderr" "$scratch/expected-stderr"; then
+		printf 'FAIL: %s %s must emit exactly the profile banner, even with statistics muted (stderr=%q)\n' "$profile" "$operation" "$(<"$scratch/stderr")" >&2
+		exit 1
+	fi
+	if [[ -n "$expected" ]] && ! cmp -s "$scratch/stdout" "$expected"; then
+		printf 'FAIL: %s %s differs from the canonical mapping\n' "$profile" "$operation" >&2
+		exit 1
+	fi
+done
+if [[ "$implementation" == zig ]]; then
+	bash "$repo_root/tests/cli/test-zig-stream-offsets" "$binary" "$profile" || exit 1
+fi
+printf 'PASS: %s installed CLI banner and exhaustive mapping\n' "$profile"

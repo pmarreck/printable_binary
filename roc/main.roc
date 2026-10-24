@@ -12,8 +12,11 @@ import pf.Stderr
 import pf.Stdin
 import pf.Stdout
 
+debug_banner = ""
+
 main! : List(Str) => Try({}, [Exit(I32)])
 main! = |args| {
+	write_stderr!(debug_banner.to_utf8())?
 	match CliCore.parse(List.drop_first(args, 1)) {
 		Help => write_stdout!(help_text.to_utf8())
 		About => match Environment.build_identity!({}) {

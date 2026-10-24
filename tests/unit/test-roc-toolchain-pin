@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Verify the dependency identities, not merely a cached compiler's existence.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if ! jq -e '
+	.nodes as $nodes | $nodes[.root].inputs as $inputs |
+	($inputs["roc-overlay"] // null) as $overlay |
+	($inputs.rocSource // null) as $source |
+	($overlay | type) == "string" and ($source | type) == "string" and
+	$nodes[$overlay].locked.type == "github" and
+	$nodes[$overlay].locked.owner == "roc-lang" and
+	$nodes[$overlay].locked.repo == "roc-overlay" and
+	($nodes[$overlay].locked.rev | test("^[0-9a-f]{40}$")) and
+	$nodes[$source].locked.type == "github" and
+	$nodes[$source].locked.owner == "roc-lang" and
+	$nodes[$source].locked.repo == "roc" and
+	($nodes[$source].locked.rev | test("^[0-9a-f]{40}$")) and
+	$nodes[$source].flake == false
+' "$repo_root/flake.lock" >/dev/null 2>&1; then
+	printf 'FAIL: Roc must use an immutable official compiler overlay and official glue source, rather than the experimental compiler fork\n' >&2
+	exit 1
+fi
+printf 'PASS: official Roc compiler and glue sources are pinned\n'

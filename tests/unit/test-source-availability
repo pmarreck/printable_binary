@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# A cached Nix input must never replace an external availability probe.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+if [[ ! -f "$repo_root/build-support/source-availability.bash" ]]; then
+	printf 'FAIL: missing fresh source-availability checker\n' >&2
+	exit 1
+fi
+source "$repo_root/build-support/source-availability.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+printf '%s\n' '{"nodes":{"root":{"inputs":{"first":"a","alias":["first"],"second":"b"}},"a":{"locked":{"type":"github","owner":"example","repo":"first","rev":"1111111111111111111111111111111111111111"}},"b":{"locked":{"type":"github","owner":"example","repo":"second","rev":"2222222222222222222222222222222222222222"}}},"root":"root","version":7}' > "$scratch/flake.lock"
+expected=(
+	'https://github.com/example/first/archive/1111111111111111111111111111111111111111.tar.gz'
+	'https://github.com/example/second/archive/2222222222222222222222222222222222222222.tar.gz'
+)
+observed=() refused=''
+pb_probe_source_url() { observed+=("$1"); [[ "$1" != "$refused" ]]; }
+if ! pb_check_source_availability "$scratch/flake.lock" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	printf 'FAIL: available pinned sources must pass\n' >&2; exit 1
+fi
+[[ "${observed[*]}" == "${expected[*]}" ]] || { printf 'FAIL: probe the complete immutable source URL set\n' >&2; exit 1; }
+if ! pb_check_source_availability "$scratch/flake.lock" > "$scratch/stdout" 2> "$scratch/stderr"; then exit 1; fi
+[[ "${#observed[@]}" == 4 ]] || { printf 'FAIL: a repeated availability check must probe again\n' >&2; exit 1; }
+observed=() refused="${expected[0]}"
+if pb_check_source_availability "$scratch/flake.lock" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	printf 'FAIL: an unavailable required source must fail\n' >&2; exit 1
+fi
+[[ "${observed[*]}" == "${expected[*]}" ]] || { printf 'FAIL: a failed source must not hide later source checks\n' >&2; exit 1; }
+for malformed in '{' '{"version":6,"nodes":{}}' '{"version":7,"nodes":{}}' \
+	'{"version":7,"nodes":{"a":{"locked":{"type":"github","owner":"example","repo":"first","rev":"main"}}}}' \
+	'{"version":7,"nodes":{"a":{"locked":{"type":"github","owner":"bad/owner","repo":"first","rev":"1111111111111111111111111111111111111111"}}}}'; do
+	printf '%s\n' "$malformed" > "$scratch/malformed.lock"
+	observed=()
+	if pb_check_source_availability "$scratch/malformed.lock" > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: malformed, empty, and mutable source sets must fail\n' >&2; exit 1
+	fi
+	[[ "${#observed[@]}" == 0 ]] || { printf 'FAIL: invalid source metadata must not reach the network\n' >&2; exit 1; }
+done
+printf 'PASS: external source probes are complete, fresh, and fail closed\n'

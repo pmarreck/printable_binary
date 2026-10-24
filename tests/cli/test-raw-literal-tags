@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Raw PB keeps literal framing examples inside the existing 256-glyph alphabet.
+set -u
+binary="${1:?Usage: test-raw-literal-tags BINARY [IMPLEMENTATION]}"
+implementation="${2:-zig}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+args=()
+[[ "$implementation" == rust ]] || args=(--no-double-encode-check)
+for literal in '¶' '' 'ρΒ_' 'ρΒ1_' '/ρΒ' 'ρΒ01_' 'example ρΒ1_Hello¶/ρΒ and \¶'; do
+	printf '%s' "$literal" > "$scratch/raw"
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" "${args[@]}" < "$scratch/raw" > "$scratch/encoded" 2> "$scratch/stderr"; then
+		printf 'FAIL: raw encoder rejected literal UTF-8 framing bytes\n' >&2; exit 1
+	fi
+	if ! luajit "$repo_root/tests/fixtures/check-raw-alphabet.lua" "$repo_root/character_map.txt" < "$scratch/encoded" > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: raw output contains a character outside the canonical PB alphabet\n' >&2; exit 1
+	fi
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" -d < "$scratch/encoded" > "$scratch/decoded" 2> "$scratch/stderr" || ! cmp -s "$scratch/raw" "$scratch/decoded"; then
+		printf 'FAIL: one raw decode must recover literal UTF-8 without rescanning produced markers\n' >&2; exit 1
+	fi
+done
+printf 'PASS: raw PB preserves literal glyphs and framing examples without new escape characters\n'

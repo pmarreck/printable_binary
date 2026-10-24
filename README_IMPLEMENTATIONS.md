@@ -103,13 +103,17 @@ The packaged launcher leaves the host filesystem unmounted. Use stdin/stdout by 
 
 Roc supplies a pure codec, container codec, argument parser, and output renderer. Its bundled Zig platform handles raw-byte I/O, files, clocks, and environment access. Linux is the required execution environment; no successful macOS runtime verification is claimed. Compiler and platform changes must pass Roc module tests plus the common CLI, container, map synchronization, and differential checks.
 
+The compiler comes from the official Roc nightly overlay, with an immutable official source pin for glue generation. Nix asserts that the source commit matches the selected compiler. `./check-sources` separately probes the pinned GitHub archive URLs over the network, bypassing the local Nix source cache. It is an explicit online diagnostic; deterministic source-checker regressions remain part of `./test`. Archive reachability does not verify release assets or foreign runtime behavior.
+
 ### Rust Implementation
 
-The Rust crate provides `encode`, `decode`, `encode_into`, and `decode_into`, with caller-owned buffer reuse. Its raw stdin CLI supports encoding and `-d`/`--decode`; file arguments, formatting, mapping reports, runtime map overrides, and containers belong to the full CLIs. Its mapping is generated at compile time. Crate self-containment and spaces options are active work in [PLAN.md](PLAN.md).
+The self-contained Rust crate provides `encode`, `decode`, `encode_into`, and `decode_into`, with caller-owned buffer reuse. Their `_with_options` variants accept `EncodeOptions { spaces }` and `DecodeOptions { spaces, strip_whitespace }`; the original functions keep their raw defaults. Whitespace stripping ignores literal ASCII space, TAB, CR, and LF, except that spaces mode retains literal spaces. Encoded data glyphs still decode normally.
+
+Its stdin CLI supports `-d`/`--decode`, `-s`/`--spaces`, and `--strip-whitespace`. File arguments, formatting, mapping reports, runtime map overrides, and containers belong to the full CLIs. The build script generates tables from a crate-local mapping copy, never a repository-parent file. The complete suite compares that copy with the canonical map and builds/tests the extracted Cargo package offline.
 
 ### LuaJIT and JavaScript / Node
 
-LuaJIT remains explicitly named `printable-binary-luajit`. It is useful as a modifiable reference, but its whole-input allocation behavior differs from the streaming Zig path. The JavaScript module powers the browser UI and Node CLI. Their source-distributed scripts remain in generic `bin/`; Nix products pin the interpreters and required resources.
+LuaJIT remains explicitly named `printable-binary-luajit`. It is useful as a modifiable reference, but its string allocation limits differ from Zig's native buffers. The current Zig CLI still buffers the complete input and result; streaming standard-handle I/O does not imply bounded-memory conversion. The JavaScript module powers the browser UI and Node CLI. Their source-distributed scripts remain in generic `bin/`; Nix products pin the interpreters and required resources.
 
 ## CLI behavior
 

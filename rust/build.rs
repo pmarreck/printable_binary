@@ -1,13 +1,13 @@
 // Codegen the byte<->glyph map + O(1) decode tables from the single-source
-// character_map.txt (same parse rules as every other implementation), so the
-// Rust impl produces byte-identical output and stays in lockstep with the map.
+// crate-local character_map.txt. A repository test keeps this vendored copy
+// byte-identical to the canonical map; packaged builds need no parent files.
 use std::{env, fs, path::Path};
 
 fn main() {
     let manifest = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let map_path = Path::new(&manifest).join("..").join("character_map.txt");
+    let map_path = Path::new(&manifest).join("character_map.txt");
     println!("cargo:rerun-if-changed={}", map_path.display());
-    let text = fs::read_to_string(&map_path).expect("read ../character_map.txt");
+    let text = fs::read_to_string(&map_path).expect("read crate-local character_map.txt");
 
     // One glyph per line in byte order; `##` = full-line comment; first
     // whitespace-delimited token is the glyph; blank lines skipped.

@@ -75,18 +75,18 @@ fn readInput(io: std.Io, allocator: std.mem.Allocator, file_path: ?[]const u8) !
         }
     }
     var buf: [4096]u8 = undefined;
-    var r = std.Io.File.stdin().reader(io, &buf);
+    var r = std.Io.File.stdin().readerStreaming(io, &buf);
     return try r.interface.allocRemaining(allocator, .unlimited);
 }
 
 fn writeOutput(io: std.Io, data: []const u8, to_stderr: bool) !void {
     var buf: [4096]u8 = undefined;
     if (to_stderr) {
-        var w = std.Io.File.stderr().writer(io, &buf);
+        var w = std.Io.File.stderr().writerStreaming(io, &buf);
         try w.interface.writeAll(data);
         try w.interface.flush();
     } else {
-        var w = std.Io.File.stdout().writer(io, &buf);
+        var w = std.Io.File.stdout().writerStreaming(io, &buf);
         try w.interface.writeAll(data);
         try w.interface.flush();
     }
@@ -427,10 +427,7 @@ fn printUsage(io: std.Io) void {
         \\If no file is specified, input is read from stdin.
         \\
     ;
-    var buf: [4096]u8 = undefined;
-    var w = std.Io.File.stderr().writer(io, &buf);
-    w.interface.writeAll(help) catch {};
-    w.interface.flush() catch {};
+    std.Io.File.stderr().writeStreamingAll(io, help) catch {};
 }
 
 // ASCII names for control characters and special bytes
@@ -552,6 +549,9 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     g_environ_map = init.environ_map;
     g_io = io;
+    if (@import("builtin").mode == .Debug) {
+        rawWriteAll(std.Io.File.stderr(), "\x1b[33mDEBUG BUILD!\x1b[0m\n");
+    }
 
     // Materialize argv as []const []const u8 (toSlice gives [:0]const u8 entries)
     const args_z = try init.minimal.args.toSlice(init.arena.allocator());

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Check the alphabet classifier over the complete set and rejected UTF-8/bytes.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+LC_ALL=C awk 'NF && $0 !~ /^##/ { printf "%s", $1 }' "$repo_root/character_map.txt" > "$scratch/alphabet"
+if ! luajit "$repo_root/tests/fixtures/check-raw-alphabet.lua" "$repo_root/character_map.txt" < "$scratch/alphabet" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	printf 'FAIL: every canonical glyph must be accepted\n' >&2; exit 1
+fi
+for rejected in '' 'ρ' 'Β' '/' '\' ' ' $'\r\n' $'\x80' $'\xc0\x80' $'\xf5\x80\x80\x80' $'A\x80'; do
+	printf '%s' "$rejected" > "$scratch/rejected"
+	if luajit "$repo_root/tests/fixtures/check-raw-alphabet.lua" "$repo_root/character_map.txt" < "$scratch/rejected" > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: the classifier accepted an out-of-alphabet or malformed sequence (%q)\n' "$rejected" >&2; exit 1
+	fi
+done
+printf 'PASS: raw alphabet classifier accepts the full canonical set and rejects reserved/malformed sequences\n'

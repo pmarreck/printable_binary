@@ -148,7 +148,7 @@ printable-binary -d -S formatted_encoded.txt > original.bin
 echo -n "Hello, World!" | printable-binary --passthrough 2>encoded.txt | wc -c
 # Binary data goes to stdout, encoded text to stderr
 
-# Use the canonical streaming Zig implementation for large inputs
+# Use the canonical compiled Zig implementation for large inputs
 printable-binary large_file.bin > encoded_large.txt
 ```
 

@@ -15,6 +15,12 @@
 #error Unsupported PrintableBinary architecture
 #endif
 
+static void pb_announce_debug_build(void) {
+#if defined(DEBUG)
+	fputs("\033[33mDEBUG BUILD!\033[0m\n", stderr);
+#endif
+}
+
 static void pb_print_about(const char *implementation) {
 	printf("printable-binary 1.0.0 (%s) Encode bytes as printable UTF-8; ", implementation);
 #if defined(__EMSCRIPTEN__)

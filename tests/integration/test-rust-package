@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Build the distributable crate without access to its repository parent.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+export CARGO_HOME="$scratch/cargo-home"
+if ! cargo package --manifest-path "$repo_root/rust/Cargo.toml" --locked --offline \
+	--allow-dirty --no-verify --target-dir "$scratch/package" > "$scratch/package.log" 2>&1; then
+	printf 'FAIL: preparing the Rust crate archive\n' >&2
+	cat "$scratch/package.log" >&2
+	exit 1
+fi
+version="$(cargo metadata --manifest-path "$repo_root/rust/Cargo.toml" --offline --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "printable_binary") | .version')" || exit 1
+mkdir "$scratch/isolated" || exit 1
+tar -xf "$scratch/package/package/printable_binary-$version.crate" -C "$scratch/isolated" || exit 1
+if [[ ! -f "$scratch/isolated/printable_binary-$version/character_map.txt" ]]; then
+	printf 'FAIL: the Rust crate archive must contain its own canonical mapping data\n' >&2
+	exit 1
+fi
+if ! cargo test --manifest-path "$scratch/isolated/printable_binary-$version/Cargo.toml" \
+	--locked --offline --release --target-dir "$scratch/target" > "$scratch/build.log" 2>&1; then
+	printf 'FAIL: packaged Rust crate must build and test without repository-parent files\n' >&2
+	cat "$scratch/build.log" >&2
+	exit 1
+fi
+printf 'PASS: isolated packaged Rust crate builds and tests offline\n'

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Explicit online diagnostic; ordinary correctness tests remain offline.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
+command -v nix >/dev/null 2>&1 || { printf './check-sources requires Nix with flakes enabled.\n' >&2; exit 1; }
+exec nix shell --inputs-from "$repo_root" nixpkgs#bash nixpkgs#curl nixpkgs#jq --command bash -c \
+	'source "$1/build-support/source-availability.bash"; pb_check_source_availability "$1/flake.lock"' bash "$repo_root"

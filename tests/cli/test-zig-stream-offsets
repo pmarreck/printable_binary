@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Standard streams consume/append at inherited offsets, including regular files.
+set -u
+binary="${1:?Usage: test-zig-stream-offsets PREPARED_ZIG_CLI [PROFILE]}"
+profile="${2:-ReleaseFast}"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+printf 'ignore:VALUE' > "$scratch/input"
+printf 'VALUE' > "$scratch/expected"
+if [[ "$profile" == Debug ]]; then
+	printf '\033[33mDEBUG BUILD!\033[0m\n' > "$scratch/expected-stderr"
+else
+	: > "$scratch/expected-stderr"
+fi
+exec {input_fd}< "$scratch/input" || exit 1
+if ! dd bs=1 count=7 <&"$input_fd" > "$scratch/prefix" 2> "$scratch/dd-stderr"; then exit 1; fi
+if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" <&"$input_fd" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/expected" || ! cmp -s "$scratch/stderr" "$scratch/expected-stderr"; then
+	printf 'FAIL: Zig stdin must begin at its inherited stream offset\n' >&2; exit 1
+fi
+exec {input_fd}<&-
+exec {output_fd}> "$scratch/output" || exit 1
+printf 'prefix:' >&"$output_fd"
+if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" < "$scratch/expected" >&"$output_fd" 2> "$scratch/stderr"; then exit 1; fi
+exec {output_fd}>&-
+printf 'prefix:VALUE' > "$scratch/expected-output"
+if ! cmp -s "$scratch/output" "$scratch/expected-output" || ! cmp -s "$scratch/stderr" "$scratch/expected-stderr"; then
+	printf 'FAIL: Zig stdout must preserve bytes preceding its inherited stream offset\n' >&2; exit 1
+fi
+printf 'PASS: Zig standard streams preserve inherited offsets\n'

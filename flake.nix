@@ -12,11 +12,14 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    rocSource = {
-      # The published native compiler package snapshot. `flake.lock` records
-      # its immutable revision and content hash.
-      url = "github:pmarreck/roc_luajit/cfd57c1f319df2782e4188618dba9d4a6c0fbd22";
+    roc-overlay = {
+      url = "github:roc-lang/roc-overlay/d0ad2328b1d81e2f6dcfcdf1fc800d9e74838a4d";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-darwin.follows = "nixpkgs";
+    };
+    rocSource = {
+      url = "github:roc-lang/roc/130536d915d4355d6152c7e20529a09a5a0cbe32";
+      flake = false;
     };
     rocPlatformTemplate = {
       url = "github:lukewilliamboswell/roc-platform-template-zig/4915dc3812b8525bbb8ff17ce0fe3c61ca9e2966";
@@ -24,7 +27,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay, rocSource, rocPlatformTemplate }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay, roc-overlay, rocSource, rocPlatformTemplate }:
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = import nixpkgs {
@@ -33,7 +36,8 @@
         };
         zig = zig-overlay.packages.${system}."0.16.0";
         rustToolchain = pkgs.rust-bin.stable."1.97.1".default;
-        rocCompiler = rocSource.packages.${system}.roc;
+        rocNightly = roc-overlay.packages.${system}."nightly-2026-10-04-130536d";
+        rocCompiler = assert rocSource.rev == rocNightly.compilerCommit; rocNightly;
         rocLinkerInputs = pkgs.fetchurl {
           url = "https://github.com/lukewilliamboswell/roc-platform-template-zig/releases/download/link-inputs-sha256-2df3df339dfb1ad4ae1fad0f382cc100c5b31b3921cdeff939f6aea51457886d/link-inputs-all.tar";
           hash = "sha256-5U5u0Q/UM/VcmrnRuP80Zzm1ydIfJMgzzQvkeFOTrvQ=";
@@ -243,7 +247,7 @@
 			export XDG_CACHE_HOME="$HOME/.cache"
 			mkdir -p "$XDG_CACHE_HOME"
             cp -R ${printableBinaryRocPlatform}/platform roc/platform
-            roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
+            roc build --jobs="$NIX_BUILD_CORES" --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
           '';
 
           installPhase = ''
@@ -482,7 +486,7 @@
             nativeBuildInputs = [ zig ];
             buildPhase = ''
               export HOME=$TMPDIR
-              zig build test
+              zig build test -Doptimize=ReleaseSafe
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -651,13 +655,17 @@
           test-rust = pkgs.stdenv.mkDerivation {
             name = "test-rust";
             src = ./.;
-            nativeBuildInputs = [ rustToolchain zig ];
+            nativeBuildInputs = [ rustToolchain zig pkgs.jq ];
             buildPhase = ''
               export HOME=$TMPDIR
               export CARGO_HOME=$TMPDIR/cargo
+              bash tests/unit/test-rust-map-sync
+              bash tests/integration/test-rust-package
               cargo test --release --offline --manifest-path rust/Cargo.toml
               cargo build --release --offline --manifest-path rust/Cargo.toml
+              bash tests/cli/test-rust-malformed-utf8 ./rust/target/release/printable-binary-rs
               zig build
+              bash tests/cli/test-rust-spaces ./rust/target/release/printable-binary-rs ./zig-out/bin/printable-binary
               for i in $(seq 0 255); do printf "\\$(printf '%03o' "$i")"; done > allbytes
               ./rust/target/release/printable-binary-rs < allbytes > r.out 2> r.err
               grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' r.err || {
@@ -781,20 +789,22 @@
             name = "test-roc";
             src = ./.;
             strictDeps = true;
-            nativeBuildInputs = with pkgs; [ hexdump luajit python3 xxd zig rocCompiler ];
+            nativeBuildInputs = with pkgs; [ hexdump jq luajit python3 xxd zig rocCompiler ];
             buildPhase = ''
               export HOME="$TMPDIR/home"
               export XDG_CACHE_HOME="$HOME/.cache"
               mkdir -p "$XDG_CACHE_HOME"
+              bash tests/unit/test-roc-toolchain-pin
+              test "$(roc version)" = "Roc compiler version ${rocCompiler.compilerVersion}"
               cp -R ${printableBinaryRocPlatform}/platform roc/platform
-              roc test roc/TestCodec.roc
-              roc test roc/TestMap.roc
-              roc test roc/TestCrc.roc
-              roc test roc/TestContainer.roc
-              roc test roc/TestCliCore.roc
-              roc test roc/TestCliOutput.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestCodec.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestMap.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestCrc.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestContainer.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestCliCore.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestCliOutput.roc
               bash tests/test_roc_map_sync
-              roc build --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
+              roc build --jobs="$NIX_BUILD_CORES" --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
               zig build -Doptimize=ReleaseFast
               bash tests/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
               for muted in 1 true yes; do
@@ -808,7 +818,7 @@
           test-build-all = pkgs.stdenvNoCC.mkDerivation {
             name = "test-build-all";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git ];
+            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit ];
             buildPhase = ''
               patchShebangs tests/fixtures
               bash ./tests/test_build_all
@@ -820,6 +830,10 @@
                 name = row.implementation;
                 path = canonicalPackage buildProducts."${row.package}-ReleaseFast" row;
               }) (builtins.filter (row: row.platform == platform) matrixRows))}
+              bash ./tests/integration/test-built-profiles ${pkgs.linkFarm "printable-binary-host-profiles" (pkgs.lib.concatMap (profile: map (row: {
+                name = "${profile}/${row.implementation}";
+                path = buildProducts."${row.package}-${profile}";
+              }) (builtins.filter (row: row.platform == platform) matrixRows)) [ "ReleaseSafe" "Debug" ])}
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

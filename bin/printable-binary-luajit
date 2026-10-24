@@ -585,6 +585,8 @@ end
 
 -- If running as a script rather than being required as a module
 if arg then
+  local debug_build = false
+  if debug_build then io.stderr:write("\27[33mDEBUG BUILD!\27[0m\n") end
   local function print_usage()
     local progname = arg[0] or "printable-binary"
 

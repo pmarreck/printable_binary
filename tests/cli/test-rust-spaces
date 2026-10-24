@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Compare the requested Rust options to Zig using independently built CLIs.
+set -u
+rust="${1:?Usage: test-rust-spaces RUST_CLI ZIG_CLI}"
+zig="${2:?}"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+for byte in $(seq 0 255); do printf "\\$(printf '%03o' "$byte")"; done > "$scratch/raw"
+failures=0
+for spaces in false true; do
+	args=(--no-double-encode-check)
+	[[ "$spaces" == false ]] || args+=(--spaces)
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$zig" "${args[@]}" < "$scratch/raw" > "$scratch/expected" 2> "$scratch/stderr"; then exit 1; fi
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$rust" "${args[@]}" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/expected" "$scratch/actual"; then
+		printf 'FAIL: Rust spaces=%s encoder must match Zig over all 256 bytes\n' "$spaces" >&2
+		failures=$((failures + 1))
+	fi
+	for strip in false true; do
+		decode_args=(-d)
+		[[ "$spaces" == false ]] || decode_args+=(--spaces)
+		[[ "$strip" == false ]] || decode_args+=(--strip-whitespace)
+		printf '\t\r\n ' > "$scratch/formatted"
+		cat "$scratch/expected" >> "$scratch/formatted"
+		if ! PRINTABLE_BINARY_MUTE_STATS=1 "$zig" "${decode_args[@]}" < "$scratch/formatted" > "$scratch/expected-decoded" 2> "$scratch/stderr"; then exit 1; fi
+		if ! PRINTABLE_BINARY_MUTE_STATS=1 "$rust" "${decode_args[@]}" < "$scratch/formatted" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/expected-decoded" "$scratch/actual"; then
+			printf 'FAIL: Rust spaces=%s strip=%s decoder must match Zig\n' "$spaces" "$strip" >&2
+			failures=$((failures + 1))
+		fi
+	done
+done
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: Rust spaces and whitespace options match Zig in both directions\n'

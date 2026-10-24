@@ -72,8 +72,11 @@ let
           buildPhase = ''
             export HOME="$TMPDIR/home" XDG_CACHE_HOME="$TMPDIR/cache"
             mkdir -p "$HOME" "$XDG_CACHE_HOME"
+            ${lib.optionalString (profile == "Debug") ''
+              substituteInPlace roc/main.roc --replace-fail 'debug_banner = ""' 'debug_banner = "\u(1b)[33mDEBUG BUILD!\u(1b)[0m\n"'
+            ''}
             cp -R ${rocPlatform}/platform roc/platform
-            roc build --no-cache --target=${row.target} \
+            roc build --jobs="$NIX_BUILD_CORES" --no-cache --target=${row.target} \
               --opt=${if profile == "Debug" then "dev" else "speed"} \
               ${lib.optionalString (profile == "Debug") "--debug"} roc/main.roc --output=printable-binary-roc
           '';
@@ -105,6 +108,9 @@ let
           dontBuild = true;
           installPhase = ''
             mkdir -p "$out/bin" "$out/libexec"
+            ${lib.optionalString (profile == "Debug") ''
+              substituteInPlace bin/printable-binary-luajit --replace-fail 'local debug_build = false' 'local debug_build = true'
+            ''}
             cp bin/printable-binary-luajit character_map.txt "$out/libexec/"
             makeWrapper ${pkgs.luajit}/bin/luajit "$out/bin/printable-binary-luajit" \
               --add-flags "$out/libexec/printable-binary-luajit"
@@ -115,6 +121,9 @@ let
           installPhase = ''
             destination="$out/libexec/printable-binary"
             mkdir -p "$destination/bin" "$out/bin"
+            ${lib.optionalString (profile == "Debug") ''
+              substituteInPlace bin/printable-binary-node.js --replace-fail 'const debugBuild = false;' 'const debugBuild = true;'
+            ''}
             cp -R js "$destination/"
             cp package.json character_map.txt "$destination/"
             cp bin/printable-binary-node.js "$destination/bin/"

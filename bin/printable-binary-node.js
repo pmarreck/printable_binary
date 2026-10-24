@@ -348,6 +348,8 @@ function reportInputThroughput(inputBytesRead, startedAt) {
 }
 
 async function main() {
+  const debugBuild = false;
+  if (debugBuild) process.stderr.write('\x1b[33mDEBUG BUILD!\x1b[0m\n');
   const { decodeMode, formatSpec, filePath, mappingsFormat, passthrough, spacesMode, stripWhitespace, tabsMode, crlfMode, preserveChars, rangeStart, rangeEnd, noDoubleEncodeCheck, hexlikeMode, containerMode } = parseArgs(process.argv.slice(2));
   const pb = new PrintableBinary();
 

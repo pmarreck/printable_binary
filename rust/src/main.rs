@@ -1,7 +1,7 @@
 // Minimal CLI for cross-impl verification + the transport smoke path.
 // (Provisional surface — the full CLI is a "specifics" decision still pending.)
 // Default: encode stdin->stdout. `-d`/`--decode`: decode stdin->stdout.
-use printable_binary::{decode, encode};
+use printable_binary::{decode_with_options, encode_with_options, DecodeOptions, EncodeOptions};
 use std::io::{Read, Write};
 use std::time::Instant;
 
@@ -13,12 +13,19 @@ fn stats_enabled() -> bool {
 }
 
 fn main() {
+    if cfg!(debug_assertions) {
+        eprintln!("\x1b[33mDEBUG BUILD!\x1b[0m");
+    }
     let mut decode_mode = false;
+    let mut spaces = false;
+    let mut strip_whitespace = false;
     for argument in std::env::args().skip(1) {
         match argument.as_str() {
             "-d" | "--decode" => decode_mode = true,
+            "-s" | "--spaces" => spaces = true,
+            "--strip-whitespace" => strip_whitespace = true,
             "-h" | "--help" => {
-                println!("Usage: printable-binary-rs [-d|--decode] [--about]\nEncode or decode stdin to stdout.");
+                println!("Usage: printable-binary-rs [-d|--decode] [-s|--spaces] [--strip-whitespace] [--about]\nEncode or decode stdin to stdout.");
                 return;
             }
             "--about" => {
@@ -53,9 +60,15 @@ fn main() {
         .expect("read stdin");
     let input_bytes_read = input.len();
     let out = if decode_mode {
-        decode(&input)
+        decode_with_options(
+            &input,
+            DecodeOptions {
+                spaces,
+                strip_whitespace,
+            },
+        )
     } else {
-        encode(&input)
+        encode_with_options(&input, EncodeOptions { spaces })
     };
     let mut stdout = std::io::stdout().lock();
     stdout.write_all(&out).expect("write stdout");

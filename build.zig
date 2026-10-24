@@ -37,6 +37,8 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
         .root_module = static_lib_mod,
     });
+    // C linkers do not supply Zig's stack-probe and arithmetic runtime symbols.
+    static_lib.bundle_compiler_rt = true;
 
     // Install the static library
     b.installArtifact(static_lib);

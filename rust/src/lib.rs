@@ -5,6 +5,22 @@
 //! `*_into` variants reuse a caller-owned buffer for zero per-message allocation.
 include!(concat!(env!("OUT_DIR"), "/map.rs"));
 
+/// Encoding choices; defaults retain the canonical raw mapping.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EncodeOptions {
+    /// Preserve source ASCII spaces literally instead of using the space glyph.
+    pub spaces: bool,
+}
+
+/// Decoding choices; defaults preserve unrecognized bytes and literal whitespace.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DecodeOptions {
+    /// Preserve literal ASCII spaces even when transport whitespace is stripped.
+    pub spaces: bool,
+    /// Ignore literal ASCII space, TAB, CR, and LF; encoded data is still decoded.
+    pub strip_whitespace: bool,
+}
+
 /// Worst-case encoded length: every byte maps to at most a 3-byte glyph.
 #[inline]
 pub fn encode_bound(len: usize) -> usize {
@@ -13,17 +29,31 @@ pub fn encode_bound(len: usize) -> usize {
 
 /// Encode raw bytes to printable-binary UTF-8 (allocating).
 pub fn encode(input: &[u8]) -> Vec<u8> {
+    encode_with_options(input, EncodeOptions::default())
+}
+
+/// Encode with explicit preservation options, returning an owned buffer.
+pub fn encode_with_options(input: &[u8], options: EncodeOptions) -> Vec<u8> {
     let mut out = Vec::with_capacity(encode_bound(input.len()));
-    encode_into(input, &mut out);
+    encode_into_with_options(input, &mut out, options);
     out
 }
 
 /// Encode into a caller-owned buffer (cleared, then filled). Reuses the buffer's
 /// allocation across calls — zero allocations per message after warm-up.
 pub fn encode_into(input: &[u8], out: &mut Vec<u8>) {
+    encode_into_with_options(input, out, EncodeOptions::default());
+}
+
+/// Encode with explicit options into a cleared, reusable caller-owned buffer.
+pub fn encode_into_with_options(input: &[u8], out: &mut Vec<u8>, options: EncodeOptions) {
     out.clear();
     out.reserve(encode_bound(input.len()));
     for &b in input {
+        if options.spaces && b == b' ' {
+            out.push(b);
+            continue;
+        }
         let (off, len) = ENCODE[b as usize];
         let (off, len) = (off as usize, len as usize);
         out.extend_from_slice(&MAP_DATA[off..off + len]);
@@ -32,27 +62,49 @@ pub fn encode_into(input: &[u8], out: &mut Vec<u8>) {
 
 #[inline]
 fn utf8_len(b: u8) -> usize {
-    if b < 0x80 { 1 } else if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 }
+    if b < 0x80 {
+        1
+    } else if b < 0xE0 {
+        2
+    } else if b < 0xF0 {
+        3
+    } else {
+        4
+    }
 }
 
 /// Decode printable-binary UTF-8 back to raw bytes (allocating). Unrecognized
 /// sequences pass through unchanged, matching the other implementations.
 pub fn decode(input: &[u8]) -> Vec<u8> {
+    decode_with_options(input, DecodeOptions::default())
+}
+
+/// Decode with explicit whitespace options, returning an owned buffer.
+pub fn decode_with_options(input: &[u8], options: DecodeOptions) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
-    decode_into(input, &mut out);
+    decode_into_with_options(input, &mut out, options);
     out
 }
 
 /// Decode into a caller-owned buffer (cleared, then filled).
 pub fn decode_into(input: &[u8], out: &mut Vec<u8>) {
+    decode_into_with_options(input, out, DecodeOptions::default());
+}
+
+/// Decode with explicit options into a cleared, reusable caller-owned buffer.
+pub fn decode_into_with_options(input: &[u8], out: &mut Vec<u8>, options: DecodeOptions) {
     out.clear();
     let mut i = 0;
     while i < input.len() {
         let b0 = input[i];
-        let mut len = utf8_len(b0);
-        if i + len > input.len() {
-            len = input.len() - i;
+        if options.strip_whitespace
+            && matches!(b0, b' ' | b'\t' | b'\r' | b'\n')
+            && !(options.spaces && b0 == b' ')
+        {
+            i += 1;
+            continue;
         }
+        let len = utf8_len(b0);
         let mut matched = false;
         match len {
             1 => {
@@ -63,7 +115,10 @@ pub fn decode_into(input: &[u8], out: &mut Vec<u8>) {
                     matched = true;
                 }
             }
-            2 => {
+            2 if (0xc2..=0xdf).contains(&b0)
+                && input.len() - i >= 2
+                && input[i + 1] & 0xc0 == 0x80 =>
+            {
                 let v = DECODE_2[(b0 & 0x1F) as usize][(input[i + 1] & 0x3F) as usize];
                 if v >= 0 {
                     out.push(v as u8);
@@ -71,8 +126,9 @@ pub fn decode_into(input: &[u8], out: &mut Vec<u8>) {
                     matched = true;
                 }
             }
-            3 => {
-                let key = ((input[i] as u32) << 16) | ((input[i + 1] as u32) << 8) | input[i + 2] as u32;
+            3 if input.len() - i >= 3 => {
+                let key =
+                    ((input[i] as u32) << 16) | ((input[i + 1] as u32) << 8) | input[i + 2] as u32;
                 if let Ok(idx) = DECODE_3.binary_search_by_key(&key, |&(k, _)| k) {
                     out.push(DECODE_3[idx].1);
                     i += 3;
@@ -82,8 +138,8 @@ pub fn decode_into(input: &[u8], out: &mut Vec<u8>) {
             _ => {}
         }
         if !matched {
-            out.extend_from_slice(&input[i..i + len]);
-            i += len;
+            out.push(b0);
+            i += 1;
         }
     }
 }
