@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Check Git's real ignore classifier over generated and source path sets.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run ignore tests through ./test or run-isolated\n' >&2
+	exit 1
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+cp "$repo_root/.gitignore" "$scratch/" || exit 1
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+git -C "$scratch" init -q --initial-branch=yolo --template='' || exit 1
+generated=(.nix-out/linux-amd64/ReleaseFast/product .build-work/publication.lock)
+for impl in zig c ffi rust roc luajit node ape wasm; do generated+=("$impl-out/linux-amd64/ReleaseFast/bin/program"); done
+for pf in linux-amd64 linux-arm64 macos-arm64 mswin-amd64 mswin-arm64; do generated+=("bin/$pf/printable-binary"); done
+sources=(CANONICAL_IMPL build build-all run build-support/new-module.bash bin/new-portable-command bin/printable-binary-luajit bin/printable-binary-node.js bin/utf8to16 bin/utf16to8 src/new-code.zig source/rust-out/new-source)
+printf '%s\n' "${generated[@]}" "${sources[@]}" | git -C "$scratch" check-ignore --no-index --stdin > "$scratch/actual"
+status=$?
+if [[ "$status" != 0 ]] || ! cmp -s <(LC_ALL=C sort "$scratch/actual") <(printf '%s\n' "${generated[@]}" | LC_ALL=C sort); then
+	printf 'FAIL: ignore only generated output roots and PF entrypoints, preserving current and future portable sources\n' >&2
+	exit 1
+fi
+printf 'PASS: generated output and portable-source ignore sets\n'

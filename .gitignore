@@ -21,8 +21,28 @@ bin/printable-binary.wasm
 **/*.elf
 **/*.dbg
 a.out
-zig-out
-bin/*
+/zig-out/
+/c-out/
+/ffi-out/
+/rust-out/
+/roc-out/
+/luajit-out/
+/node-out/
+/ape-out/
+/wasm-out/
+/.nix-out/
+/.build-work/
+/bin/linux-amd64/
+/bin/linux-arm64/
+/bin/macos-arm64/
+/bin/mswin-amd64/
+/bin/mswin-arm64/
+# Legacy generated products retained until coordinated PATH cutover.
+/bin/printable-binary
+/bin/printable-binary-zig
+/bin/printable-binary-ffi
+/bin/printable-binary-ape.com
+/bin/printable_binary.wasm
 .zig-cache
 ZIG_RECENT_API_CHANGES*.md
 
@@ -35,8 +55,6 @@ bm/results
 
 # anything else
 ZIG_0.15_TO_0.16_MIGRATION.md
-!bin/utf8to16
-!bin/utf16to8
 AGENTS*.md
 CLAUDE*.md
 # Local convenience symlink to ~/dotfiles (external target — must not be committed

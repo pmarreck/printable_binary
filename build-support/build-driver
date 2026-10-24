@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -u
+repo_root="${1:?Usage: build-driver PROJECT_ROOT [BUILD_FLAGS...]}"
+shift
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/build-support/publication.bash"
+source "$repo_root/build-support/driver.bash"
+host="$(pb_host_platform "$(uname -s)" "$(uname -m)")" || exit 1
+pb_build_main "$repo_root" "$host" "$@"

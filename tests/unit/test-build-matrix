@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Scope selection is a set operation over the declared support matrix.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ ! -f "$repo_root/build-support/matrix.bash" ]]; then
+	printf 'FAIL: build matrix planner is missing\n' >&2
+	exit 1
+fi
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/tests/capture.bash"
+matrix="$repo_root/build-support/implementations"
+failures=0
+
+assert_plan() {
+	local expected="$1"
+	shift
+	capture pb_build_plan "$matrix" "$@"
+	if [[ "$rc" != 0 || -n "$err" ]] || ! cmp -s <(printf '%s\n' "$out" | cut -d '|' -f 1,2 | LC_ALL=C sort) <(printf '%s\n' "$expected" | LC_ALL=C sort); then
+		printf 'FAIL: build plan for %s (rc=%s, stderr=%q, plan=%q)\n' "$*" "$rc" "$err" "$out" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+assert_plan 'zig|linux-amd64' zig linux-amd64 canonical host
+assert_plan $'zig|linux-amd64\nzig|linux-arm64\nzig|macos-arm64\nzig|mswin-amd64\nzig|mswin-arm64' zig linux-amd64 canonical all
+assert_plan $'ape|linux-amd64\nc|linux-amd64\nffi|linux-amd64\nluajit|linux-amd64\nnode|linux-amd64\nroc|linux-amd64\nrust|linux-amd64\nwasm|linux-amd64\nzig|linux-amd64' zig linux-amd64 all host
+assert_plan $'ape|macos-arm64\nc|macos-arm64\nffi|macos-arm64\nluajit|macos-arm64\nnode|macos-arm64\nrust|macos-arm64\nwasm|macos-arm64\nzig|macos-arm64' zig macos-arm64 all host
+assert_plan $'ape|mswin-arm64\nzig|mswin-arm64' zig mswin-arm64 all host
+assert_plan 'ape|linux-amd64' ape linux-amd64 canonical host
+assert_plan 'c|linux-amd64' c linux-amd64 canonical host
+
+expected_all=''
+while IFS= read -r pair; do
+	expected_all+="${expected_all:+$'\n'}$pair"
+done <<'EOF'
+zig|linux-amd64
+zig|linux-arm64
+zig|macos-arm64
+zig|mswin-amd64
+zig|mswin-arm64
+c|linux-amd64
+c|linux-arm64
+c|macos-arm64
+ffi|linux-amd64
+ffi|linux-arm64
+ffi|macos-arm64
+rust|linux-amd64
+rust|linux-arm64
+rust|macos-arm64
+roc|linux-amd64
+roc|linux-arm64
+luajit|linux-amd64
+luajit|linux-arm64
+luajit|macos-arm64
+node|linux-amd64
+node|linux-arm64
+node|macos-arm64
+ape|linux-amd64
+ape|linux-arm64
+ape|macos-arm64
+ape|mswin-amd64
+ape|mswin-arm64
+wasm|linux-amd64
+wasm|linux-arm64
+wasm|macos-arm64
+EOF
+assert_plan "$expected_all" zig linux-amd64 all all
+
+for invalid in unknown '' 'zig; echo unsafe'; do
+	capture pb_build_plan "$matrix" "$invalid" linux-amd64 canonical host
+	if [[ "$rc" == 0 || -n "$out" || -z "$err" ]]; then
+		printf 'FAIL: invalid implementation must fail without a partial plan: %q\n' "$invalid" >&2
+		failures=$((failures + 1))
+	fi
+done
+capture pb_build_plan "$matrix" roc macos-arm64 canonical host
+if [[ "$rc" == 0 || -n "$out" || -z "$err" ]]; then
+	printf 'FAIL: an unsupported canonical target must be reported\n' >&2
+	failures=$((failures + 1))
+fi
+
+while read -r implementation platform variant profile expected; do
+	capture pb_product_path "$implementation" "$platform" "$variant" "$profile"
+	if [[ "$rc" != 0 || "$out" != "$expected" || -n "$err" ]]; then
+		printf 'FAIL: product path for %s/%s/%s/%s\n' "$implementation" "$platform" "$variant" "$profile" >&2
+		failures=$((failures + 1))
+	fi
+done <<'EOF'
+ape linux-amd64 - ReleaseFast ape-out/linux-amd64/ReleaseFast
+c linux-amd64 gnu ReleaseFast c-out/linux-amd64/gnu/ReleaseFast
+zig linux-amd64 musl Debug zig-out/linux-amd64/musl/Debug
+zig macos-arm64 - ReleaseSafe zig-out/macos-arm64/ReleaseSafe
+EOF
+for invalid_variant in none default '../escape' ''; do
+	capture pb_product_path zig linux-amd64 "$invalid_variant" ReleaseFast
+	if [[ "$rc" == 0 || -n "$out" ]]; then
+		printf 'FAIL: invalid variant must not enter a product path\n' >&2
+		failures=$((failures + 1))
+	fi
+done
+
+if [[ "$failures" == 0 ]]; then
+	printf 'PASS: declared build matrix, independent scopes, and distinct APE product paths\n'
+fi
+exit "$failures"

@@ -8,6 +8,10 @@
 set -euo pipefail
 
 PROJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJ_ROOT/build-support/config.bash"
+source "$PROJ_ROOT/build-support/matrix.bash"
+source "$PROJ_ROOT/build-support/driver.bash"
+source "$PROJ_ROOT/build-support/benchmark-products.bash"
 BENCH_TMPDIR="${TMPDIR:-/tmp}"
 BM_DIR="$BENCH_TMPDIR/pb-benchmark-$$"
 RESULTS_DIR="$PROJ_ROOT/bm/results"
@@ -44,7 +48,7 @@ Options:
   --quick             Fewer warmup and measurement runs (2 warmups, 5 runs)
   --sizes LIST        Space-separated sizes (default: "1K 100K 1M 10M")
   --impls LIST        Comma- or space-separated implementations to require
-                      (c, zig, roc, lua, node, rust, wasm, ape, ffi, pgo)
+                      (c, zig, roc, lua, node, rust, wasm, ape, ffi)
   --list-impls        Report every implementation and its availability; do not run
   --save TAG          Write hyperfine JSON to bm/results/TAG/
   -h, --help          Show this help
@@ -94,7 +98,7 @@ done
 
 is_known_implementation() {
 	case "$1" in
-		c|zig|roc|lua|node|rust|wasm|ape|ffi|pgo) return 0 ;;
+		c|zig|roc|lua|node|rust|wasm|ape|ffi) return 0 ;;
 		*) return 1 ;;
 	esac
 }
@@ -125,17 +129,6 @@ validate_requested_implementations() {
 	done
 }
 
-first_executable() {
-	local candidate
-	for candidate in "$@"; do
-		if [[ -x "$candidate" ]]; then
-			printf '%s\n' "$candidate"
-			return 0
-		fi
-	done
-	return 1
-}
-
 record_available() {
 	local name="$1"
 	local command="$2"
@@ -151,36 +144,21 @@ record_unavailable() {
 	UNAVAILABLE_REASONS+=("$2")
 }
 
-write_rust_adapter() {
-	local rust_bin="$1"
-	local adapter="$BM_DIR/printable-binary-rust-adapter"
+write_stdin_adapter() {
+	local binary="$1" name="$2"
+	local adapter="$BM_DIR/printable-binary-$name-adapter"
 	mkdir -p "$BM_DIR"
 	{
 		printf '%s\n' '#!/usr/bin/env bash' 'set -u' 'if [[ $# -eq 2 && ( "$1" == "-d" || "$1" == "--decode" ) ]]; then'
-		printf '  exec %q -d < "$2"\n' "$rust_bin"
+		printf '  exec %q -d < "$2"\n' "$binary"
 		printf '%s\n' 'fi' 'if [[ $# -eq 1 ]]; then'
-		printf '  exec %q < "$1"\n' "$rust_bin"
-		printf '%s\n' 'fi' 'printf "Rust benchmark adapter expects [--decode] INPUT_FILE\\n" >&2' 'exit 64'
+		printf '  exec %q < "$1"\n' "$binary"
+		printf '%s\n' 'fi' 'printf "Benchmark stdin adapter expects [--decode] INPUT_FILE\\n" >&2' 'exit 64'
 	} > "$adapter"
 	chmod +x "$adapter"
 	printf '%s\n' "$adapter"
 }
 
-write_wasm_adapter() {
-	local wazero_bin="$1"
-	local wasm_bin="$2"
-	local adapter="$BM_DIR/printable-binary-wasm-adapter"
-	mkdir -p "$BM_DIR"
-	{
-		printf '%s\n' '#!/usr/bin/env bash' 'set -u' 'if [[ $# -eq 2 && ( "$1" == "-d" || "$1" == "--decode" ) ]]; then'
-		printf '  exec %q run --env=PRINTABLE_BINARY_MUTE_STATS=true %q -- -d < "$2"\n' "$wazero_bin" "$wasm_bin"
-		printf '%s\n' 'fi' 'if [[ $# -eq 1 ]]; then'
-		printf '  exec %q run --env=PRINTABLE_BINARY_MUTE_STATS=true %q < "$1"\n' "$wazero_bin" "$wasm_bin"
-		printf '%s\n' 'fi' 'printf "WASM benchmark adapter expects [--decode] INPUT_FILE\\n" >&2' 'exit 64'
-	} > "$adapter"
-	chmod +x "$adapter"
-	printf '%s\n' "$adapter"
-}
 
 write_ape_adapter() {
 	local ape_bin="$1"
@@ -196,72 +174,21 @@ write_ape_adapter() {
 }
 
 discover_implementations() {
-	local binary
-	local wazero_bin
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-c" "$PROJ_ROOT/result/bin/printable-binary-c"); then
-		record_available c "$binary"
-	else
-		record_unavailable c 'build with ./build native'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary" "$PROJ_ROOT/zig-out/bin/printable-binary" "$PROJ_ROOT/result/bin/printable-binary"); then
-		record_available zig "$binary"
-	else
-		record_unavailable zig 'build with ./build zig'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-roc" "$PROJ_ROOT/result-roc/bin/printable-binary-roc"); then
-		record_available roc "$binary"
-	else
-		record_unavailable roc 'build with ./build roc'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-luajit"); then
-		record_available lua "$binary"
-	else
-		record_unavailable lua 'LuaJIT CLI missing at bin/printable-binary-luajit'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-node.js"); then
-		record_available node "$binary"
-	else
-		record_unavailable node 'Node CLI missing at bin/printable-binary-node.js'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/rust/target/release/printable-binary-rs"); then
-		record_available rust "$(write_rust_adapter "$binary")"
-	else
-		record_unavailable rust 'build with cargo build --release --manifest-path rust/Cargo.toml'
-	fi
-
-	if [[ -f "$PROJ_ROOT/bin/printable-binary.wasm" ]]; then
-		if wazero_bin=$(command -v wazero 2>/dev/null); then
-			record_available wasm "$(write_wasm_adapter "$wazero_bin" "$PROJ_ROOT/bin/printable-binary.wasm")"
+	local binary host name implementation
+	host="$(pb_host_platform "$(uname -s)" "$(uname -m)")" || return 1
+	for name in c zig roc lua node rust wasm ape ffi; do
+		implementation="$name"
+		[[ "$name" != lua ]] || implementation=luajit
+		if binary="$(pb_benchmark_product "$PROJ_ROOT" "$host" "$implementation" 2>/dev/null)"; then
+			case "$name" in
+				rust|wasm) record_available "$name" "$(write_stdin_adapter "$binary" "$name")" ;;
+				ape) record_available "$name" "$(write_ape_adapter "$binary")" ;;
+				*) record_available "$name" "$binary" ;;
+			esac
 		else
-			record_unavailable wasm 'install wazero, then run via nix develop -c'
+			record_unavailable "$name" "requires a verified host ReleaseFast product: ./build --impl=$implementation"
 		fi
-	else
-		record_unavailable wasm 'build with ./build wasm'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-ape.com"); then
-		record_available ape "$(write_ape_adapter "$binary")"
-	else
-		record_unavailable ape 'build with ./build ape'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-ffi"); then
-		record_available ffi "$binary"
-	else
-		record_unavailable ffi 'build with make ffi-cli'
-	fi
-
-	if binary=$(first_executable "$PROJ_ROOT/bin/printable-binary-ffi-pgo"); then
-		record_available pgo "$binary"
-	else
-		record_unavailable pgo 'build with make pgo-ffi'
-	fi
+	done
 }
 
 print_inventory() {

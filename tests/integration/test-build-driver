@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Exercise the real planner/publisher with recording build and verification ports.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ ! -f "$repo_root/build-support/driver.bash" ]]; then
+	printf 'FAIL: build driver is missing\n' >&2
+	exit 1
+fi
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run driver tests through ./test or run-isolated\n' >&2
+	exit 1
+fi
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/build-support/publication.bash"
+source "$repo_root/build-support/driver.bash"
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+project="$scratch/project with spaces"
+mkdir -p "$project/build-support" "$scratch/products" || exit 1
+cp "$repo_root/build-support/implementations" "$project/build-support/" || exit 1
+printf 'zig\n' > "$project/CANONICAL_IMPL"
+calls="$scratch/calls.jsonl"
+source_calls="$scratch/source-calls"
+printf '' > "$calls"
+printf '' > "$source_calls"
+fail_build='' fail_verify=0 change_selection=0 overlap=0
+failures=0
+
+pb_prepare_nix_source() {
+	printf 'source\n' >> "$source_calls"
+	printf '/prepared/source\n'
+}
+pb_nix_build() {
+	local source="$1" builder="$2" package="$3" link="$4" entry fixture
+	jq -nc --arg source "$source" --arg builder "$builder" --arg package "$package" \
+		'{source:$source,builder:$builder,package:$package}' >> "$calls"
+	if [[ "$overlap" == 1 ]]; then
+		overlap=0
+		pb_build_main "$project" linux-amd64 --impl=c > "$scratch/overlap.stdout" 2> "$scratch/overlap.stderr"
+		printf '%s\n' "$?" > "$scratch/overlap.status"
+	fi
+	if [[ -n "$fail_build" && "$package" == "$fail_build" ]]; then return 9; fi
+	case "$package" in
+		build-zig-mswin-*) entry=printable-binary.exe; fixture=zig-command ;;
+		build-zig-*) entry=printable-binary; fixture=zig-command ;;
+		build-c-*) entry=printable-binary-c; fixture=c-command ;;
+		build-ffi-*) entry=printable-binary-ffi; fixture=c-command ;;
+		build-rust-*) entry=printable-binary-rs; fixture=c-command ;;
+		build-roc-*) entry=printable-binary-roc; fixture=c-command ;;
+		build-luajit-*) entry=printable-binary-luajit; fixture=c-command ;;
+		build-node-*) entry=printable-binary-node; fixture=c-command ;;
+		build-ape-*) entry=printable-binary-ape.com; fixture=c-command ;;
+		build-wasm-*) entry=printable-binary-wasm; fixture=c-command ;;
+		*) return 8 ;;
+	esac
+	mkdir -p "$scratch/products/$package/bin" || return 1
+	cp "$repo_root/tests/fixtures/$fixture" "$scratch/products/$package/bin/$entry" || return 1
+	ln -s "$scratch/products/$package" "$link" || return 1
+	if [[ "$change_selection" == 1 ]]; then printf 'c\n' > "$project/CANONICAL_IMPL"; fi
+}
+pb_verify_product() {
+	[[ "$fail_verify" != 1 ]] || return 9
+	local product="$1" _impl="$2" _pf="$3" _variant="$4" _target="$5" _profile="$6" entry="$7"
+	test -x "$product/bin/$entry"
+}
+pb_direct_build() {
+	printf 'unexpected direct compiler\n' >> "$calls"
+	return 9
+}
+
+check() {
+	local description="$1"
+	shift
+	if ! "$@"; then printf 'FAIL: %s\n' "$description" >&2; failures=$((failures + 1)); fi
+}
+capture pb_build_main "$project" linux-amd64
+check 'default build succeeds' test "$rc" = 0
+check 'default builds only the canonical host package' test "$(jq -r .package "$calls")" = build-zig-linux-amd64-ReleaseFast
+check 'build source is frozen once' test "$(wc -l < "$source_calls")" = 1
+capture "$project/bin/linux-amd64/printable-binary"
+check 'default command selects the built implementation' test "$out" = 'zig fixture'
+before="$(readlink "$project/bin/linux-amd64/printable-binary")"
+
+printf '' > "$calls"
+capture pb_build_main "$project" linux-amd64 canonize c
+check 'canonize reports the selected implementation' test "$rc:$out" = '0:c implementation canonized. Rerun ./build to rebuild.'
+check 'canonize invokes no builder' test ! -s "$calls"
+check 'canonize does not switch commands' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+capture pb_build_main "$project" linux-amd64
+check 'the next build uses the new canonical selection' test "$rc" = 0
+capture "$project/bin/linux-amd64/printable-binary"
+check 'a successful build publishes the canonical switch' test "$out" = 'c fixture'
+
+capture pb_build_main "$project" linux-amd64 canonize zig
+capture pb_build_main "$project" linux-amd64
+before="$(readlink "$project/bin/linux-amd64/printable-binary")"
+capture pb_build_main "$project" linux-amd64 --impl=c
+check 'explicit noncanonical builds succeed privately' test "$rc" = 0
+check 'noncanonical builds do not switch the public command' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+capture pb_build_main "$project" linux-amd64 --platform=mswin-arm64
+check 'a declared cross target can build' test "$rc" = 0
+check 'cross builds preserve the host selection' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+check 'cross product has its own namespace' test -L "$project/zig-out/mswin-arm64/gnu/ReleaseFast"
+
+fail_build=build-c-linux-amd64-ReleaseFast
+capture pb_build_main "$project" linux-amd64 --all-impls
+check 'required build failures are reported' test "$rc" != 0
+check 'build failures preserve the old command' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+fail_build=''
+fail_verify=1
+capture pb_build_main "$project" linux-amd64
+check 'verification failures are reported' test "$rc" != 0
+check 'verification failures preserve the old command' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+fail_verify=0
+change_selection=1
+capture pb_build_main "$project" linux-amd64
+check 'a concurrent canonical change cancels publication' test "$rc" != 0
+check 'a concurrent canonical change preserves the old command' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+change_selection=0
+capture pb_build_main "$project" linux-amd64 canonize zig
+
+overlap=1
+capture pb_build_main "$project" linux-amd64
+check 'the original build finishes during a competing attempt' test "$rc" = 0
+check 'a second build cannot acquire an active publication lock' test "$(<"$scratch/overlap.status")" != 0
+overlap=0
+
+for flags in '--all-impls' '--all-implementations' '--all-impls --all-implementations'; do
+	printf '' > "$calls"
+	read -r -a arguments <<< "$flags"
+	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
+	check 'all-implementation scope succeeds' test "$rc" = 0
+	check 'all-implementation scope is a complete, duplicate-free host set' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = $'build-ape-linux-amd64-ReleaseFast\nbuild-c-linux-amd64-ReleaseFast\nbuild-ffi-linux-amd64-ReleaseFast\nbuild-luajit-linux-amd64-ReleaseFast\nbuild-node-linux-amd64-ReleaseFast\nbuild-roc-linux-amd64-ReleaseFast\nbuild-rust-linux-amd64-ReleaseFast\nbuild-wasm-linux-amd64-ReleaseFast\nbuild-zig-linux-amd64-ReleaseFast'
+done
+for flags in '--all-plats' '--all-platforms --all-plats'; do
+	printf '' > "$calls"
+	read -r -a arguments <<< "$flags"
+	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
+	check 'all-platform scope succeeds' test "$rc" = 0
+	check 'all-platform scope is the declared canonical target set' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = $'build-zig-linux-amd64-ReleaseFast\nbuild-zig-linux-arm64-ReleaseFast\nbuild-zig-macos-arm64-ReleaseFast\nbuild-zig-mswin-amd64-ReleaseFast\nbuild-zig-mswin-arm64-ReleaseFast'
+done
+for flags in '--all' '--all-plats --all-impls' '--all-implementations --all-platforms'; do
+	printf '' > "$calls"
+	read -r -a arguments <<< "$flags"
+	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
+	check 'both scopes succeed' test "$rc" = 0
+	check 'both scopes cover exactly the 30 declared combinations' test "$(wc -l < "$calls")" = 30
+done
+
+for flag in --impl= --platform= --profile=unknown --backend=unknown; do
+	printf '' > "$calls"
+	capture pb_build_main "$project" linux-amd64 "$flag"
+	check 'invalid requests fail before invoking a builder' test "$rc" != 0
+	check 'invalid requests have no build effects' test ! -s "$calls"
+done
+
+# The actual public frontend, not a reimplementation, must handle canonize
+# before Nix environment setup or build-budget admission.
+cp "$repo_root/build" "$project/build" || exit 1
+cp -R "$repo_root/build-support/." "$project/build-support/" || exit 1
+mkdir -p "$scratch/tools" || exit 1
+cp "$repo_root/tests/fixtures/record-build-command" "$scratch/tools/nix" || exit 1
+cp "$repo_root/tests/fixtures/record-build-command" "$scratch/tools/build-budget" || exit 1
+export TEST_COMMAND_LOG="$scratch/frontend-builder-calls"
+capture env "PATH=$scratch/tools:$PATH" bash "$project/build" canonize c
+check 'public canonize frontend records the selection' test "$rc:$out" = '0:c implementation canonized. Rerun ./build to rebuild.'
+check 'public canonize frontend does not invoke Nix or the shared build queue' test ! -e "$TEST_COMMAND_LOG"
+capture env "PATH=$scratch/tools:$PATH" bash "$project/build" canonize zig --all
+check 'canonize rejects scope combinations without building' test "$rc" != 0
+check 'invalid canonize never invokes a builder' test ! -e "$TEST_COMMAND_LOG"
+
+for backend in direct nix; do
+	printf '' > "$calls"
+	printf '' > "$source_calls"
+	capture pb_build_main "$project" linux-amd64 "--backend=$backend"
+	check 'retired backend switches are rejected' test "$rc" != 0
+	check 'retired backend switches cannot invoke a compiler' test ! -s "$calls"
+	check 'retired backend switches cannot prepare a source' test ! -s "$source_calls"
+done
+
+mkdir -p "$scratch/no-nix" || exit 1
+ln -s "$(command -v dirname)" "$scratch/no-nix/dirname" || exit 1
+ln -s "$(command -v cmp)" "$scratch/no-nix/cmp" || exit 1
+capture env "PATH=$scratch/no-nix" "$BASH" "$project/build"
+check 'a missing Nix installation fails clearly' test "$rc" != 0
+check 'a missing Nix installation explains the requirement' test "${err#*requires Nix}" != "$err"
+
+if [[ "$failures" == 0 ]]; then printf 'PASS: build driver scopes, canonical switching, build/verification failure retention, and selection races\n'; fi
+exit "$failures"

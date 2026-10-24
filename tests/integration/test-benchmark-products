@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ ! -f "$repo_root/build-support/benchmark-products.bash" ]]; then
+	printf 'FAIL: namespaced benchmark product resolver is missing\n' >&2
+	exit 1
+fi
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run benchmark discovery tests through ./test or run-isolated\n' >&2
+	exit 1
+fi
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/build-support/benchmark-products.bash"
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+mkdir -p "$scratch/project with spaces/build-support" || exit 1
+project="$scratch/project with spaces"
+cp "$repo_root/build-support/implementations" "$project/build-support/" || exit 1
+verification="$scratch/verification"
+pb_verify_product() { printf '%s\0' "$@" > "$verification"; return "${VERIFY_STATUS:-0}"; }
+failures=0
+for pf in linux-amd64 linux-arm64 macos-arm64 mswin-amd64 mswin-arm64; do
+	rows="$(pb_build_plan "$project/build-support/implementations" zig "$pf" all host)" || exit 1
+	while IFS='|' read -r impl platform variant target builder package entry format; do
+		path="$(pb_product_path "$impl" "$pf" "$variant" ReleaseFast)" || exit 1
+		capture pb_benchmark_product "$project" "$pf" "$impl"
+		if [[ "$rc" != 0 || -n "$err" || "$out" != "$project/$path/bin/$entry" ]] || ! cmp -s "$verification" <(printf '%s\0' "$project/$path" "$impl" "$pf" "$variant" "$target" ReleaseFast "$entry" "$format" nix); then
+			printf 'FAIL: benchmark product for %s/%s must resolve and verify its exact optimized Nix product\n' "$impl" "$pf" >&2
+			failures=$((failures + 1))
+		fi
+	done <<< "$rows"
+done
+VERIFY_STATUS=7
+capture pb_benchmark_product "$project" linux-amd64 zig
+if [[ "$rc" == 0 || -n "$out" ]]; then
+	printf 'FAIL: rejected benchmark products cannot fall back to a stale executable\n' >&2
+	failures=$((failures + 1))
+fi
+capture pb_benchmark_product "$project" macos-arm64 roc
+if [[ "$rc" == 0 || -n "$out" ]]; then
+	printf 'FAIL: unsupported benchmark implementation/platform must fail\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ "$failures" == 0 ]]; then printf 'PASS: benchmark product selection across every declared implementation/PF pair\n'; fi
+exit "$failures"

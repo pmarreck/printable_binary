@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Inspect real built headers and compare installed codecs to the source mapping.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+host_products="${1:?Usage: test-built-products HOST_PRODUCTS ZIG_CROSS_PRODUCTS}"
+cross_products="${2:?Usage: test-built-products HOST_PRODUCTS ZIG_CROSS_PRODUCTS}"
+canonical_products="${3:?Usage: test-built-products HOST_PRODUCTS ZIG_CROSS_PRODUCTS CANONICAL_PRODUCTS}"
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/build-support/publication.bash"
+source "$repo_root/build-support/driver.bash"
+source "$repo_root/build-support/benchmark-products.bash"
+host="$(pb_host_platform "$(uname -s)" "$(uname -m)")" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+for byte in $(seq 0 255); do printf "\\$(printf '%03o' "$byte")"; done > "$scratch/raw"
+LC_ALL=C awk 'NF && $0 !~ /^##/ { printf "%s", $1 }' "$repo_root/character_map.txt" > "$scratch/encoded"
+failures=0
+rows="$(pb_build_plan "$repo_root/build-support/implementations" zig "$host" all host)" || exit 1
+while IFS='|' read -r impl pf variant target builder package entry format; do
+	product="$host_products/$impl"
+	if ! pb_verify_product "$product" "$impl" "$pf" "$variant" "$target" ReleaseFast "$entry" "$format" nix > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: real %s product header/metadata: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
+		failures=$((failures + 1))
+		continue
+	fi
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$product/bin/$entry" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/encoded"; then
+		printf 'FAIL: installed %s encoder differs from the canonical 256-byte mapping\n' "$impl" >&2
+		failures=$((failures + 1))
+	fi
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$product/bin/$entry" -d < "$scratch/encoded" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/raw"; then
+		printf 'FAIL: installed %s decoder differs from the canonical 256-byte mapping\n' "$impl" >&2
+		failures=$((failures + 1))
+	fi
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$canonical_products/$impl/bin/printable-binary" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/encoded"; then
+		printf 'FAIL: canonical Nix command for %s differs from its installed implementation\n' "$impl" >&2
+		failures=$((failures + 1))
+	fi
+done <<< "$rows"
+rows="$(pb_build_plan "$repo_root/build-support/implementations" zig "$host" canonical all)" || exit 1
+while IFS='|' read -r impl pf variant target builder package entry format; do
+	if ! pb_verify_product "$cross_products/$pf" "$impl" "$pf" "$variant" "$target" ReleaseFast "$entry" "$format" nix > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: actual cross-built Zig %s header/metadata: %s\n' "$pf" "$(<"$scratch/stderr")" >&2
+		failures=$((failures + 1))
+	fi
+done <<< "$rows"
+
+# Compilation is already complete. Feed those exact products to the real
+# controller, verifier, and filesystem adapter inside this disposable project.
+# This preserves production shell/error semantics without nesting Nix builders.
+pb_prepare_nix_source() { printf 'prepared-products\n'; }
+pb_nix_build() {
+	local _source="$1" _builder="$2" package="$3" link="$4" implementation
+	implementation="${package#build-}"
+	implementation="${implementation%%-*}"
+	ln -s "$host_products/$implementation" "$link"
+}
+mkdir -p "$scratch/project/build-support" || exit 1
+cp "$repo_root/build-support/implementations" "$scratch/project/build-support/" || exit 1
+printf 'zig\n' > "$scratch/project/CANONICAL_IMPL"
+if ! pb_build_main "$scratch/project" "$host" --all-impls > "$scratch/stdout" 2> "$scratch/stderr"; then
+	printf 'FAIL: publication of independently built products: %s\n' "$(<"$scratch/stderr")" >&2
+	failures=$((failures + 1))
+fi
+rows="$(pb_build_plan "$repo_root/build-support/implementations" zig "$host" all host)" || exit 1
+while IFS='|' read -r impl pf variant target builder package entry format; do
+	if ! pb_benchmark_product "$scratch/project" "$host" "$impl" > "$scratch/stdout" 2> "$scratch/stderr"; then
+		printf 'FAIL: benchmark discovery rejected the verified %s installed product\n' "$impl" >&2
+		failures=$((failures + 1))
+	fi
+done <<< "$rows"
+if [[ "$failures" == 0 ]]; then
+	printf 'PASS: installed host codecs exhaust the canonical mapping; all five Zig target headers match\n'
+fi
+exit "$failures"

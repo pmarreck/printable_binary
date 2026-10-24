@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Real publication operations stay inside disposable, Nix-confined projects.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ ! -f "$repo_root/build-support/publication.bash" ]]; then
+	printf 'FAIL: build publication adapter is missing\n' >&2
+	exit 1
+fi
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run publication tests through ./test (Nix confinement) or run-isolated\n' >&2
+	exit 1
+fi
+source "$repo_root/build-support/config.bash"
+source "$repo_root/build-support/matrix.bash"
+source "$repo_root/build-support/publication.bash"
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+project="$scratch/project with spaces"
+mkdir -p "$project/.nix-out/linux-amd64/ReleaseFast/zig-generation/product/bin" "$project/.nix-out/linux-amd64/ReleaseFast/c-generation/product/bin" || exit 1
+cp "$repo_root/tests/fixtures/zig-command" "$project/.nix-out/linux-amd64/ReleaseFast/zig-generation/product/bin/printable-binary" || exit 1
+cp "$repo_root/tests/fixtures/c-command" "$project/.nix-out/linux-amd64/ReleaseFast/c-generation/product/bin/printable-binary-c" || exit 1
+failures=0
+
+check() {
+	local description="$1"
+	shift
+	if ! "$@"; then
+		printf 'FAIL: %s\n' "$description" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+capture pb_publish "$project" linux-amd64 linux-amd64 zig .nix-out/linux-amd64/ReleaseFast/zig-generation/product printable-binary
+check 'initial publication succeeds quietly' test "$rc:$err:$out" = '0::'
+capture "$project/bin/linux-amd64/printable-binary"
+check 'the selected command is executable' test "$out" = 'zig fixture'
+check 'Unix publication is a direct relative link' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = '../../.nix-out/linux-amd64/ReleaseFast/zig-generation/product/bin/printable-binary'
+ln -P "$project/bin/linux-amd64/printable-binary" "$scratch/original-link" || exit 1
+capture pb_publish "$project" linux-amd64 linux-amd64 zig .nix-out/linux-amd64/ReleaseFast/zig-generation/product printable-binary
+check 'repeated publication is a no-op' test "$(stat -c '%d:%i' "$project/bin/linux-amd64/printable-binary")" = "$(stat -c '%d:%i' "$scratch/original-link")"
+
+capture pb_publish "$project" linux-amd64 linux-amd64 c .nix-out/linux-amd64/ReleaseFast/c-generation/product printable-binary-c
+check 'canonical switch succeeds' test "$rc" = 0
+capture "$project/bin/linux-amd64/printable-binary"
+check 'the switched command is selected' test "$out" = 'c fixture'
+before="$(readlink "$project/bin/linux-amd64/printable-binary")"
+capture pb_publish "$project" linux-amd64 linux-amd64 zig .nix-out/linux-amd64/ReleaseFast/missing/product printable-binary
+check 'missing required command fails' test "$rc" != 0
+check 'a failed publication keeps the previous selection' test "$(readlink "$project/bin/linux-amd64/printable-binary")" = "$before"
+capture pb_publish "$project" linux-amd64 macos-arm64 zig .nix-out/macos-arm64/ReleaseFast/foreign/product printable-binary
+check 'foreign builds never switch the host command' test "$rc:$(readlink "$project/bin/linux-amd64/printable-binary")" = "0:$before"
+
+capture pb_select_product "$project" zig linux-amd64 musl ReleaseFast .nix-out/linux-amd64/ReleaseFast/zig-generation/product
+check 'select the musl product tree' test "$rc" = 0
+capture pb_select_product "$project" c linux-amd64 gnu ReleaseFast .nix-out/linux-amd64/ReleaseFast/c-generation/product
+check 'C and Zig product trees coexist' test "$rc" = 0
+check 'the complete product tree is retained' test -f "$project/zig-out/linux-amd64/musl/ReleaseFast/bin/printable-binary"
+check 'C has a separate GNU product tree' test -f "$project/c-out/linux-amd64/gnu/ReleaseFast/bin/printable-binary-c"
+
+# Directory symlinks must not redirect adapter writes into a protected tree.
+mkdir -p "$scratch/protected" "$scratch/redirected" || exit 1
+cp -R "$project/.nix-out" "$scratch/redirected/" || exit 1
+printf sentinel > "$scratch/protected/marker"
+ln -s "$scratch/protected" "$scratch/redirected/bin" || exit 1
+capture pb_publish "$scratch/redirected" linux-amd64 linux-amd64 zig .nix-out/linux-amd64/ReleaseFast/zig-generation/product printable-binary
+check 'a redirected bin parent is refused' test "$rc" != 0
+check 'the protected directory is unchanged' test "$(<"$scratch/protected/marker")" = sentinel
+check 'no child was created through the redirected bin parent' test ! -e "$scratch/protected/linux-amd64"
+
+# Do not overwrite an unrecognized public command, even in a project directory.
+mkdir -p "$scratch/unmanaged/bin/linux-amd64" || exit 1
+cp -R "$project/.nix-out" "$scratch/unmanaged/" || exit 1
+printf 'unmanaged command' > "$scratch/unmanaged/bin/linux-amd64/printable-binary"
+capture pb_publish "$scratch/unmanaged" linux-amd64 linux-amd64 zig .nix-out/linux-amd64/ReleaseFast/zig-generation/product printable-binary
+check 'unmanaged commands are refused' test "$rc" != 0
+check 'unmanaged command bytes survive' test "$(<"$scratch/unmanaged/bin/linux-amd64/printable-binary")" = 'unmanaged command'
+
+# The real copy/record adapters run behind a controlled I/O boundary. Inject a
+# failure before and after every Windows publication effect, then retry.
+pubtest_operation() {
+	local operation="$1"
+	shift
+	PUBTEST_CALLS=$((PUBTEST_CALLS + 1))
+	if [[ "$PUBTEST_CALLS" == "$PUBTEST_FAIL_AT" && "$PUBTEST_PHASE" == before ]]; then return 7; fi
+	"$operation" "$@" || return "$?"
+	[[ "$operation" != pb_atomic_copy ]] || PUBTEST_COMPLETED_COPIES=$((PUBTEST_COMPLETED_COPIES + 1))
+	if [[ "$PUBTEST_CALLS" == "$PUBTEST_FAIL_AT" && "$PUBTEST_PHASE" == after ]]; then return 7; fi
+}
+pubtest_atomic_text() { pubtest_operation pb_atomic_text "$@"; }
+pubtest_atomic_copy() { pubtest_operation pb_atomic_copy "$@"; }
+pubtest_atomic_link() { pubtest_operation pb_atomic_link "$@"; }
+for boundary in 1 2 3; do
+	for phase in before after; do
+		winroot="$scratch/windows-$boundary-$phase"
+		old_product=.nix-out/mswin-amd64/ReleaseFast/old/product
+		new_product=.nix-out/mswin-amd64/ReleaseFast/new/product
+		mkdir -p "$winroot/$old_product/bin" "$winroot/$new_product/bin" || exit 1
+		cp "$repo_root/tests/fixtures/zig-command" "$winroot/$old_product/bin/printable-binary.exe" || exit 1
+		cp "$repo_root/tests/fixtures/c-command" "$winroot/$new_product/bin/printable-binary.exe" || exit 1
+		capture pb_publish "$winroot" mswin-amd64 mswin-amd64 zig "$old_product" printable-binary.exe
+		check 'prepare a managed Windows command' test "$rc" = 0
+		PUBTEST_CALLS=0 PUBTEST_COMPLETED_COPIES=0 PUBTEST_FAIL_AT="$boundary" PUBTEST_PHASE="$phase"
+		capture pb_publish "$winroot" mswin-amd64 mswin-amd64 zig "$new_product" printable-binary.exe pubtest
+		check "injected failure at Windows boundary $boundary/$phase is reported" test "$rc" != 0
+		PUBTEST_FAIL_AT=0
+		capture pb_publish "$winroot" mswin-amd64 mswin-amd64 zig "$new_product" printable-binary.exe pubtest
+		check "Windows retry succeeds after boundary $boundary/$phase" test "$rc" = 0
+		check 'Windows publication does not require symlinks' test ! -L "$winroot/bin/mswin-amd64/printable-binary.exe"
+		check 'Windows retry selects exact command bytes' cmp -s "$winroot/bin/mswin-amd64/printable-binary.exe" "$winroot/$new_product/bin/printable-binary.exe"
+		check 'completed Windows copies are not duplicated on retry' test "$PUBTEST_COMPLETED_COPIES" = 1
+		calls_before="$PUBTEST_CALLS"
+		capture pb_publish "$winroot" mswin-amd64 mswin-amd64 zig "$new_product" printable-binary.exe pubtest
+		check 'fully completed Windows retry has no effects' test "$rc:$PUBTEST_CALLS" = "0:$calls_before"
+	done
+done
+
+if [[ "$failures" == 0 ]]; then
+	printf 'PASS: publication, canonical switch, failure retention, coexistence, and protected paths\n'
+fi
+exit "$failures"

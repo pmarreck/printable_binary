@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Development launch: build the canonical host product, then execute it exactly.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
+"$repo_root/build" || exit "$?"
+source "$repo_root/build-support/config.bash"
+platform="$(pb_host_platform "$(uname -s)" "$(uname -m)")" || exit 1
+command="$repo_root/bin/$platform/printable-binary"
+case "$platform" in mswin-*) command+='.exe' ;; esac
+exec "$command" "$@"

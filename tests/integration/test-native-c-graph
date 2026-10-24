@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Nix invokes Make's C profile/prefix interface inside its derivation.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run native graph tests through ./test or run-isolated\n' >&2
+	exit 1
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+project="$scratch/project with spaces"
+prefix="$scratch/product with spaces"
+mkdir -p "$project/src" || exit 1
+cp "$repo_root/Makefile" "$project/" || exit 1
+cp "$repo_root/src/printable_binary.c" "$project/src/" || exit 1
+cp "$repo_root/character_map.txt" "$project/" || exit 1
+export TEST_COMPILER_LOG="$scratch/compiler-arguments"
+failures=0
+make --no-print-directory -C "$project" c-cli "CC=$repo_root/tests/fixtures/record-compiler" "PREFIX=$prefix" PROFILE=Debug > "$scratch/stdout" 2> "$scratch/stderr"
+status=$?
+if [[ "$status" != 0 || ! -f "$prefix/bin/printable-binary-c" ]]; then
+	printf 'FAIL: native C graph must honor the requested installation prefix\n' >&2
+	failures=$((failures + 1))
+fi
+arguments=()
+if [[ -f "$TEST_COMPILER_LOG" ]]; then
+	while IFS= read -r -d '' argument; do arguments+=("$argument"); done < "$TEST_COMPILER_LOG"
+fi
+has_debug=0 has_optimization=0 has_native=0
+for argument in "${arguments[@]}"; do
+	case "$argument" in -DDEBUG) has_debug=1 ;; -O3) has_optimization=1 ;; -march=native|-mtune=native) has_native=1 ;; esac
+done
+if [[ "$has_debug:$has_optimization:$has_native" != 1:0:0 ]]; then
+	printf 'FAIL: native C Debug must select debug flags without host-only ISA tuning\n' >&2
+	failures=$((failures + 1))
+fi
+mkdir -p "$project/bin" || exit 1
+printf 'portable source\n' > "$project/bin/keep-script"
+make --no-print-directory -C "$project" clean > "$scratch/stdout" 2> "$scratch/stderr"
+if [[ "$?" == 0 ]] || ! grep -Fq 'Cleanup refused:' "$scratch/stderr"; then
+	printf 'FAIL: legacy broad cleanup must be refused until a recoverable artifact-specific operation is selected\n' >&2
+	failures=$((failures + 1))
+fi
+if [[ ! -f "$project/bin/keep-script" ]] || ! cmp -s "$project/character_map.txt" "$repo_root/character_map.txt"; then
+	printf 'FAIL: cleanup must preserve source scripts and the canonical mapping\n' >&2
+	failures=$((failures + 1))
+fi
+
+cp "$repo_root/tests/fixtures/record-build-command" "$project/build" || exit 1
+cp "$repo_root/tests/fixtures/record-build-command" "$project/test" || exit 1
+export TEST_COMMAND_LOG="$scratch/make-command-arguments"
+for target in all release debug zig-cli zig-lib ffi-cli ape wasm windows test test-zig test-ape test-ffi; do
+	case "$target" in
+		all|release) expected=(--profile=ReleaseFast) ;;
+		debug) expected=(--debug) ;;
+		zig-cli|zig-lib) expected=(--impl=zig --profile=ReleaseFast) ;;
+		ffi-cli) expected=(--impl=ffi --profile=ReleaseFast) ;;
+		ape|wasm) expected=("--impl=$target" --profile=ReleaseFast) ;;
+		windows) expected=(--impl=zig --platform=mswin-amd64 --profile=ReleaseFast) ;;
+		test*) expected=() ;;
+	esac
+	make --no-print-directory -C "$project" "$target" > "$scratch/stdout" 2> "$scratch/stderr"
+	status=$?
+	if [[ "$status" != 0 ]] || ! cmp -s "$TEST_COMMAND_LOG" <(if [[ "${#expected[@]}" != 0 ]]; then printf '%s\0' "${expected[@]}"; fi); then
+		printf 'FAIL: make %s must delegate to the Nix-backed build or complete test command\n' "$target" >&2
+		failures=$((failures + 1))
+	fi
+done
+if [[ "$failures" == 0 ]]; then printf 'PASS: native C graph profile/prefix and portable CPU defaults\n'; fi
+exit "$failures"

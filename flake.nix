@@ -1,5 +1,5 @@
 {
-  description = "PrintableBinary C implementation development environment";
+  description = "PrintableBinary implementations, reproducible builds, and checks";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -25,7 +25,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, zig-overlay, rust-overlay, rocSource, rocPlatformTemplate }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -78,7 +78,7 @@
           + "-s INITIAL_MEMORY=134217728 "
           + "-DPRINTABLE_BINARY_HELP_NAME=\\\"printable-binary\\\"";
 
-        printableBinaryNative = pkgs.stdenv.mkDerivation {
+        nativeCBase = pkgs.stdenv.mkDerivation {
           pname = "printable-binary-c";
           version = "1.0.0";
 
@@ -103,7 +103,7 @@
           };
         };
 
-        printableBinaryWasm = pkgs.stdenv.mkDerivation {
+        wasmBase = pkgs.stdenv.mkDerivation {
           pname = "printable-binary-wasm";
           version = "1.0.0";
 
@@ -130,9 +130,8 @@
           };
         };
 
-        # APE build - only works reliably on Linux in pure nix builds
-        # On darwin, cosmocc's APE loader needs system tools; use `nix develop` + make ape
-        printableBinaryApe = pkgs.stdenvNoCC.mkDerivation {
+        # APE compilation requires Linux; foreign targets use that Nix builder.
+        apeBase = pkgs.stdenvNoCC.mkDerivation {
           pname = "printable-binary-ape";
           version = "1.0.0";
 
@@ -161,13 +160,13 @@
           meta = with pkgs.lib; {
             description = "PrintableBinary built as an Actually Portable Executable (Cosmopolitan, pinned ${cosmoccVersion})";
             license = licenses.mit;
-            # APE pure nix build only works reliably on Linux; on darwin use nix develop + make ape
+            # Foreign APE products select a Linux Nix builder explicitly.
             platforms = platforms.linux;
           };
         };
 
         # Zig implementation
-        printableBinaryZig = pkgs.stdenv.mkDerivation {
+        zigBase = pkgs.stdenv.mkDerivation {
           pname = "printable-binary";
           version = "1.0.0";
 
@@ -230,7 +229,7 @@
           '';
         };
 
-        printableBinaryRoc = pkgs.stdenvNoCC.mkDerivation {
+        rocBase = pkgs.stdenvNoCC.mkDerivation {
           pname = "printable-binary-roc";
           version = "1.0.0";
           src = ./.;
@@ -256,8 +255,77 @@
             platforms = platforms.linux;
           };
         };
+        platform = {
+          x86_64-linux = "linux-amd64";
+          aarch64-linux = "linux-arm64";
+          aarch64-darwin = "macos-arm64";
+        }.${system};
+        matrixRows = map (line:
+          let fields = pkgs.lib.splitString "|" line;
+          in assert builtins.length fields == 8; {
+            implementation = builtins.elemAt fields 0;
+            platform = builtins.elemAt fields 1;
+            variant = builtins.elemAt fields 2;
+            target = builtins.elemAt fields 3;
+            builder = builtins.elemAt fields 4;
+            package = builtins.elemAt fields 5;
+            command = builtins.elemAt fields 6;
+            format = builtins.elemAt fields 7;
+          }
+        ) (builtins.filter (line: line != "" && !(pkgs.lib.hasPrefix "#" line))
+          (pkgs.lib.splitString "\n" (builtins.readFile ./build-support/implementations)));
+        packageSource = pkgs.lib.cleanSourceWith {
+          name = "printable-binary-source";
+          src = ./.;
+          filter = import ./build-support/source-filter.nix ./.;
+        };
+        localBuildProducts = import ./build-support/packages.nix {
+          inherit pkgs system zig rustToolchain rocCompiler;
+          rocPlatform = printableBinaryRocPlatform;
+          source = packageSource;
+          rows = matrixRows;
+          basePackages = { c = nativeCBase; zig = zigBase; ape = apeBase; wasm = wasmBase; roc = rocBase; };
+        };
+        buildProducts = localBuildProducts // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin
+          (pkgs.lib.listToAttrs (pkgs.lib.concatMap (row: map (profile: {
+            name = "${row.package}-${profile}";
+            value = self.packages.x86_64-linux."${row.package}-${profile}";
+          }) [ "ReleaseFast" "ReleaseSafe" "Debug" ]) (builtins.filter (row: row.implementation == "ape") matrixRows)));
+        canonical = let
+          raw = builtins.readFile ./CANONICAL_IMPL;
+          selected = pkgs.lib.removeSuffix "\n" raw;
+        in if builtins.elem selected (map (row: row.implementation) matrixRows)
+          && (raw == selected || raw == selected + "\n")
+          then selected else throw "Invalid CANONICAL_IMPL; run ./build canonize IMPL";
+        selectedProduct = "build-${canonical}-${platform}-ReleaseFast";
+        canonicalPackage = product: row: import ./build-support/canonical-package.nix {
+          inherit pkgs product;
+          entry = row.command;
+          implementation = row.implementation;
+        };
+        canonicalRow = pkgs.lib.findFirst (row: row.implementation == canonical && row.platform == platform)
+          (throw "Canonical implementation ${canonical} has no declared ${platform} build") matrixRows;
+        printableBinaryNative = buildProducts."build-c-${platform}-ReleaseFast";
+        printableBinaryWasm = buildProducts."build-wasm-${platform}-ReleaseFast";
+        printableBinaryZig = buildProducts."build-zig-${platform}-ReleaseFast";
+        printableBinaryApe = buildProducts."build-ape-${platform}-ReleaseFast";
+        printableBinaryRoc = buildProducts."build-roc-${platform}-ReleaseFast";
+        allPackages = buildProducts // {
+          inherit printableBinaryNative printableBinaryWasm printableBinaryZig;
+          default = canonicalPackage buildProducts.${selectedProduct} canonicalRow;
+          allImplementations = pkgs.linkFarm "printable-binary-implementations-${platform}"
+            (map (row: {
+              name = row.implementation;
+              path = buildProducts."${row.package}-ReleaseFast";
+            }) (builtins.filter (row: row.platform == platform) matrixRows));
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          inherit printableBinaryApe printableBinaryRoc;
+        };
       in
       {
+        devShells.build = pkgs.mkShell {
+          packages = with pkgs; [ bash binutils coreutils diffutils file jq ];
+        };
         devShells.default = pkgs.mkShell {
           buildInputs =
             let
@@ -284,6 +352,10 @@
               cosmoccBin
 
               # Development utilities
+              bash
+              coreutils
+              diffutils
+              jq
               xxd
               hexdump
               file
@@ -334,18 +406,13 @@
             echo "  wazero (WASI runtime for testing)"
             echo ""
             echo "Example build commands:"
-            echo "  gcc -O3 -o printable-binary-c src/printable_binary.c"
-            echo "  clang -O3 -march=native -o printable-binary-c src/printable_binary.c"
-            echo "  emcc src/printable_binary.c ${emscriptenFlags} -o printable-binary.wasm"
-            echo "  cosmocc -O3 -o printable-binary-ape.com src/printable_binary.c   # fat APE"
-            echo "  make -B wasm                                                 # uses emcc"
-            echo "  CONFIRM_BIG_DEP_DOWNLOAD=1 make -B ape                       # uses pinned cosmocc"
-            echo "  nix build .#printableBinaryApe    # fat APE (pinned cosmocc ${cosmoccVersion})"
-            echo "  nix build .#printableBinaryWasm   # wasm"
-            ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-              echo "  nix build .#printableBinaryRoc    # Roc CLI (Linux)"
-            ''}
-            echo "  nix build .#default               # suite (native+roc+wasm+ape)"
+            echo "  ./build                       # canonical host product through Nix"
+            echo "  ./build --all-impls            # every declared host implementation"
+            echo "  ./build --all-plats            # canonical implementation, all declared PFs"
+            echo "  ./build --all                  # both scopes"
+            echo "  ./build canonize zig           # record intent without building"
+            echo "  ./run --help                   # build and launch the exact host command"
+            echo "  ./test                         # complete Nix check graph"
             echo ""
             echo "Test JavaScript implementation:"
             echo "  deno run --allow-read --allow-env tests/js/test_printable_binary.js"
@@ -363,19 +430,9 @@
           CXX = "g++";
         };
 
-        packages = {
-          printableBinaryNative = printableBinaryNative;
-          printableBinaryWasm = printableBinaryWasm;
-          printableBinaryZig = printableBinaryZig;
-          default = pkgs.symlinkJoin {
-            name = "printable-binary-suite";
-            paths = [ printableBinaryNative printableBinaryWasm printableBinaryZig ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ printableBinaryApe printableBinaryRoc ];
-          };
-        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          printableBinaryApe = printableBinaryApe;
-          printableBinaryRoc = printableBinaryRoc;
-        };
+        packages = assert (import ./tests/nix/build-matrix-contract.nix { packages = allPackages; inherit platform canonical; });
+          assert (import ./tests/nix/source-filter-contract.nix (import ./build-support/source-filter.nix "/project"));
+          allPackages;
 
         checks = {
           rust-toolchain-pin = pkgs.runCommand "printable-binary-rust-toolchain-pin" {
@@ -397,7 +454,7 @@
           test-docs-benchmark-contract = pkgs.stdenvNoCC.mkDerivation {
             name = "test-docs-benchmark-contract";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ bash gawk gnugrep ];
+            nativeBuildInputs = with pkgs; [ bash binutils file gawk gnugrep jq ];
             buildPhase = ''
               export HOME=$TMPDIR
               bash ./tests/test_docs_benchmark_contract
@@ -748,11 +805,18 @@
           test-build-all = pkgs.stdenvNoCC.mkDerivation {
             name = "test-build-all";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ bash ];
+            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git ];
             buildPhase = ''
               patchShebangs tests/fixtures
               bash ./tests/test_build_all
               test -x ${printableBinaryApe}/bin/printable-binary-ape.com
+              bash ./tests/integration/test-built-products ${allPackages.allImplementations} ${pkgs.linkFarm "printable-binary-zig-cross-products" (map (pf: {
+                name = pf;
+                path = buildProducts."build-zig-${pf}-ReleaseFast";
+              }) [ "linux-amd64" "linux-arm64" "macos-arm64" "mswin-amd64" "mswin-arm64" ])} ${pkgs.linkFarm "printable-binary-canonical-products" (map (row: {
+                name = row.implementation;
+                path = canonicalPackage buildProducts."${row.package}-ReleaseFast" row;
+              }) (builtins.filter (row: row.platform == platform) matrixRows))}
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

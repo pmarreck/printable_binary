@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Build every declared implementation for the current platform.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
+exec "$repo_root/build" --all-impls "$@"

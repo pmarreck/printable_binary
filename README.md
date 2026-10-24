@@ -60,9 +60,8 @@ The comparative benchmark is intentionally machine-local: it verifies a round tr
 | WebAssembly | `wazero run` adapter | End-to-end WASM runtime + CLI I/O |
 
 ```bash
-# Build the native, Zig, Roc, WASM, and APE artifacts; build Rust separately.
-./build
-nix develop -c cargo build --release --manifest-path rust/Cargo.toml
+# Build every declared host implementation, including Rust, WASM, and APE.
+./build --all-impls
 
 # Check exactly which implementations are ready, then compare all of them.
 nix develop -c ./bm/benchmark-zig-opt --list-impls
@@ -83,32 +82,27 @@ Key optimizations in the Zig core:
 
 The C and Lua decoders were tuned in a measured pass: C uses direct 1-/2-byte lookup tables (**1.9×** decode). Lua got two passes — resolving each glyph by its UTF-8 leading-byte length (instead of brute-forcing all four), then writing decoded bytes straight into a LuaJIT `string.buffer` via its FFI `reserve`/`commit` API (no per-byte `string.char`). Together that took Lua **decode from ~8 to ~91 MB/s** — now faster than its own encode (which uses `string.buffer:put`, ~1.2×). Every optimization is benchmarked before and after (hyperfine), and a continuous memory-leak suite (`tests/leak_test`) guards the FFI/C paths against regressions.
 
-The optional PGO path (`make pgo-ffi`) adds a further ~1–3% via profile-guided branch layout, dogfooding the Zig library through its public C ABI.
+An earlier PGO experiment measured a further ~1–3% through the Zig library's public C ABI. That manual recipe is retired from the supported build interface; it requires a declared Nix output before it can qualify a current build.
 
 ## Usage
 
 ### As a Command Line Tool
 
 ```bash
-# Use any implementation:
-# Zig CLI (default):  ./build zig && ./bin/printable-binary
-# Roc CLI:            ./build roc && ./bin/printable-binary-roc
-# LuaJIT CLI:         ./bin/printable-binary-luajit
-# Node.js CLI:         ./bin/printable-binary-node.js
-# C version:           ./build native && ./bin/printable-binary-c
-# APE version:         ./build ape && ./bin/printable-binary-ape.com
-# WASM version:        ./build wasm && wazero run bin/printable-binary.wasm < input.bin
-# Rust raw codec:      cargo build --release --manifest-path rust/Cargo.toml
-#                     < input.bin rust/target/release/printable-binary-rs
-# (Examples below use the canonical Zig full CLI. Rust intentionally offers only
-# stdin→stdout encoding and -d/--decode; the other listed CLI variants share
-# the full option surface.)
+# Nix is required for builds. Zig is the initial canonical implementation.
+./build
+./run --help
 
-# Build every compiled distribution on Linux (C, Zig, Roc, WASM, and APE).
-./build_all
+# Install the selected Nix command for the examples below, or use the verified
+# bin/<PF>/printable-binary path (for example bin/linux-amd64/printable-binary).
+nix profile install .
+
+# Build the other implementations without changing the canonical command.
+./build --all-impls
+# See README_IMPLEMENTATIONS.md for each product path and narrower Rust options.
 
 # Encode binary data
-echo -n "Hello, World!" | ./bin/printable-binary
+echo -n "Hello, World!" | printable-binary
 # Output: Hello,␣World﹗
 
 # Note: Direct encoding of binary data as command-line arguments is not supported
@@ -116,46 +110,46 @@ echo -n "Hello, World!" | ./bin/printable-binary
 # Always pipe input or specify a file to encode
 
 # Encode a file
-./bin/printable-binary somefile.bin > encoded.txt
+printable-binary somefile.bin > encoded.txt
 
 # Encode with formatting (groups of 8 characters, 10 groups per line)
-./bin/printable-binary -f somefile.bin > formatted_encoded.txt
+printable-binary -f somefile.bin > formatted_encoded.txt
 
 # Encode with custom formatting (groups of 4 characters, 16 groups per line)
-./bin/printable-binary -f=4x16 somefile.bin > custom_formatted.txt
+printable-binary -f=4x16 somefile.bin > custom_formatted.txt
 
 # Inspect the active character map (table/JSON/CSV)
-./bin/printable-binary --mappings | head
-./bin/printable-binary-c --mappings-json > mapping.json
+printable-binary --mappings | head
+printable-binary --mappings-json > mapping.json
 ./bin/printable-binary-node.js --mappings-csv > mapping.csv
 
 # Decode data (whitespace is ignored during decoding)
-echo -n "Hello,␣World﹗" | ./bin/printable-binary -d
+echo -n "Hello,␣World﹗" | printable-binary -d
 # Output: Hello, World!
 
 # Decode formatted data (formatting is ignored)
-cat formatted_encoded.txt | ./bin/printable-binary -d > original.bin
+cat formatted_encoded.txt | printable-binary -d > original.bin
 
 # Preserve literal whitespace (spaces, tabs, newlines stay as-is instead of being encoded)
-echo -n "A B  C" | ./bin/printable-binary --spaces > encoded_with_spaces.txt
-./bin/printable-binary -d -S encoded_with_spaces.txt > restored.bin
+echo -n "A B  C" | printable-binary --spaces > encoded_with_spaces.txt
+printable-binary -d -S encoded_with_spaces.txt > restored.bin
 
 # Preserve all whitespace (shorthand for -s -t -n)
-./bin/printable-binary -w input.bin > with_whitespace.txt
+printable-binary -w input.bin > with_whitespace.txt
 
 # Preserve specific characters (e.g., keep ! and " literal)
-./bin/printable-binary -p '!"' input.bin > preserved.txt
+printable-binary -p '!"' input.bin > preserved.txt
 
 # Decode block-formatted input (strip whitespace separators first)
-./bin/printable-binary -d -S formatted_encoded.txt > original.bin
+printable-binary -d -S formatted_encoded.txt > original.bin
 
 # Use passthrough mode to output both original binary (stdout) and encoded text (stderr)
 # This is useful for binary data processing pipelines that need both representations
-echo -n "Hello, World!" | ./bin/printable-binary --passthrough 2>encoded.txt | wc -c
+echo -n "Hello, World!" | printable-binary --passthrough 2>encoded.txt | wc -c
 # Binary data goes to stdout, encoded text to stderr
 
-# Use the C implementation for better performance on large files
-./bin/printable-binary-c large_file.bin > encoded_large.txt
+# Use the canonical streaming Zig implementation for large inputs
+printable-binary large_file.bin > encoded_large.txt
 ```
 
 Every CLI writes a final stderr line for informal comparisons:
@@ -164,9 +158,32 @@ Every CLI writes a final stderr line for informal comparisons:
 Input throughput: 4999.36 MB read in 49.939 s (100.11 MB/s)
 ```
 
-`MB` means decimal input megabytes (1,000,000 bytes). The rate uses bytes read,
-not the larger encoded result, and covers input read, codec work, and output
-write. Set `PRINTABLE_BINARY_MUTE_STATS=1` to suppress it.
+`MB` means decimal input megabytes (1,000,000 bytes), with two decimal places.
+The rate uses bytes read, including the larger encoded input when decoding,
+and covers input read, codec work, and output write. Set
+`PRINTABLE_BINARY_MUTE_STATS=1` to suppress it.
+
+### Build selection and platforms
+
+`CANONICAL_IMPL` records the selected implementation, initially `zig`.
+`./build canonize c` changes that intent without compiling or switching a
+command; the next successful `./build` publishes it. `./build --impl=rust`
+builds a private Rust product without changing the selection.
+
+`./build --all-impls` selects all declared host implementations;
+`./build --all-plats` selects the canonical implementation's declared platforms;
+`./build --all` combines both scopes. Optimized `ReleaseFast` is the default;
+`--test` selects `ReleaseSafe`, and `--debug` selects `Debug`.
+
+Products use `<implementation>-out/<PF>/[<VARIANT>/]<profile>/`. PF is one of
+`linux-amd64`, `linux-arm64`, `macos-arm64`, `mswin-amd64`, or `mswin-arm64`.
+The optional variant is `gnu` or `musl`, omitted when inapplicable. APE is a
+separate implementation with its own `ape-out/` tree, even though it shares C
+source. Only the canonical host command is published in `bin/<PF>/`; other
+implementations and cross targets coexist without switching it. Global PATH
+configuration is separate from building. See the
+[implementation guide](README_IMPLEMENTATIONS.md) for the matrix, Nix outputs,
+retained generations, runtime dependencies, and verification limits.
 
 ### Web Interface
 
@@ -195,10 +212,10 @@ original file and verify it round-tripped exactly.
 
 ```bash
 # Encode a file into a container (filename + crc32 embedded)
-./bin/printable-binary -C photo.png > photo.png.pbf.json
+printable-binary -C photo.png > photo.png.pbf.json
 
 # Decode the container back to the original bytes (verifies crc32)
-./bin/printable-binary -d -C photo.png.pbf.json > photo.png
+printable-binary -d -C photo.png.pbf.json > photo.png
 ```
 
 Every full implementation understands it (Lua, Node, native C, APE, WASM, Zig, Roc,
@@ -236,7 +253,7 @@ e.g. Markdown — reads naturally inside the container while staying valid,
 single-line JSON (newlines remain `¶` glyphs):
 
 ```bash
-./bin/printable-binary -C --spaces notes.md > notes.md.pbf.json
+printable-binary -C --spaces notes.md > notes.md.pbf.json
 # data value reads like:  "♯ Title¶¶Some ⁎⁎bold⁎⁎ text.¶˗ a list item¶"
 ```
 
@@ -258,8 +275,8 @@ Round-trips with `-X -d`.
 
 ```bash
 # Encode in hexlike mode, then decode it back
-printf 'Hi\x00\xff!' | ./bin/printable-binary -X
-printf 'Hi\x00\xff!' | ./bin/printable-binary -X | ./bin/printable-binary -X -d | xxd
+printf 'Hi\x00\xff!' | printable-binary -X
+printf 'Hi\x00\xff!' | printable-binary -X | printable-binary -X -d | xxd
 ```
 
 ### As a Lua Library
@@ -308,11 +325,12 @@ tables from the same `character_map.txt` at compile time. Its `encode_into` and
 per-message allocation.
 
 ```bash
-nix develop -c cargo build --release --manifest-path rust/Cargo.toml
+./build --impl=rust
 
 # The provisional raw-codec CLI is deliberately stdin-only.
-rust/target/release/printable-binary-rs < input.bin > encoded.pbt
-rust/target/release/printable-binary-rs --decode < encoded.pbt > restored.bin
+# Linux amd64 product path; substitute the declared PF/variant on another host.
+rust-out/linux-amd64/gnu/ReleaseFast/bin/printable-binary-rs < input.bin > encoded.pbt
+rust-out/linux-amd64/gnu/ReleaseFast/bin/printable-binary-rs --decode < encoded.pbt > restored.bin
 ```
 
 ```rust
@@ -388,9 +406,9 @@ Every full CLI (including the WASM and APE variants) ships with the canonical
 256-entry table embedded, so you can always inspect it:
 
 ```bash
-./bin/printable-binary --mappings          # human-readable table
-./bin/printable-binary --mappings-json     # machine-readable JSON
-./bin/printable-binary --mappings-csv      # spreadsheet-friendly CSV
+printable-binary --mappings          # human-readable table
+printable-binary --mappings-json     # machine-readable JSON
+printable-binary --mappings-csv      # spreadsheet-friendly CSV
 ```
 
 Those commands show whichever map is active. To override the defaults, place a `character_map.txt` next to the executable (or set `PRINTABLE_BINARY_MAP`) and rerun the same flags to confirm your changes. The file format is simple: **256 lines of UTF-8, one glyph per byte value starting at 0x00**. No commas, spaces, or indexes—just the literal characters in order. After editing, run `./utils/audit_character_map.lua character_map.txt` (and `./utils/update_eaw_data.sh` when Unicode publishes a new width table) plus `./utils/generate_embedded_map.lua` so the embedded headers stay in sync.
@@ -398,7 +416,7 @@ Those commands show whichever map is active. To override the defaults, place a `
 The runtime lookup order is:
 
 1. `PRINTABLE_BINARY_MAP` environment variable (path to the file)
-2. A `character_map.txt` sitting next to the executable/module (`bin/printable-binary`, `js/printable_binary.js`, `bin/printable-binary-c`, or the WASM dir)
+2. A `character_map.txt` sitting next to the executable/module (the selected product's `bin/`, `js/printable_binary.js`, or the WASM directory)
 3. The current working directory
 
 If none of those locations exist, the embedded table is used automatically. Edit
@@ -415,7 +433,7 @@ Zig, Node, and tests):
 - `PRINTABLE_BINARY_MAP` – absolute or relative path to a `character_map.txt` that overrides the embedded table. The lookup order is described above.
 - `PRINTABLE_BINARY_MUTE_STATS` – set to `1`, `true`, or `yes` to suppress the usual "Encoded …" / "Decoding mode …" statistics that are normally written to stderr. This is handy for scripts that expect clean stderr output while still reusing the default behavior interactively.
 
-When launching the WASM build with wazero, remember that it does **not** inherit host environment variables unless you pass them. After building `bin/printable-binary.wasm` (for example via `make wasm`), use `wazero run --env=PRINTABLE_BINARY_MUTE_STATS=true bin/printable-binary.wasm` (or `--env-inherit` to forward everything) so the behavior matches the native binaries.
+The Nix-built WASM launcher inherits host environment variables. When launching the module directly with `wazero run`, pass `--env=PRINTABLE_BINARY_MUTE_STATS=true` (or `--env-inherit`) explicitly. `./build --impl=wasm` retains both launcher and module in the target/profile product.
 
 ### Inspecting Streams (Passthrough Mode)
 
@@ -424,12 +442,12 @@ One powerful trick is to drop PrintableBinary into a pipeline so you can watch t
 ```bash
 # Monitor traffic but keep the pipeline lossless
 tcpdump -i en0 -w - | \
-  ./bin/printable-binary --passthrough > capture.raw 2> capture.pbt
+  printable-binary --passthrough > capture.raw 2> capture.pbt
 
 # Alternatively inspect a decompression stream:
 gzip -c bigfile > /tmp/data.gz
 gzip -dc /tmp/data.gz | \
-  ./bin/printable-binary --passthrough | md5sum
+  printable-binary --passthrough | md5sum
 # stdout (original bytes) flows into md5sum; stderr shows the printable view.
 ```
 
@@ -440,17 +458,17 @@ Because `--passthrough` sends the original binary to stdout, you can insert Prin
 - **Escape-proof JSON embed** – Avoid backslash/quote hell by pre-encoding the bytes, then drop them straight into a JSON string:
 
   ```bash
-  ENCODED="$(./bin/printable-binary secret.bin)"
+  ENCODED="$(printable-binary secret.bin)"
   printf '{"payload":"%s"}\n' "$ENCODED" | jq .
   # Decode later:
-  printf '%s' "$ENCODED" | ./bin/printable-binary -d > restored.bin
+  printf '%s' "$ENCODED" | printable-binary -d > restored.bin
   ```
 
-- **Bash assertion on binary snippets** – Keep fixtures inline without here-doc escaping. Generate the encoded blob once (e.g., `PRINTABLE_BINARY_MUTE_STATS=1 printf 'CAFÉ\n' | ./bin/printable-binary`), then paste it into the here-doc:
+- **Bash assertion on binary snippets** – Keep fixtures inline without here-doc escaping. Generate the encoded blob once (e.g., `PRINTABLE_BINARY_MUTE_STATS=1 printf 'CAFÉ\n' | printable-binary`), then paste it into the here-doc:
 
   ```bash
   want=$'CAFÉ\n'                                     # byte-for-byte expectation
-  got=$(./bin/printable-binary -d <<'EOF'
+  got=$(printable-binary -d <<'EOF'
   CAFĹɃ¶
   EOF
   )
@@ -460,7 +478,7 @@ Because `--passthrough` sends the original binary to stdout, you can insert Prin
 - **Peek mixed binary/text streams in place** – Mirror a live HTTP POST while keeping the raw bytes intact:
 
   ```bash
-  nc -l 8080 | ./bin/printable-binary --passthrough \
+  nc -l 8080 | printable-binary --passthrough \
     >requests.raw 2>requests.pbt
   # tail -f requests.pbt to watch headers + body without mojibake.
   ```
@@ -470,7 +488,7 @@ Because `--passthrough` sends the original binary to stdout, you can insert Prin
   ```html
   <script type="module">
     import PrintableBinary from './js/printable_binary.js';
-    const encoded = `{{REPLACE_WITH_$(./bin/printable-binary file.bin)}}`;
+    const encoded = `{{REPLACE_WITH_$(printable-binary file.bin)}}`;
     const pb = new PrintableBinary();
     const bytes = pb.decode(encoded);
     // do something with bytes (e.g., create a Blob)
@@ -480,10 +498,10 @@ Because `--passthrough` sends the original binary to stdout, you can insert Prin
 - **Inspect hint bytes of common formats** – Spot magic numbers without a hex viewer:
 
   ```bash
-  head -c 16 some.pdf | ./bin/printable-binary
+  head -c 16 some.pdf | printable-binary
   # Expect to see %PDF␣1.7… rendered directly.
 
-  head -c 8 image.png | ./bin/printable-binary
+  head -c 8 image.png | printable-binary
   # Should show 89PNG⏎␣␣ if the PNG signature is intact.
   ```
 
@@ -532,19 +550,19 @@ The PrintableBinary character set is specifically designed to be highly compatib
 
 ```bash
 # JSON
-echo '{"binary_data": "'$(./bin/printable-binary file.bin)'"}'
+echo '{"binary_data": "'$(printable-binary file.bin)'"}'
 
 # XML/HTML
-echo '<data>'$(./bin/printable-binary file.bin)'</data>'
+echo '<data>'$(printable-binary file.bin)'</data>'
 
 # YAML
-echo 'data: "'$(./bin/printable-binary file.bin)'"'
+echo 'data: "'$(printable-binary file.bin)'"'
 
 # Shell variable
-DATA="$(./bin/printable-binary file.bin)"
+DATA="$(printable-binary file.bin)"
 
 # C string literal
-printf 'char data[] = "%s";\n' "$(./bin/printable-binary file.bin)"
+printf 'char data[] = "%s";\n' "$(printable-binary file.bin)"
 ```
 
 **Note:** If your original binary contains problematic characters (like `{`), they'll appear as-is since they're printable ASCII. Use quoted contexts when embedding in structured formats.

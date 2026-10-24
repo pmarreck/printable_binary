@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Compiler boundary fixture: record argv and create only the requested output.
+set -u
+printf '%s\0' "$@" > "${TEST_COMPILER_LOG:?}"
+output=''
+while [[ "$#" -gt 0 ]]; do
+	case "$1" in -o) output="${2:?missing -o argument}"; shift 2 ;; *) shift ;; esac
+done
+[[ -n "$output" ]] || exit 2
+mkdir -p "$(dirname "$output")" || exit 1
+printf 'compiler fixture\n' > "$output"
+chmod +x "$output"

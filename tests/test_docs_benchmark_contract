@@ -38,6 +38,15 @@ expect_file_contains "$guide" "Rust Implementation" "implementation guide has a 
 expect_file_contains "$guide" "Roc Implementation" "implementation guide has a Roc section"
 expect_file_contains "$guide" "WebAssembly Implementation" "implementation guide has a WebAssembly section"
 expect_file_contains "$guide" "Cosmopolitan APE" "implementation guide has an APE section"
+for document in "$readme" "$guide"; do
+	expect_file_contains "$document" './build --all-impls' 'build documentation distinguishes all host implementations from the canonical default'
+	expect_file_contains "$document" 'CANONICAL_IMPL' 'build documentation explains canonical selection'
+	if grep -Eq -- '\./build_all|\./bin/printable-binary([[:space:]]|$)|--backend=direct' "$document"; then
+		fail 'current build documentation must not direct readers to retired commands or generic compiled paths'
+	else
+		pass 'current build documentation uses supported entrypoints'
+	fi
+done
 
 if grep -Fq -- "garnix.io" "$readme"; then
 	fail "README must not publish a retired Garnix badge"

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Recording adapter for command-boundary tests; never invokes a real builder.
 set -u
-printf '%s\0' "$@" > "${TEST_COMMAND_LOG:?}"
+if [[ "$#" != 0 ]]; then
+	printf '%s\0' "$@" > "${TEST_COMMAND_LOG:?}"
+else
+	printf '' > "${TEST_COMMAND_LOG:?}"
+fi
 exit "${TEST_COMMAND_STATUS:-0}"

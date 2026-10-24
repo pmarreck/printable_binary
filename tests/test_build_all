@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
-# Proves ./build_all delegates the complete implementation set to ./build all.
+# Build configuration and the one-way build-all alias contract.
 
 set -u
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bash "$repo_root/tests/unit/test-build-config" || exit "$?"
 bash "$repo_root/tests/unit/test-test-entrypoint" || exit "$?"
-test_root="$(mktemp -d)"
+bash "$repo_root/tests/unit/test-build-matrix" || exit "$?"
+bash "$repo_root/tests/integration/test-build-publication" || exit "$?"
+bash "$repo_root/tests/integration/test-build-driver" || exit "$?"
+bash "$repo_root/tests/integration/test-native-c-graph" || exit "$?"
+bash "$repo_root/tests/integration/test-output-ignore" || exit "$?"
+bash "$repo_root/tests/integration/test-benchmark-products" || exit "$?"
+test_root="$(mktemp -d)" || exit 1
 trap 'rm -rf "$test_root"' EXIT
 
-cp "$repo_root/build_all" "$test_root/build_all"
-cat > "$test_root/build" <<'EOF'
-#!/bin/sh
-set -u
-printf '%s\n' "$@"
-EOF
-chmod +x "$test_root/build_all" "$test_root/build"
+cp "$repo_root/build-all" "$test_root/build-all" || exit 1
+cp "$repo_root/tests/fixtures/record-build-command" "$test_root/build" || exit 1
+chmod +x "$test_root/build-all" "$test_root/build" || exit 1
+export TEST_COMMAND_LOG="$test_root/arguments"
 
-actual="$(bash "$test_root/build_all")"
-if [[ "$actual" == "all" ]]; then
-	printf 'PASS: build_all delegates to build all, including Linux APE output\n'
+if bash "$test_root/build-all" --debug && cmp -s "$TEST_COMMAND_LOG" <(printf '%s\0' --all-impls --debug); then
+	printf 'PASS: build-all delegates to the complete host implementation scope and preserves flags\n'
 	exit 0
 fi
 
-printf 'FAIL: build_all invoked build with %q; expected all\n' "$actual" >&2
+printf 'FAIL: build-all did not preserve its scope and arguments\n' >&2
 exit 1

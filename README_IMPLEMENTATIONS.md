@@ -1,633 +1,138 @@
-# PrintableBinary Implementations Guide
+# PrintableBinary implementations
 
-A guide to the LuaJIT, C, Cosmopolitan APE, Zig, Roc, Rust, JavaScript/Node, and WebAssembly implementations of PrintableBinary—a tool for encoding binary data into human-readable UTF-8 and decoding it back.
+All nine executable implementations use the same 256-byte mapping. Zig is the canonical CLI. Rust provides an embedded raw codec and a smaller stdin CLI; the other implementations provide the full CLI contract. See [README.md](README.md) for encoding options, containers, library APIs, and the byte/glyph reference.
 
-## Overview
+## Build and select
 
-PrintableBinary is available in multiple high-performance implementations:
-
-### 🔥 **C Implementation** (Recommended for Production)
-- **Ultra-fast**: Up to 6x faster than LuaJIT for large files
-- **Memory efficient**: Optimized memory usage and allocation
-- **Cross-platform**: Compiles on Linux, macOS, Windows
-- **Drop-in replacement**: Identical command-line interface
-
-### 🌍 **Cosmopolitan APE Binary** (Runs Anywhere)
-- **Actually Portable Executable**: Single binary that runs on Linux, macOS, *and* Windows
-- **Zero dependencies**: Bundles Cosmopolitan libc, so it works even on stripped-down hosts
-- **CLI parity**: Same flags, environment variables, and character map behavior as the ELF build
-- **Great for distribution**: Ship one file (`printable-binary-ape.com`) and it just works
-
-### 🕸️ **WebAssembly Implementation** (Portable Sandbox)
-- **Same C CLI core**: Built from `src/printable_binary.c` with Emscripten
-- **WASI runner**: Execute it through wazero on a host with no native installation
-- **Full CLI parity**: Same arguments and mapping behavior as the native C binary
-- **Measured honestly**: The benchmark includes wazero startup and runtime overhead
-
-### 🦎 **Zig Implementation** (Canonical CLI)
-- **Memory-safe**: Zig's safety features catch bugs at compile time and runtime
-- **Cross-compilation**: Easy cross-compilation to many platforms from a single host
-- **Fast compilation**: Incremental builds and fast compile times
-- **CLI parity**: Same flags and behavior as C implementation
-
-### Roc Implementation
-- **Full CLI**: Supports the shared file, formatting, mapping, container, and stderr input-throughput contracts.
-- **Functional core**: The byte codec, container codec, option parser, and output rendering are tested as pure Roc modules.
-- **Native platform**: The bundled Zig platform provides raw-byte stdin, stdout, stderr, file reads, a monotonic clock, and status suppression.
-- **Current support**: Reproducibly packaged and tested on Linux; the platform host determines additional target availability.
-
-### 🦀 **Rust Implementation** (Embedded Raw Codec)
-- **Byte-identical core**: Compile-time tables generated from `character_map.txt`
-- **Low-allocation API**: `encode_into` and `decode_into` reuse caller-owned buffers
-- **Transport-focused CLI**: Minimal stdin→stdout encode/decode path for Rust↔Zig integration
-- **Deliberately narrow surface**: Formatting, containers, runtime map overrides, and mapping reports remain the job of the full CLIs
-
-### 🌐 **JavaScript / Node.js Implementation** (Web and Automation)
-- **Shared core**: One module powers the browser UI and Node CLI
-- **Portable runtime**: Runs in browsers, Node.js, and compatible bundlers
-- **CLI parity**: Node exposes the full user-facing command surface
-
-### ⚡ **LuaJIT Implementation** (Explicit Legacy CLI)
-- **Reference implementation**: Easy to modify and extend
-- **Well-tested**: Extensive test suite and battle-tested
-- **Development-friendly**: Rapid prototyping and debugging
-
-## Performance Comparison
-
-Performance depends on input mix, CPU, filesystem, runtime version, and whether a runtime must start. Rather than preserve a partial historical C-vs-Lua table as a project-wide claim, run the reproducible comparison locally:
+Builders require Nix with flakes enabled. `flake.nix` and `flake.lock` pin dependencies; language compilers run inside derivations. `nix develop` supplies editing and diagnostic tools, rather than a separate supported build backend.
 
 ```bash
+./build                       # Canonical implementation, current platform
+./build --all-impls            # All declared implementations for this platform
+./build --all-implementations  # Same scope, long alias
+./build --all-plats            # Canonical implementation, every declared platform
+./build --all                  # Every declared implementation/platform combination
+./build --impl=c               # Build C privately without changing the canonical command
+./build --platform=mswin-arm64 # Explicit cross target for the canonical implementation
+./build --debug                # Debug profile
+./build --test                 # ReleaseSafe profile
+./run --help                   # Build the selected host product, then launch it
+./test                        # Complete Nix check graph; failures accumulate
+```
+
+`build-all` is a one-way alias for `./build --all-impls`. Scope flags are independent, order-insensitive, and repeatable. `--all` covers the declared matrix, not an invented Cartesian product. An unavailable required builder fails the operation.
+
+`CANONICAL_IMPL` contains one registered implementation identifier, initially `zig`. Change it without compiling or switching an installed command:
+
+```bash
+./build canonize c
 ./build
-nix develop -c cargo build --release --manifest-path rust/Cargo.toml
-nix develop -c ./bm/benchmark-zig-opt --list-impls
-nix develop -c ./bm/benchmark-zig-opt --quick --sizes "1M"
 ```
 
-| Implementation | Included in comparison runner | Measurement boundary |
-| --- | --- | --- |
-| C (native), Zig, Roc, LuaJIT, Node.js | Yes, direct when built | CLI process and file I/O |
-| APE | Yes, through a clean-environment adapter | Cosmopolitan process and file I/O |
-| Rust | Yes, through an stdin adapter | Rust process and stdin/stdout I/O |
-| WebAssembly | Yes, through wazero | WASM runtime startup plus CLI I/O |
+Canonization records intent. Only a subsequent successful build publishes the new canonical host command. `./build --impl=rust`, for example, builds Rust without changing that selection. Choosing Rust as canonical also chooses its narrower CLI surface.
 
-`--impls roc,rust,wasm,ape` makes those targets mandatory, so a missing artifact fails instead of producing a misleading partial result. The runner round-trips a deterministic random input before it invokes `hyperfine`; it also includes an ASCII input set. Rust's `cargo run --release --example bench` is a separate in-process codec microbenchmark and should not be compared directly with CLI timings.
+Optimized `ReleaseFast` is the default; `--test` selects `ReleaseSafe`, and `--debug` selects `Debug`. No portable preset enables host-only CPU tuning. Make's supported public aliases delegate to these same commands. Its compiler recipes are implementation details of Nix packages. Retired manual optimization recipes remain recoverable in Git history; they are not qualified build presets.
 
-## Quick Start
+## Platforms and products
 
-### C Implementation (Recommended)
+Platform identifiers (`PF`) are `linux-amd64`, `linux-arm64`, `macos-arm64`, `mswin-amd64`, and `mswin-arm64`. Compiler triples and Nix system names keep their tool-specific spellings.
+
+| Implementation ID | Declared targets | Optional ABI variant | Installed command |
+| --- | --- | --- | --- |
+| `zig` | All five PFs | Linux `musl`; Windows `gnu`; none on macOS | `printable-binary` (`.exe` on Windows) |
+| `c` | Linux amd64/arm64, macOS arm64 | Linux `gnu` | `printable-binary-c` |
+| `ffi` | Linux amd64/arm64, macOS arm64 | Linux `gnu` | `printable-binary-ffi` |
+| `rust` | Linux amd64/arm64, macOS arm64 | Linux `gnu` | `printable-binary-rs` |
+| `roc` | Linux amd64/arm64 | `musl` | `printable-binary-roc` |
+| `luajit` | Linux amd64/arm64, macOS arm64 | None | `printable-binary-luajit` |
+| `node` | Linux amd64/arm64, macOS arm64 | None | `printable-binary-node` |
+| `ape` | All five PFs, built on Linux | None | `printable-binary-ape.com` |
+| `wasm` | Linux amd64/arm64, macOS arm64 launchers | None | `printable-binary-wasm` |
+
+The authoritative support declaration is [build-support/implementations](build-support/implementations). C, FFI, Rust, and runtime wrappers require their native Nix builder. APE requires a Linux Nix builder even when selected for macOS or Windows. Windows artifacts are cross-built through Nix on a supported host, WSL, or an appropriate remote builder.
+
+Complete installation trees live under `<implementation>-out/<PF>/[<VARIANT>/]<profile>/`. Omit the variant directory when it does not apply. They retain libraries, headers, maps, runtime modules, and build metadata, rather than only a loose executable. Examples on Linux amd64:
+
+```text
+zig-out/linux-amd64/musl/ReleaseFast/bin/printable-binary
+c-out/linux-amd64/gnu/ReleaseFast/bin/printable-binary-c
+ffi-out/linux-amd64/gnu/ReleaseFast/lib/libprintable_binary.a
+ape-out/linux-amd64/ReleaseFast/bin/printable-binary-ape.com
+wasm-out/linux-amd64/ReleaseFast/bin/printable-binary-wasm
+```
+
+Only the canonical host command is published in `bin/<PF>/`. Unix publication uses a direct relative symlink to a verified retained product; standalone Windows publication uses a copy and an ownership record, without requiring symlink privileges. Noncanonical products and foreign targets coexist without switching the host command. `.nix-out/` retains per-generation Nix output roots for rollback. Never compile through an installation link into the immutable store.
+
+Builds serialize publication, verify metadata and executable headers before selecting products, and cancel publication if `CANONICAL_IMPL` changes during compilation. Build or verification failure leaves the previous canonical command selected. Broad `make clean`/`distclean` operations are refused to protect source scripts, mappings, and retained products.
+
+For shell setup, put only the current `bin/<PF>/` before portable generic `bin/`. Do not recursively admit foreign products, `result/bin`, or `zig-out/bin`. The build does not edit global PATH. Until shell configuration is qualified, use the explicit PF path or `./run`. A new PATH selection may require shell refresh or rehash.
+
+## Nix packages
 
 ```bash
-# Build the C version
-make release
-
-# Use exactly like the LuaJIT version
-./bin/printable-binary-c file.bin
-./bin/printable-binary-c -d encoded_file.txt
-./bin/printable-binary-c --passthrough file.bin | other_tool
-
-# Install (optional)
-./install_c_version.sh
+nix build .                              # Canonical product
+nix run . -- --help                       # Canonical command
+nix build .#allImplementations            # Host products, grouped by implementation
+nix build .#build-rust-linux-amd64-ReleaseFast
+nix build .#build-zig-mswin-arm64-ReleaseSafe
 ```
 
-### Cosmopolitan APE Build
+`default` follows `CANONICAL_IMPL` and always exposes `bin/printable-binary`. Implementation packages retain their distinct command names. Changing the selector does not enter each product's filtered source closure, so canonization alone does not rebuild unrelated implementations. Existing `printableBinaryZig`, `printableBinaryNative`, `printableBinaryRoc`, `printableBinaryApe`, and `printableBinaryWasm` attributes select host ReleaseFast products where declared.
 
-```bash
-# Build the APE binary (requires cosmocc / Cosmopolitan toolchain)
-make ape
+## Implementation details
 
-# Run it directly (works on Linux/macOS/Windows)
-./bin/printable-binary-ape.com file.bin
-./bin/printable-binary-ape.com -d encoded.txt > decoded.bin
+### Zig Implementation
 
-# Run the full automated test suite against the APE binary
-make test-ape
-```
+The canonical full CLI uses the Zig library directly. The installed product includes the CLI, C-compatible library, and headers. Its core uses contiguous mapping storage, literal-prefix SIMD checks, and direct UTF-8 decode tables. Cross-compilation is declared for all five PFs.
+
+### C Implementation
+
+The standalone C CLI provides the full file, formatting, mapping, passthrough, and container interface. It has its own `c-out/` products. The `ffi` implementation instead exercises the Zig core through its public C ABI and retains the library and headers alongside the C CLI.
+
+### Cosmopolitan APE
+
+APE means Actually Portable Executable. It shares C source with the standalone C implementation but has a separate implementation identifier, package, tests, and `ape-out/` tree. Cosmopolitan supplies the portable runtime; the distributed fat executable retains its architecture slices. Linux build-tool helpers are converted to host-native ELF so their execution does not depend on the host's MZ handler. That conversion does not apply to the distributed application.
 
 ### WebAssembly Implementation
 
-```bash
-# Build the standalone WASM CLI from the C core.
-./build wasm
-
-# Run it through the WASI runtime supplied by the development shell.
-nix develop -c wazero run bin/printable-binary.wasm < input.bin > encoded.pbt
-nix develop -c wazero run bin/printable-binary.wasm -- -d < encoded.pbt > restored.bin
-```
-
-WASM has the C CLI's feature set. The runtime does not automatically inherit host environment variables; pass `--env=NAME=value` to wazero when a variable such as `PRINTABLE_BINARY_MUTE_STATS` matters.
-
-### Zig Implementation
-
-```bash
-# Build with Nix
-nix build .#printableBinaryZig
-./result-zig/bin/printable-binary file.bin
-
-# Or build directly with Zig
-zig build -Doptimize=ReleaseFast
-./zig-out/bin/printable-binary file.bin
-```
-
-### Rust Implementation
-
-```bash
-# Build the raw codec and its deliberately minimal stdin-only CLI.
-nix develop -c cargo build --release --manifest-path rust/Cargo.toml
-
-rust/target/release/printable-binary-rs < file.bin > encoded.pbt
-rust/target/release/printable-binary-rs --decode < encoded.pbt > restored.bin
-
-# Measure the in-process codec alone (not directly comparable to CLI timings).
-nix develop -c cargo run --release --manifest-path rust/Cargo.toml --example bench
-```
-
-Use Rust as an embedded codec or a Rust↔Zig transport boundary. Its CLI currently supports only raw stdin encode and `-d`/`--decode`; use a full CLI for file arguments, format options, mapping reports, containers, or runtime map overrides.
+Emscripten compiles the full C CLI to `wasm32-unknown-emscripten`; the resulting standalone module runs through wazero's WASI interface. The Nix product includes `printable-binary.wasm` and a pinned `printable-binary-wasm` launcher. The launcher inherits environment variables; a direct `wazero run` invocation must pass them explicitly with `--env` or `--env-inherit`.
 
 ### Roc Implementation
 
-```bash
-# Build the Linux-native full CLI through the pinned Roc compiler and platform.
-nix build .#printableBinaryRoc
-./result/bin/printable-binary-roc file.bin > encoded.pbt
-./result/bin/printable-binary-roc -d encoded.pbt > restored.bin
+Roc supplies a pure codec, container codec, argument parser, and output renderer. Its bundled Zig platform handles raw-byte I/O, files, clocks, and environment access. Linux is the required execution environment; no successful macOS runtime verification is claimed. Compiler and platform changes must pass Roc module tests plus the common CLI, container, map synchronization, and differential checks.
 
-# Or build into the local artifact directory used by the benchmark runner.
-./build roc
+### Rust Implementation
+
+The Rust crate provides `encode`, `decode`, `encode_into`, and `decode_into`, with caller-owned buffer reuse. Its raw stdin CLI supports encoding and `-d`/`--decode`; file arguments, formatting, mapping reports, runtime map overrides, and containers belong to the full CLIs. Its mapping is generated at compile time. Crate self-containment and spaces options are active work in [PLAN.md](PLAN.md).
+
+### LuaJIT and JavaScript / Node
+
+LuaJIT remains explicitly named `printable-binary-luajit`. It is useful as a modifiable reference, but its whole-input allocation behavior differs from the streaming Zig path. The JavaScript module powers the browser UI and Node CLI. Their source-distributed scripts remain in generic `bin/`; Nix products pin the interpreters and required resources.
+
+## CLI behavior
+
+Full CLIs support files/stdin, formatting, preservation modes, mapping reports, passthrough, byte ranges, hexlike encoding, and `.pbf.json` containers. See `--help` and [the main usage reference](README.md#usage) for exact arguments. Data goes to stdout; diagnostics and input-throughput statistics go to stderr.
+
+```text
+Input throughput: 4999.36 MB read in 49.939 s (100.11 MB/s)
 ```
 
-The Roc CLI follows the shared CLI and container contracts, including mapping reports and the input-throughput line on stderr. `nix build .#checks.x86_64-linux.test-roc` runs its pure-module tests plus the parameterized CLI, container, map-synchronization, and cross-implementation checks.
+MB means decimal input megabytes (1,000,000 bytes), with two decimal places. The rate covers input read, codec work, and output write. It measures bytes read, including the larger encoded input during decoding. Set `PRINTABLE_BINARY_MUTE_STATS=1` to suppress it.
 
-### LuaJIT Implementation
+Full CLIs accept `PRINTABLE_BINARY_MAP` for a 256-glyph override. Mapping reports reflect the active map. Rust's tables are compiled in and do not use that runtime override. The raw mapping and optional whitespace-preservation modes remain distinct contracts; compare like modes.
 
-```bash
-# Already optimized and ready to use
-./bin/printable-binary-luajit file.bin
-./bin/printable-binary-luajit -d encoded_file.txt
-```
+## Tests and performance
 
-## Installation Options
+`./test` is the complete entrypoint. It reaches every required Nix check, including module tests, shared CLI/container tests, map synchronization, differential checks, build/publication regressions, and bounded existing resource checks. Publication tests use disposable projects and exact prepared products, never a stale PATH executable.
 
-### Option 1: Automated Installation (C Version)
+Linux verification has exercised all nine installed host codecs in both mapping directions against the canonical table. Zig has also compiled all five targets with verified ELF, Mach-O, and PE headers. That is cross-build evidence; macOS, Windows, and Linux arm64 execution remain separate verification requirements.
 
-```bash
-./install_c_version.sh
-```
-
-Interactive installer that offers:
-- Replace LuaJIT version (with backup)
-- Install alongside as `printable-binary-c`
-- Install to custom location
-- Manual setup instructions
-
-### Option 2: Manual Build (C Version)
+The comparative runner covers Roc, Rust, WebAssembly, and APE as well as C, Zig, LuaJIT, and Node. It verifies round trips before timing, uses deterministic workloads, and includes runtime startup in end-to-end results. APE uses a clean-environment adapter; Rust uses stdin; WASM includes wazero. Historical timings do not establish current performance on another machine.
 
 ```bash
-# Basic build
-make release
-
-# Debug build
-make debug
-
-# Cross-platform builds
-make CC=clang release     # Use Clang
-make windows             # Cross-compile for Windows
-make CC=gcc CFLAGS="-O3 -static" release  # Static build
-# Cosmopolitan APE (runs on Linux/macOS/Windows)
-make ape
+./build --all-impls
+nix develop -c ./bm/benchmark-zig-opt --list-impls
+nix develop -c ./bm/benchmark-zig-opt --impls roc,rust,wasm,ape --sizes "10M"
 ```
 
-### Option 3: Nix Build
-
-```bash
-# Enter development environment
-nix develop
-
-# Build with Nix
-nix build .#printableBinaryNative   # ELF/Mach-O binary
-nix build .#printableBinaryApe      # Cosmopolitan APE fat binary (x86_64 + arm64, pinned cosmocc 4.0.2)
-nix build .#printableBinaryWasm     # WebAssembly module
-nix build .#printableBinaryRoc      # Linux-native Roc CLI
-nix build .#default                 # Suite: native + APE + Roc + WASM
-
-# Rust is a Cargo crate; the Nix development shell provides its offline toolchain.
-nix develop -c cargo build --release --manifest-path rust/Cargo.toml
-```
-
-## Command-Line Usage
-
-The full compiled variants (native C, APE, Zig, Roc, and WASM via wazero) share the user-facing command-line interface. The Rust transport CLI is intentionally narrower: raw stdin encode plus `-d`/`--decode`.
-
-### Basic Operations
-
-```bash
-# Encode binary file to UTF-8
-./bin/printable-binary file.bin > encoded.txt
-
-# Decode UTF-8 back to binary
-./bin/printable-binary -d encoded.txt > decoded.bin
-
-# Verify round-trip
-cmp file.bin decoded.bin && echo "✓ Perfect round-trip"
-```
-
-### Advanced Options
-
-```bash
-# Passthrough mode (monitor binary data in pipelines)
-./bin/printable-binary --passthrough file.bin | other_tool
-
-# Formatted output
-./bin/printable-binary -f=4x10 file.bin    # 4 chars per group, 10 groups per line
-
-# Piped input
-cat file.bin | ./bin/printable-binary
-echo "Hello" | ./bin/printable-binary | ./bin/printable-binary -d
-```
-
-### Complete Options Reference
-
-```
-Options:
-  -d, --decode          Decode mode (default is encode mode)
-  --passthrough         Pass input to stdout unchanged, send encoded data to stderr
-  -f[=NxM], --format[=NxM]  Format output in groups (default: 8x10)
-  --mappings            Print the active byte-to-Unicode table
-  --mappings-json       Emit the mapping table as JSON
-  --mappings-csv        Emit the mapping table as CSV
-  -h, --help            Show help message
-
-Encode options (preserve literal characters instead of encoding):
-  -s, --spaces          Preserve literal spaces (don't encode to ␣)
-  -t, --tabs            Preserve literal tabs (don't encode to ⇥)
-  -n, --crlf            Preserve literal CR/LF (don't encode to ⏎/¶)
-  -w, --preserve-whitespace  Shorthand for -stn (preserve all whitespace)
-  -p, --preserve=CHARS  Preserve specific characters (e.g., -p '!"')
-
-Decode options:
-  -S, --strip-whitespace  Strip whitespace before decoding (for formatted input)
-
-Input/Output:
-  - Reads from file or stdin if no file specified
-  - Outputs to stdout (unless --passthrough is used)
-  - In passthrough mode: original data → stdout, encoded data → stderr
-
-All binaries embed the canonical 256-entry map, so the `--mappings*` flags work even when `character_map.txt` is missing. If you place a custom map alongside the executable (or set `PRINTABLE_BINARY_MAP`), these options will reflect the override automatically. The override file should contain **exactly 256 lines**, each a single UTF-8 glyph (line 0 = byte 0x00, line 255 = byte 0xFF).
-```
-
-### Environment Variables (Full CLIs)
-
-```
-PRINTABLE_BINARY_MAP       – points to an alternate character_map.txt
-PRINTABLE_BINARY_MUTE_STATS – set to 1/true/yes to suppress stderr statistics
-```
-
-The Rust crate consumes its map at compile time and has no runtime map/environment configuration. When invoking WASM, pass variables explicitly with wazero's `--env` option because WASI does not inherit the host environment by default.
-
-## When to Use Which Implementation
-
-### Use C Implementation For:
-
-✅ **Production workloads** requiring maximum performance  
-✅ **Large files** (>100KB) where speed matters  
-✅ **Batch processing** of many files  
-✅ **Decode-heavy operations** (up to 6x faster)  
-✅ **Memory-constrained environments**  
-✅ **Long-running processes** with many operations  
-✅ **Cross-platform deployment**  
-
-### Use Zig Implementation For:
-
-✅ **Cross-compilation** to other platforms
-✅ **Memory-safe production** where safety is paramount
-✅ **A safe native CLI** with the complete option surface
-✅ **Modern tooling** with built-in package manager
-✅ **Environments** where C toolchains are unavailable
-
-### Use APE or WebAssembly For:
-
-✅ **APE** — a single distributable executable across Linux, macOS, and Windows
-✅ **WebAssembly** — a sandboxed/WASI deployment where a native binary is unsuitable
-✅ **Both** — the familiar full C CLI behavior; factor the runtime/loader into performance expectations
-
-### Use Rust Implementation For:
-
-✅ **Embedding** the byte↔glyph codec in Rust code
-✅ **High-frequency transport** with reusable encode/decode buffers
-✅ **Rust↔Zig boundaries** that need byte-identical raw codec output
-✅ **A deliberately small raw stdin CLI**, not file/container/format workflows
-
-### Use LuaJIT Implementation For:
-
-✅ **Quick scripts** and one-off operations
-✅ **Development and testing** (easier to modify)
-✅ **Small files** where performance difference is negligible
-✅ **Integration** with existing Lua-based workflows
-✅ **Rapid prototyping** and experimentation  
-
-## Feature Comparison
-
-| Variant | Raw codec | Full CLI | Runtime / distribution focus |
-| --- | --- | --- | --- |
-| LuaJIT | Yes | Yes | Reference implementation and scripting |
-| Native C | Yes | Yes | Fast direct native executable |
-| Cosmopolitan APE | Yes | Yes | One portable executable across major desktop OSes |
-| Zig | Yes | Yes | Safe native CLI and broad cross-compilation |
-| Roc | Yes | Linux | Full CLI through the pinned native platform |
-| JavaScript / Node | Yes | Yes | Browser UI and Node automation share a core |
-| WebAssembly | Yes | Yes | WASI sandbox via wazero; includes runtime startup cost |
-| Rust | Yes | No—raw stdin codec only | Embedded transport API with reusable buffers |
-
-## Compatibility
-
-### 100% Output Compatibility ✅
-
-All implementations produce **byte-for-byte identical raw codec** outputs:
-
-- ✅ All 256 possible byte values
-- ✅ Unicode and special characters  
-- ✅ Edge cases and corner conditions
-- ✅ Full CLI formatting/passthrough/container modes where that surface is implemented
-
-### Tested Compatibility
-
-```bash
-# Run comprehensive compatibility tests
-./tests/test                                      # LuaJIT CLI suite
-nix build .#checks.x86_64-linux.test-rust        # Rust + Zig differential guard (Linux)
-nix build .#checks.x86_64-linux.test-roc         # Roc full CLI and differential checks (Linux)
-nix develop -c ./bm/benchmark-zig-opt --quick    # Per-implementation round trips before timing
-```
-
-## Build Requirements
-
-### C Implementation
-
-**Required:**
-- C99-compatible compiler (GCC, Clang, MSVC)
-- Make (GNU Make or compatible)
-
-**Optional:**
-- Cross-compilation toolchains
-- Static analysis tools (Clang Static Analyzer, Cppcheck)
-- Profiling tools (Valgrind, AddressSanitizer)
-
-**Platform-Specific:**
-
-```bash
-# macOS
-xcode-select --install
-
-# Ubuntu/Debian
-sudo apt-get install build-essential
-
-# CentOS/RHEL
-sudo yum groupinstall 'Development Tools'
-
-# Windows (MinGW)
-# Install MSYS2 or use cross-compilation
-
-# Nix (any platform)
-nix develop
-```
-
-### LuaJIT Implementation
-
-**Required:**
-- LuaJIT 2.0 or later
-
-## Development
-
-### Build Targets
-
-```bash
-# Release builds
-make release              # Optimized build
-make debug               # Debug build with symbols
-make size                # Size-optimized build
-
-# Analysis builds
-make asan                # AddressSanitizer build
-make msan                # MemorySanitizer build (Clang only)
-make profile             # Profiling build
-
-# Testing
-make test                # Basic functionality tests
-make benchmark           # Performance benchmark
-make compare             # Compare with LuaJIT version
-make memcheck            # Valgrind memory check
-
-# Utility
-make clean               # Clean build artifacts
-make help                # Show all available targets
-```
-
-### Cross-Compilation
-
-```bash
-# Windows from Unix
-make windows
-
-# Custom cross-compilation
-make CC=aarch64-linux-gnu-gcc release
-
-# Static builds
-make LDFLAGS=-static release
-```
-
-### Performance Profiling
-
-```bash
-# Build with profiling
-make profile
-
-# Run with profiling
-./bin/printable-binary_profile large_file.bin
-gprof printable-binary-profile gmon.out > profile.txt
-
-# Memory profiling with Valgrind
-make memcheck
-```
-
-## Architecture Details
-
-### LuaJIT Implementation
-
-- **Language**: Lua with LuaJIT optimizations
-- **Encoding**: Table-based lookups with pre-computed UTF-8 sequences
-- **Decoding**: Intelligent UTF-8 length detection + hash maps
-- **Memory**: Dynamic allocation with garbage collection
-- **Size**: ~1000 lines of Lua code
-
-### C Implementation
-
-- **Language**: C99 with compiler optimizations
-- **Encoding**: Direct array lookups for maximum speed
-- **Decoding**: Hash-based decode table with efficient UTF-8 processing
-- **Memory**: Static tables + growable buffers, no garbage collection
-- **Size**: ~500 lines of C code
-
-### Zig Implementation
-
-- **Language**: Zig with safety checks and optimizations
-- **Encoding**: ArrayHashMap for byte-to-UTF8 lookups
-- **Decoding**: StringHashMap for UTF8-to-byte reverse lookups
-- **Memory**: Arena allocator for efficient memory management
-- **Safety**: Bounds checking and null safety at compile time
-- **Size**: ~500 lines of Zig code (main.zig + printable_binary.zig)
-
-### Key Optimizations in C Version
-
-1. **Pre-computed UTF-8 sequences** in static arrays
-2. **Hash-based decode table** for O(1) lookups
-3. **Efficient UTF-8 length detection** reducing iterations
-4. **Growable buffers** with exponential growth
-5. **Direct memory operations** avoiding string manipulation overhead
-6. **Optimized compiler flags** (-O3, -march=native)
-
-## Testing
-
-### Automated Test Suites
-
-```bash
-# LuaJIT implementation (from repo root)
-./tests/test                 # Deterministic suite
-./tests/test_all             # Full runner (fuzz, WASM, JS, etc.)
-
-# C implementation
-make test                   # Builds bin/printable-binary-c and runs ./tests/test_all against it
-cd test && IMPLEMENTATION_TO_TEST=../bin/printable-binary-c ./test_all
-
-# Compatibility verification
-./bm/benchmark_c_vs_lua.sh  # Performance + encode/decode parity
-```
-
-### Manual Testing
-
-```bash
-# Quick round-trip test
-echo "Hello, World! 🌍" | ./bin/printable-binary-c | ./bin/printable-binary-c -d
-
-# Large file test
-dd if=/dev/urandom of=test.bin bs=1M count=1
-./bin/printable-binary-c test.bin | ./bin/printable-binary-c -d | cmp test.bin -
-
-# Binary compatibility test
-./bin/printable-binary-c test.bin > c_output.txt
-./bin/printable-binary-luajit test.bin > lua_output.txt
-cmp c_output.txt lua_output.txt && echo "✓ Outputs identical"
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Build Failures:**
-```bash
-# Missing compiler
-sudo apt-get install build-essential  # Ubuntu
-xcode-select --install                # macOS
-
-# Permission errors
-chmod +x install_c_version.sh
-chmod +x bin/printable-binary-c
-```
-
-**Runtime Issues:**
-```bash
-# Test basic functionality
-echo "test" | ./bin/printable-binary-c
-
-# Check file permissions
-ls -la bin/printable-binary-c
-
-# Verify binary works
-./bin/printable-binary-c --help
-```
-
-**Performance Issues:**
-```bash
-# Ensure optimized build
-make clean && make release
-
-# Check compiler flags
-make CC=clang CFLAGS="-O3 -march=native" release
-
-# Profile performance
-make profile
-```
-
-## Contributing
-
-### Development Setup
-
-```bash
-# Clone and setup
-git clone <repository>
-cd printable-binary
-
-# Development environment
-nix develop  # or install dependencies manually
-
-# Build and test
-make release
-make test
-./test_all
-```
-
-### Code Style
-
-**C Code:**
-- C99 standard compliance
-- 4-space indentation
-- Descriptive variable names
-- Comprehensive error handling
-
-**Lua Code:**
-- 2-space indentation
-- Local variable preferences
-- Modular function design
-- Extensive comments
-
-### Testing Requirements
-
-All changes must:
-- ✅ Pass existing test suites
-- ✅ Maintain output compatibility
-- ✅ Include appropriate tests
-- ✅ Not regress performance significantly
-
-## License
-
-Both implementations are released under the same license as the original project.
-
-## Support
-
-### Getting Help
-
-1. **Check this README** for common usage patterns
-2. **Run built-in help**: `./bin/printable-binary --help`
-3. **Review test suites** for usage examples
-4. **Check performance docs** for optimization tips
-
-### Reporting Issues
-
-When reporting issues, please include:
-- Implementation version (C or LuaJIT)
-- Operating system and architecture
-- Compiler version (for C implementation)
-- Command that failed
-- Input data characteristics (size, type)
-- Expected vs actual behavior
-
----
-
-## Summary
-
-PrintableBinary offers a byte-identical raw codec through several deliberate deployment choices:
-
-- **Native C / Zig / Roc / LuaJIT / Node**: full CLIs for direct use
-- **Cosmopolitan APE**: the full C CLI in one portable executable
-- **WebAssembly**: the full C CLI under a WASI runtime
-- **Rust**: an embedded, reusable-buffer raw codec and narrow stdin transport CLI
-
-Choose a full CLI for files, formatting, mappings, containers, and interactive workflows. Choose Rust when the raw codec belongs inside a Rust process or transport boundary. Use `bm/benchmark-zig-opt` on the deployment hardware before making a performance claim; its adapters make Roc, Rust, WASM, and APE first-class comparison targets.
+The benchmark resolves and verifies exact host ReleaseFast products from this layout; it never falls back to generic binaries, Cargo caches, or `result/bin`. Inspect `--list-impls` before measuring. In-process codec microbenchmarks exclude startup and I/O and must not be compared directly with these end-to-end results. New performance gates and baseline changes follow the shared performance-profiling contract.
