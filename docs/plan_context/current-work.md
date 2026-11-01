@@ -2,6 +2,52 @@
 
 ## Cross-platform build migration authorized on 2026-10-23
 
+Cutover completed on 2026-11-01 after the shell-configuration project reported
+qualified native-before-generic PATH selection. Fresh shell verification selects
+`bin/linux-amd64/printable-binary`, whose one-line identity reports Zig and
+`PF=linux-amd64 VARIANT=musl`. Ten recognized legacy compiled generic-bin
+artifacts, including the previously tracked APE binary and foreign/debug
+artifacts, were moved to a private recoverable backup with matching SHA-256
+checksums. Portable LuaJIT, Node, conversion scripts, the mapping symlink, and
+all namespaced product trees remain intact. No global shell configuration was
+edited by this project.
+
+The next verification must distinguish compilation, setup, queue wait, and actual
+complete-suite execution. The owner reaffirmed a few-seconds execution budget;
+cached Nix check results cannot establish that budget. The existing check
+derivations mix compilation and execution, so their combined phase times remain
+mixed until execution-only spans or prepared test runners are available.
+
+On 2026-11-01 the owner authorized committing and pushing the accumulated work
+without waiting for the remaining framing choice. All 25 Linux Nix checks
+passed again after retirement of the legacy products and the memory migration.
+This establishes correctness for that check source, not a few-seconds fresh
+execution result. The repository CI guide is a regular, self-contained file
+that links to the shared authority rather than depending on a sibling checkout.
+
+## CJK-readable log encoding requested on 2026-11-01
+
+The requested optional mode should preserve readable Chinese, Japanese, and
+Korean text instead of byte-encoding every UTF-8 octet. An inspection of all 256
+canonical glyphs with the pinned runtime's Unicode 16.0 script data found no Han,
+Hiragana, Katakana, or Hangul conflicts. The default decoder already copies
+unrecognized complete UTF-8 sequences unchanged, so an encoder-side CJK
+passthrough can preserve byte-for-byte recovery without reassigning the existing
+256 mappings. This is a proposed expanded output repertoire, not implemented
+behavior or a change to default raw encoding.
+
+The owner explicitly separated broader non-CJK support because PB's Latin-range
+glyphs can also be ordinary non-English text. Discuss those collisions before
+extending preservation to other scripts. Define the CJK repertoire, shared
+punctuation/marks, supplementary ideographs, malformed UTF-8 handling, and
+recognition rules before implementation. Unicode distinguishes scripts from
+blocks and documents shared characters through Script_Extensions in
+[UAX #24](https://www.unicode.org/reports/tr24/); one basic ideograph range is
+insufficient for Japanese and Korean text. Keep controls encoded and retain
+exhaustive mapping, collision, and both-direction round-trip checks over each
+declared canonical image. Raw alphabet-only recognition remains unchanged;
+the new optional mode would need an explicitly expanded recognizer.
+
 Adopt the shared cross-platform build architecture in this repository. Zig remains the initial canonical implementation. The migration starts with selection and scope tests, then verified target-separated product publication and command consolidation. Global shell/PATH configuration is outside this repository's migration; record existing command resolution and coordinate its cutover separately. Existing generated products and unknown files must remain recoverable.
 
 APE is a distinct executable implementation with its own identifier, support declarations, package selection, and `ape-out/` product tree. Sharing C source does not merge it with the standalone C implementation. Shipping is deferred until the restructuring and remaining authorized plan work pass the complete gates. Explicit holds and missing protocol/framing choices remain visible owner decisions; they must not be silently treated as completed or implemented from guesses.

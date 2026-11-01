@@ -78,3 +78,7 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 	- [x] Preserve Debug banners, passthrough data, and inherited stdin/stdout positions by using streaming Zig standard-handle adapters (done 2026-10-24 00:09 EDT).
 - [x] [Cross-platform build architecture] Keep shared CLI suite output clean, remove binary-unsafe shebang probing, and replace its legacy errexit control with explicit assertions (done 2026-10-23 22:10 EDT).
 - [x] [Cross-platform build architecture] Verify a real canonical host build and publication; retain explicit gaps for foreign runtime verification and coordinate any global PATH cutover separately (done 2026-10-23 22:10 EDT).
+
+## Retired 2026-11-01
+
+- [x] [Build portability] Replace the experimental Roc compiler fork with a tested official flake and matching glue source, building and testing for the host platform (done 2026-10-24 00:09 EDT).

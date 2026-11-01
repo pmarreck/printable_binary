@@ -64,6 +64,9 @@ jj_cheatsheet.md
 # Inter-LLM coordination notes (LLMsend) — transient/local, never tracked
 inbox/
 
+# Session handoff docs (skill: handoff) — transient/local, never tracked
+HANDOFF*
+
 # Rust build artifacts
 /rust/target/
 
