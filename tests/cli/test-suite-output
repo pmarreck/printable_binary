@@ -7,6 +7,7 @@ if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
 fi
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
 "$@" > "$scratch/stdout" 2> "$scratch/stderr"
 status=$?
 if [[ "$status" != 0 ]]; then
@@ -17,6 +18,15 @@ if [[ "$status" != 0 ]]; then
 fi
 if [[ -s "$scratch/stderr" ]]; then
 	printf 'FAIL: shared suite leaked unasserted stderr (%s bytes)\n' "$(wc -c < "$scratch/stderr")" >&2
+	exit 1
+fi
+# Captured from the passing serial suite before parallelization. Check the
+# ordered multiset, including repeated PASS lines, so omitted work cannot hide.
+awk 'BEGIN {esc=sprintf("%c",27)} {gsub(esc "\\[[0-9;]*m", "")} /^(Test[ :]|PASS([ :]|$))/ {print}' \
+	"$scratch/stdout" > "$scratch/cases" || exit 1
+if ! cmp -s "$repo_root/tests/fixtures/shared-cli-case-inventory.txt" "$scratch/cases"; then
+	printf 'FAIL: shared CLI case inventory differs from the pre-parallelization contract\n' >&2
+	diff -u "$repo_root/tests/fixtures/shared-cli-case-inventory.txt" "$scratch/cases" | head -n 35 >&2
 	exit 1
 fi
 printf 'PASS: shared CLI suite completed with clean stderr\n'

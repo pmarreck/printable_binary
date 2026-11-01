@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# A successful process cannot silently omit, duplicate or reorder CLI cases.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then exit 1; fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+inventory="$repo_root/tests/fixtures/shared-cli-case-inventory.txt"
+failures=0
+for mode in complete missing duplicate reversed; do
+	bash "$repo_root/tests/cli/test-suite-output" bash -c '
+		case "$1" in
+			complete) cat "$2" ;;
+			missing) tail -n +2 "$2" ;;
+			duplicate) cat "$2"; head -n 1 "$2" ;;
+			reversed) tac "$2" ;;
+		esac
+	' inventory-probe "$mode" "$inventory" > "$scratch/stdout" 2> "$scratch/stderr"
+	status=$?
+	if [[ ( "$mode" == complete && "$status" != 0 ) || ( "$mode" != complete && "$status" == 0 ) ]]; then
+		printf 'FAIL: CLI case inventory accepted the wrong %s verdict\n' "$mode" >&2
+		failures=$((failures + 1))
+	fi
+done
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: complete CLI case inventory and omitted/duplicated/reordered controls\n'

@@ -8,9 +8,8 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Codec and Rust consumer requests
 
+- [x] Restore Roc hexlike/formatting parity exposed by the complete case inventory; all shared cases and independent all-byte comparisons now pass (done 2026-11-01 12:30 EST; context: docs/plan_context/current-work.md).
 - [x] Reject malformed two-byte lookup aliases in the shared C/APE/WASM decoder and retain exact-product regressions (done 2026-10-24 01:00 EDT).
-- [x] Make the Rust crate self-contained at build/package time and test its generated mapping against the canonical map (done 2026-10-24 00:09 EDT; context: docs/plan_context/current-work.md).
-- [x] Add Rust encode/decode spaces-preserving options with shared mapping regressions (done 2026-10-24 00:09 EDT; context: docs/plan_context/current-work.md).
 
 ## Optional stream tagging
 
@@ -36,7 +35,8 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 - [x] Commit all reviewed outstanding work, push yolo, and verify the exact pushed commit in Mechatron Prime CI; all 26 targets passed at f806bca (done 2026-11-01 11:40 EST; commit f806bca).
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
 	- [x] Qualify fixed-work C/FFI allocation lifecycle controls and retained unit executables; all 25 Linux checks pass, and fresh subset measurement isolates a 10.76-second Node CLI bottleneck (done 2026-11-01 12:05 EST; context: docs/plan_context/current-work.md).
-	- [ ] Run isolated shared-CLI groups with bounded concurrency, preserving every assertion and real executable call; qualify fresh full-suite timing separately from compilation.
+	- [x] Run isolated shared-CLI groups with bounded concurrency and all assertions; fresh Node execution fell from 10.76 to 4.55 seconds and all 26 Linux checks pass (done 2026-11-01 12:30 EST; context: docs/plan_context/current-work.md).
+	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 - [x] Audit the exact-commit CI target manifest against the complete required check set, including the Rust toolchain pin check (done 2026-10-24 01:00 EDT).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.
 - [x] Deliver the published self-contained Rust crate revision and spaces-option API to the requesting consumer through its durable inbox; acknowledgment is not yet established (done 2026-11-01 11:45 EST; commit f806bca).

@@ -456,6 +456,18 @@
 
         checks = {
           test-tag-recognition = tagRecognition;
+          test-cli-groups = pkgs.stdenvNoCC.mkDerivation {
+            name = "test-cli-groups";
+            src = ./.;
+            nativeBuildInputs = with pkgs; [ bash coreutils gawk luajit python3 xxd hexdump ];
+            buildPhase = ''
+              bash tests/unit/test-cli-group-runner
+              bash tests/unit/test-cli-case-inventory
+              patchShebangs tests/fixtures/fail-first-codec-call bin/printable-binary-luajit
+              bash tests/integration/test-shared-suite-failure "$PWD/bin/printable-binary-luajit"
+            '';
+            installPhase = "mkdir -p $out && touch $out/passed";
+          };
           rust-toolchain-pin = pkgs.runCommand "printable-binary-rust-toolchain-pin" {
             nativeBuildInputs = [ rustToolchain ];
           } ''
@@ -841,6 +853,7 @@
               test "$(roc version)" = "Roc compiler version ${rocCompiler.compilerVersion}"
               cp -R ${printableBinaryRocPlatform}/platform roc/platform
               roc test --jobs="$NIX_BUILD_CORES" roc/TestCodec.roc
+              roc test --jobs="$NIX_BUILD_CORES" roc/TestHexlike.roc
               roc test --jobs="$NIX_BUILD_CORES" roc/TestMap.roc
               roc test --jobs="$NIX_BUILD_CORES" roc/TestCrc.roc
               roc test --jobs="$NIX_BUILD_CORES" roc/TestContainer.roc
@@ -850,6 +863,7 @@
               roc build --jobs="$NIX_BUILD_CORES" --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
               zig build -Doptimize=ReleaseFast
               bash tests/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
+              bash tests/cli/test-roc-codec-parity ./printable-binary-roc ./zig-out/bin/printable-binary
               for muted in 1 true yes; do
                 printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
                 test ! -s muted.stderr
@@ -861,7 +875,7 @@
           test-build-all = pkgs.stdenvNoCC.mkDerivation {
             name = "test-build-all";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit ];
+            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit python3 xxd hexdump ];
             buildPhase = ''
               patchShebangs tests/fixtures
               bash ./tests/test_build_all

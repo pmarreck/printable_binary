@@ -11,10 +11,20 @@ scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 export TEST_REAL_CODEC="$codec" TEST_FAILURE_MARKER="$scratch/failed-call"
 cp "$repo_root/tests/fixtures/fail-first-codec-call" "$scratch/codec with spaces" || exit 1
+# First prove the identical adapter/path succeeds when no fault is injected;
+# otherwise an unrelated quoting failure could masquerade as a biting control.
+mkdir "$TEST_FAILURE_MARKER" || exit 1
+IMPLEMENTATION_TO_TEST="$scratch/codec with spaces" bash "$repo_root/tests/cli/test-suite-output" bash "$repo_root/tests/test" > "$scratch/stdout" 2> "$scratch/stderr"
+if [[ "$?" != 0 ]]; then
+	printf 'FAIL: the no-fault codec adapter with spaces must pass every CLI case\n' >&2
+	cat "$scratch/stderr" >&2
+	exit 1
+fi
+rmdir "$TEST_FAILURE_MARKER" || exit 1
 IMPLEMENTATION_TO_TEST="$scratch/codec with spaces" bash "$repo_root/tests/test" > "$scratch/stdout" 2> "$scratch/stderr"
 status=$?
-if [[ "$status" == 0 || ! -f "$TEST_FAILURE_MARKER" ]] || ! grep -Fq 'Test #1:' "$scratch/stdout" || grep -Fq 'Test #2:' "$scratch/stdout"; then
-	printf 'FAIL: the shared suite must reject correct output with an unsuccessful first encoder status\n' >&2
+if [[ "$status" == 0 || ! -d "$TEST_FAILURE_MARKER" ]]; then
+	printf 'FAIL: the shared suite must reject correct output with an unsuccessful encoder status\n' >&2
 	exit 1
 fi
 printf 'PASS: valid codec output cannot conceal an unsuccessful exit status\n'

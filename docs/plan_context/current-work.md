@@ -73,6 +73,50 @@ Move compilation to preparation before attributing its runtime. SIMD is deferred
 here because the measured costs are process orchestration and mandatory waiting,
 not evidence of an unvectorized codec hot path.
 
+The allocation-lifecycle increment shipped as
+`1e1e339249ea40726f00d48cdf6c3aa440915389`. The fetched remote matches, and all
+26 exact-commit Mechatron Prime CI targets passed at 17:11:13 UTC on 2026-11-01.
+
+The next candidate wraps the unchanged shared CLI cases in eight independent
+groups with private temporary trees. A tested bounded-wave scheduler preserves
+declaration-order output, waits for all groups, rejects malformed/duplicate group
+sets, and propagates every worker failure. A FIFO barrier establishes actual
+two-worker overlap without sleeps; the only timer is a five-second deadlock guard.
+The pre-refactor, passing serial suite supplied 224 case/result lines, retained in
+`tests/fixtures/shared-cli-case-inventory.txt`. The output gate initially accepted
+missing, duplicated, and reversed traces; those three controls now fail.
+
+A no-fault run of the exact codec adapter with spaces in its path exposed an
+existing unquoted-command failure. Quoting those invocations and checking the
+range-reference/idempotence command statuses made the positive control pass.
+The fault adapter then atomically chooses one ordinary encoder invocation and
+returns 7 after preserving its genuine stdout; the complete suite must reject it.
+This prevents an unrelated path error from masquerading as a successful control.
+
+Fresh run `pb-parallel-node-20261101-1217` passed the complete 224-line Node CLI
+inventory in 4.55 seconds with eight groups, compared with the earlier serial
+10.76-second observation. Total recorder begin-to-finish time was 4.63 seconds.
+Its source identity remained
+`b2f3588a32b36c4526f32c37379f27065e75d4cc3d4c719d937267aef80b33ac`.
+The prepared Node executable is unchanged; this is a concurrency/layout change
+to tests, not a codec speedup or historical-baseline approval. Host load before
+the run was approximately 39 over 128 logical CPUs. The run establishes a
+Node-sub-suite budget pass, not a complete-project execution budget pass.
+The complete candidate passed all 26 Linux checks on 2026-11-01 at 12:30 EST.
+This includes the additional mandatory scheduler/inventory check, so the CI
+manifest now contains 27 targets including the canonical package.
+
+The first complete run exposed missing Python/hexdump test dependencies and a
+previously hidden Roc parity gap: Roc's help omitted hexlike, causing the older
+suite to skip all 20 hexlike cases, and its parser accepted formatting flags
+without applying them. The stronger inventory gate was retained. Six new Roc
+expectations failed with zero compiler errors before implementing pure hexlike
+encoding/decoding and glyph-aware formatting. The final Roc CLI passes the whole
+shared inventory, warning/help behavior, malformed-format controls, pure boundary
+tests, and independent exact-output comparisons against Zig over all 256 values
+with and without preserved spaces. Required test dependencies are declared in
+the build-architecture check rather than obtained from the host.
+
 On 2026-11-01 the owner authorized committing and pushing the accumulated work
 without waiting for the remaining framing choice. All 25 Linux Nix checks
 passed again after retirement of the legacy products and the memory migration.

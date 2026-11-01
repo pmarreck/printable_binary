@@ -85,3 +85,5 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 - [x] [Build portability] Add a source-availability check that cannot pass solely because a pinned GitHub revision is already cached locally (done 2026-10-24 00:09 EDT).
 - [x] [Codec and Rust consumer requests] Prevent malformed UTF-8 aliases in Zig's compact two-/three-byte lookups; exhaust both lookup domains and retain real CLI regressions (done 2026-10-24 00:09 EDT).
 - [x] [Codec and Rust consumer requests] Fix the reproduced Rust decoder aliasing of malformed and truncated UTF-8; exhaust all two-byte inputs against exact canonical glyph matches (done 2026-10-24 00:09 EDT).
+- [x] [Codec and Rust consumer requests] Make the Rust crate self-contained at build/package time and test its generated mapping against the canonical map (done 2026-10-24 00:09 EDT; context: docs/plan_context/current-work.md).
+- [x] [Codec and Rust consumer requests] Add Rust encode/decode spaces-preserving options with shared mapping regressions (done 2026-10-24 00:09 EDT; context: docs/plan_context/current-work.md).

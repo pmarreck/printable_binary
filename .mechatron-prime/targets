@@ -12,6 +12,7 @@ checks.x86_64-linux.test-container-node
 checks.x86_64-linux.test-container-zig
 checks.x86_64-linux.test-build-all
 checks.x86_64-linux.test-cli-layout
+checks.x86_64-linux.test-cli-groups
 checks.x86_64-linux.test-docs-benchmark-contract
 checks.x86_64-linux.test-elixir
 checks.x86_64-linux.test-embedded-map-sync

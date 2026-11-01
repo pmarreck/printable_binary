@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# The independently built Zig CLI pins Roc's hexlike and formatting results.
+set -u
+roc_cli="${1:?Roc CLI required}"
+reference="${2:?Reference CLI required}"
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then exit 1; fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+export PRINTABLE_BINARY_MUTE_STATS=1
+luajit -e 'for byte=0,255 do io.write(string.char(byte)) end' > "$scratch/raw" || exit 1
+for spaces in raw spaces; do
+	options=()
+	[[ "$spaces" != spaces ]] || options+=(--spaces)
+	"$reference" -X "${options[@]}" < "$scratch/raw" > "$scratch/expected" 2> "$scratch/stderr" || exit 1
+	"$roc_cli" -X "${options[@]}" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || exit 1
+	cmp -s "$scratch/expected" "$scratch/actual" || { printf 'FAIL: Roc hexlike encoding differs from Zig\n' >&2; exit 1; }
+	"$roc_cli" -dX "${options[@]}" < "$scratch/expected" > "$scratch/decoded" 2> "$scratch/stderr" || exit 1
+	cmp -s "$scratch/raw" "$scratch/decoded" || exit 1
+	for specification in 1x2 2x2 8x10; do
+		"$reference" "--format=$specification" "${options[@]}" < "$scratch/raw" > "$scratch/expected" 2> "$scratch/stderr" || exit 1
+		"$roc_cli" "--format=$specification" "${options[@]}" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || exit 1
+		cmp -s "$scratch/expected" "$scratch/actual" || { printf 'FAIL: Roc formatting differs from Zig\n' >&2; exit 1; }
+		"$roc_cli" -d -S "${options[@]}" < "$scratch/actual" > "$scratch/decoded" 2> "$scratch/stderr" || exit 1
+		cmp -s "$scratch/raw" "$scratch/decoded" || exit 1
+	done
+done
+for invalid in 0x1 1x0 0 1x1x1 garbage ''; do
+	"$roc_cli" "--format=$invalid" < /dev/null > "$scratch/stdout" 2> "$scratch/stderr"
+	if [[ "$?" == 0 || -s "$scratch/stdout" ]]; then
+		printf 'FAIL: Roc accepted invalid format %q\n' "$invalid" >&2
+		exit 1
+	fi
+done
+printf 'PASS: Roc hexlike and formatting match Zig over all 256 bytes\n'

@@ -5,6 +5,7 @@ import CliOutput
 import Codec
 import Container
 import Map
+import Hexlike
 import pf.Clock
 import pf.Environment
 import pf.File
@@ -82,7 +83,19 @@ run_raw! = |input, options| {
 	} else {
 		{}
 	}
-	if Bool.not(options.decode) and Bool.not(options.no_double_encode_check) and Codec.is_likely_double_encoded(input, Map.glyphs) {
+	if options.decode and options.hexlike and Bool.not(Hexlike.has_prefix(input)) {
+		write_stderr!("Warning: no hexlike (Οχ) sequences found in input\n".to_utf8())?
+		if Codec.is_likely_double_encoded(input, Map.glyphs) {
+			write_stderr!("Warning: input appears to contain standard printable-binary encoding\n".to_utf8())?
+		} else {
+			{}
+		}
+	} else if options.decode and Bool.not(options.hexlike) and Hexlike.detect(input) {
+		write_stderr!("Warning: input appears to contain hexlike (Οχ) encoding; use --hexlike -d to decode\n".to_utf8())?
+	} else {
+		{}
+	}
+	if Bool.not(options.decode) and Bool.not(options.hexlike) and Bool.not(options.no_double_encode_check) and Codec.is_likely_double_encoded(input, Map.glyphs) {
 		write_stderr!("Warning: input appears to be already encoded; continuing may double-encode it\n".to_utf8())?
 	} else {
 		{}
@@ -190,4 +203,4 @@ fail! = |message| {
 	Err(Exit(1))
 }
 
-help_text = "Usage: printable-binary-roc [OPTIONS] [INPUT]\n\nOptions:\n  -d, --decode                 Decode printable-binary input\n  -s, --spaces                 Preserve literal spaces while encoding\n  -t, --tabs                   Preserve literal tabs while encoding\n  -n, --crlf                   Preserve literal CR and LF while encoding\n  -w, --preserve-whitespace    Preserve spaces, tabs, CR, and LF\n  -P, --preserve=CHARS         Preserve selected bytes while encoding\n  -p, --passthrough            Copy original input to stdout; encoded form to stderr\n  -S, --strip-whitespace       Remove transport whitespace before decoding\n  -C, --container              Encode or decode a printable-binary-file container\n      --range START-END        Limit input to an inclusive byte range\n      --start N --end N        Set inclusive range bounds\n      --mappings               Print the character mapping table\n      --mappings-json          Print mapping data as JSON\n      --mappings-csv           Print mapping data as CSV\n      --about                  Print implementation metadata\n  -h, --help                   Show this help\n"
+help_text = "Usage: printable-binary-roc [OPTIONS] [INPUT]\n\nOptions:\n  -d, --decode                 Decode printable-binary input\n  -s, --spaces                 Preserve literal spaces while encoding\n  -t, --tabs                   Preserve literal tabs while encoding\n  -n, --crlf                   Preserve literal CR and LF while encoding\n  -w, --preserve-whitespace    Preserve spaces, tabs, CR, and LF\n  -P, --preserve=CHARS         Preserve selected bytes while encoding\n  -p, --passthrough            Copy original input to stdout; encoded form to stderr\n  -S, --strip-whitespace       Remove transport whitespace before decoding\n  -C, --container              Encode or decode a printable-binary-file container\n      --range START-END        Limit input to an inclusive byte range\n      --start N --end N        Set inclusive range bounds\n      --mappings               Print the character mapping table\n      --mappings-json          Print mapping data as JSON\n      --mappings-csv           Print mapping data as CSV\n      --about                  Print implementation metadata\n  -f, --format NxM          Group raw PB output (bare -f uses 8x10)\n  -X, --hexlike              Uppercase hex runs prefixed by Οχ, not ASCII 0x\n  -h, --help                   Show this help\n"

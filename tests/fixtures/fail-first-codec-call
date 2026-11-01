@@ -4,7 +4,9 @@ set -u
 "${TEST_REAL_CODEC:?}" "$@"
 status=$?
 [[ "$status" == 0 ]] || exit "$status"
-if [[ ! -e "${TEST_FAILURE_MARKER:?}" ]]; then
-	printf 'failed after output\n' > "$TEST_FAILURE_MARKER"
-	exit 7
+# Only fault an ordinary encoder call, not prerequisite help or flag probes.
+# Atomic directory creation chooses one invocation when groups run concurrently.
+if [[ "${1:-}" != -* && ! -e "${TEST_FAILURE_MARKER:?}" ]]; then
+	if mkdir "$TEST_FAILURE_MARKER" 2>/dev/null; then exit 7; fi
+	[[ -d "$TEST_FAILURE_MARKER" ]] || exit 1
 fi

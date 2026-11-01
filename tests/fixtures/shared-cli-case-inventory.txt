@@ -1,0 +1,224 @@
+Test #1: Simple ASCII roundtrip
+PASS
+Test #2: Space encoding
+PASS
+Test #2b: Angle bracket lookalikes
+PASS
+Test #2c: Spaces passthrough option
+PASS
+PASS
+Test #2d: Spaces decode ␣ + literal spaces
+PASS
+Test #2e: Spaces + strip-whitespace strips newlines/tabs
+PASS
+Test #2f: Spaces warns about indentation
+PASS
+Test #3: Quotes and backslashes roundtrip
+PASS
+Test #4: Control characters roundtrip
+PASS
+Test #5: Full binary roundtrip (all 256 bytes)
+PASS
+Test #5b: Buffer boundary roundtrip (4095/4096/4097/8192 bytes)
+PASS
+Test #5c: Malformed runtime map rejected gracefully
+PASS
+Test #5d: -p passthrough / -P preserve consistency
+PASS
+Test #5e: -f / -f=NxM format-flag consistency
+PASS
+Test #6: Piped input
+PASS
+Test #7: Basic help text
+PASS
+Test #7b: Disassembly options are not exposed
+PASS
+Test #7c: Disassembly options are rejected
+PASS
+Test #8: Mappings table output
+PASS
+Test #9: Mappings JSON output
+PASS
+Test #10: Mappings CSV output
+PASS
+Test #11: Stats include throughput and honor PRINTABLE_BINARY_MUTE_STATS
+PASS
+PASS
+PASS
+Test #12: ANSI escape decode preserves bytes
+PASS
+Test #13: Decode handles blank lines in encoded text
+PASS
+PASS: All 256 byte values correctly encoded and decoded
+PASS: Byte 0 (NUL): 00 -> encoded -> decoded -> 00
+PASS: Byte 9 (TAB): 09 -> encoded -> decoded -> 09
+PASS: Byte 10 (LF): 0a -> encoded -> decoded -> 0a
+PASS: Byte 11 (VT): 0b -> encoded -> decoded -> 0b
+PASS: Byte 13 (CR): 0d -> encoded -> decoded -> 0d
+PASS: Byte 21 (CONTROL_21): 15 -> encoded -> decoded -> 15
+PASS: Byte 27 (ESC): 1b -> encoded -> decoded -> 1b
+PASS: Byte 32 (SPACE): 20 -> encoded -> decoded -> 20
+PASS: Byte 33 (EXCLAMATION): 21 -> encoded -> decoded -> 21
+PASS: Byte 34 (QUOTE): 22 -> encoded -> decoded -> 22
+PASS: Byte 35 (HASH): 23 -> encoded -> decoded -> 23
+PASS: Byte 36 (DOLLAR): 24 -> encoded -> decoded -> 24
+PASS: Byte 37 (PERCENT): 25 -> encoded -> decoded -> 25
+PASS: Byte 38 (AMPERSAND): 26 -> encoded -> decoded -> 26
+PASS: Byte 39 (SINGLE QUOTE): 27 -> encoded -> decoded -> 27
+PASS: Byte 40 (LEFT PAREN): 28 -> encoded -> decoded -> 28
+PASS: Byte 41 (RIGHT PAREN): 29 -> encoded -> decoded -> 29
+PASS: Byte 42 (ASTERISK): 2a -> encoded -> decoded -> 2a
+PASS: Byte 43 (PLUS): 2b -> encoded -> decoded -> 2b
+PASS: Byte 45 (MINUS): 2d -> encoded -> decoded -> 2d
+PASS: Byte 47 (SLASH): 2f -> encoded -> decoded -> 2f
+PASS: Byte 58 (COLON): 3a -> encoded -> decoded -> 3a
+PASS: Byte 59 (SEMICOLON): 3b -> encoded -> decoded -> 3b
+PASS: Byte 61 (EQUALS): 3d -> encoded -> decoded -> 3d
+PASS: Byte 63 (QUESTION): 3f -> encoded -> decoded -> 3f
+PASS: Byte 64 (AT): 40 -> encoded -> decoded -> 40
+PASS: Byte 91 (LEFT BRACKET): 5b -> encoded -> decoded -> 5b
+PASS: Byte 92 (BACKSLASH): 5c -> encoded -> decoded -> 5c
+PASS: Byte 93 (RIGHT BRACKET): 5d -> encoded -> decoded -> 5d
+PASS: Byte 96 (BACKTICK): 60 -> encoded -> decoded -> 60
+PASS: Byte 123 (LEFT BRACE): 7b -> encoded -> decoded -> 7b
+PASS: Byte 124 (PIPE): 7c -> encoded -> decoded -> 7c
+PASS: Byte 125 (RIGHT BRACE): 7d -> encoded -> decoded -> 7d
+PASS: Byte 126 (TILDE): 7e -> encoded -> decoded -> 7e
+PASS: Byte 127 (DEL): 7f -> encoded -> decoded -> 7f
+PASS: Byte 65 (ASCII A): 41 -> encoded -> decoded -> 41
+PASS: Byte 97 (ASCII a): 61 -> encoded -> decoded -> 61
+PASS: Byte 126 (ASCII ~): 7e -> encoded -> decoded -> 7e
+PASS: Byte 128 (Extended 128): 80 -> encoded -> decoded -> 80
+PASS: Byte 192 (Extended 192): c0 -> encoded -> decoded -> c0
+PASS: Byte 224 (Extended 224): e0 -> encoded -> decoded -> e0
+PASS: Byte 255 (Extended 255): ff -> encoded -> decoded -> ff
+Test #1: Basic passthrough with ASCII text
+PASS: Original data correctly passed through to stdout
+PASS: Encoded data correctly sent to stderr
+Test #2: Passthrough with binary data
+PASS: Binary data correctly passed through to stdout
+PASS: Encoded binary data correctly sent to stderr
+Test #3: Passthrough ignored in decode mode
+PASS: Warning about ignored passthrough in decode mode
+PASS: Decoded data correctly sent to stdout despite passthrough
+Test #4: Passthrough with piped input
+PASS: Piped input correctly passed through to stdout
+PASS: Encoded piped input correctly sent to stderr
+Test: Unrecognized ASCII passes through on decode
+PASS
+Test: Whitespace passes through by default on decode
+PASS
+Test: Tabs pass through by default on decode
+PASS
+Test: Newlines pass through by default on decode
+PASS
+Test: Decode is idempotent
+PASS
+Test: Multi-byte UTF-8 passes through intact
+PASS
+Test: --strip-whitespace strips whitespace
+PASS
+Test: --strip-whitespace strips tabs and newlines
+PASS
+Test: -S short flag for --strip-whitespace
+PASS
+Test: Encode/decode roundtrip with new behavior
+PASS
+Test: --tabs preserves literal tabs on encode
+PASS
+Test: -t short flag preserves tabs
+PASS
+Test: --crlf preserves literal newlines on encode
+PASS
+Test: --crlf preserves CR too
+PASS
+Test: -n short flag preserves newlines
+PASS
+Test: --preserve-whitespace preserves all whitespace
+PASS
+Test: -w short flag preserves all whitespace
+PASS
+Test: --preserve with custom characters
+PASS
+Test: -p/-P short flag with custom characters
+PASS
+Test: Combined short flags -stn
+PASS
+Test: Double-encoding produces warning to stderr
+PASS
+Test: Double-encoding warning is non-blocking (still produces output)
+PASS
+Test: --no-double-encode-check suppresses warning
+PASS
+Test: Pure ASCII input does not trigger double-encode warning
+PASS
+Test: Low percentage of PB glyphs does not trigger warning
+PASS
+Test: Above 5% threshold triggers warning
+PASS
+Test R1: Basic range (--range 0-9)
+PASS
+Test R2: Omitted start (--range -4)
+PASS
+Test R3: Omitted end (--range 20-)
+PASS
+Test R4: Hex range (--range 0x00-0x09)
+PASS
+Test R5: Out-of-bounds end (--range 0-999)
+PASS
+Test R6: Out-of-bounds start (--range 999-1000)
+PASS
+Test R7: Start > end (--range 10-5)
+PASS
+Test R8: Negative start (--start -5)
+PASS
+Test R9: Separate start/end (--start 5 --end 9)
+PASS
+Test R10: Positional range (5-9)
+PASS
+Test R11: Range with stdin (--range 0-4)
+PASS
+Test R12: Range roundtrip (encode range then decode)
+PASS
+Test R13: Single byte (--range 5-5)
+PASS
+Test H1: Hexlike encode pure passthrough ASCII
+PASS
+Test H2: Hexlike encode non-passthrough byte
+PASS
+Test H3: Hexlike encode groups consecutive non-passthrough
+PASS
+Test H4: Hexlike encode mixed (comma+space grouped)
+PASS
+Test H5: Hexlike encode with --spaces (space passthrough)
+PASS
+Test H6: Hexlike no trailing space at end
+PASS
+Test H7: Hexlike no leading space at start
+PASS
+Test H8: Hexlike all non-passthrough
+PASS
+Test H9: Hexlike uses uppercase hex
+PASS
+Test H10: Hexlike short flag -X
+PASS
+Test H11: Hexlike decode pure hex
+PASS
+Test H12: Hexlike decode mixed
+PASS
+Test H13: Hexlike 256-byte roundtrip
+PASS
+Test H14: Hexlike roundtrip with --spaces
+PASS
+Test H15: Hexlike decode with combined -dX
+PASS
+Test H16: Hexlike data space adjacent to hex run
+PASS
+Test H17: Hexlike decode warns on no hex content
+PASS
+Test H18: Hexlike decode warns on PB glyphs
+PASS
+Test H19: Regular decode warns on hexlike content
+PASS
+Test H20: Help text mentions hexlike and Οχ disambiguation
+PASS

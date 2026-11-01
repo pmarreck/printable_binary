@@ -101,7 +101,7 @@ The packaged launcher leaves the host filesystem unmounted. Use stdin/stdout by 
 
 ### Roc Implementation
 
-Roc supplies a pure codec, container codec, argument parser, and output renderer. Its bundled Zig platform handles raw-byte I/O, files, clocks, and environment access. Linux is the required execution environment; no successful macOS runtime verification is claimed. Compiler and platform changes must pass Roc module tests plus the common CLI, container, map synchronization, and differential checks.
+Roc supplies pure raw and hexlike codecs, UTF-8 glyph-aware formatting, a container codec, argument parser, and output renderer. Its bundled Zig platform handles raw-byte I/O, files, clocks, and environment access. Linux is the required execution environment; no successful macOS runtime verification is claimed. Compiler and platform changes must pass Roc module tests plus the complete shared CLI inventory, container, map synchronization, and independent hexlike/formatting differential checks.
 
 The compiler comes from the official Roc nightly overlay, with an immutable official source pin for glue generation. Nix asserts that the source commit matches the selected compiler. `./check-sources` separately probes the pinned GitHub archive URLs over the network, bypassing the local Nix source cache. It is an explicit online diagnostic; deterministic source-checker regressions remain part of `./test`. Archive reachability does not verify release assets or foreign runtime behavior.
 
@@ -132,6 +132,8 @@ Full CLIs accept `PRINTABLE_BINARY_MAP` for a 256-glyph override. Mapping report
 ## Tests and performance
 
 `./test` is the complete entrypoint. It reaches every required Nix check, including module tests, shared CLI/container tests, map synchronization, differential checks, build/publication regressions, and bounded existing resource checks. Publication tests use disposable projects and exact prepared products, never a stale PATH executable.
+
+The shared CLI contract runs eight independent groups with private temporary trees and stable output order. Its worker limit defaults to the Nix core budget, capped at eight. Direct, isolated prepared-suite invocations accept `PB_TEST_JOBS=1` for serial diagnosis; pure Nix checks do not inherit that caller override. Every case remains required. An ordered inventory captured before parallelization rejects missing, duplicate, or reordered case results. Compilation, cached verdicts, and fresh test execution are separate evidence; a fast cached `./test` does not establish fresh runtime.
 
 Linux verification has exercised all nine installed host codecs in both mapping directions against the canonical table. Zig has also compiled all five targets with verified ELF, Mach-O, and PE headers. That is cross-build evidence; macOS, Windows, and Linux arm64 execution remain separate verification requirements.
 

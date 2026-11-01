@@ -49,6 +49,49 @@ Codec := {}.{
 		input_length = List.len(input)
 		input_length > 0 and count_encoded_glyphs(input, mapping, 0, 0) * 100 > input_length * 5
 	}
+
+	format_output : List(U8), U64, U64, Bool -> List(U8)
+	format_output = |input, group_size, groups_per_line, spaces| {
+		if group_size == 0 or groups_per_line == 0 {
+			input
+		} else {
+			var $out = List.with_capacity(List.len(input))
+			var $index = 0
+			var $characters = 0.U64
+			while $index < List.len(input) {
+				first = List.get(input, $index) ?? crash "PrintableBinary format index"
+				width = if first >= 240 {
+					4.U64
+				} else if first >= 224 {
+					3
+				} else if first >= 192 {
+					2
+				} else {
+					1
+				}
+				remaining = List.len(input) - $index
+				count = if width < remaining {
+					width
+				} else {
+					remaining
+				}
+				$out = List.concat($out, List.take_first(List.drop_first(input, $index), count))
+				$index = $index + count
+				$characters = $characters + 1
+				if $characters % group_size == 0 and $index < List.len(input) {
+					separator = if ($characters // group_size) % groups_per_line == 0 {
+						10.U8
+					} else if spaces {
+						9
+					} else {
+						32
+					}
+					$out = List.append($out, separator)
+				}
+			}
+			$out
+		}
+	}
 }
 
 should_preserve : U8, Bool, Bool, Bool, List(U8) -> Bool

@@ -1,4 +1,5 @@
 import Codec
+import Hexlike
 
 CliCore := {}.{
 	default_options : Options
@@ -11,6 +12,9 @@ CliCore := {}.{
 		strip_whitespace: False,
 		preserve: [],
 		container: False,
+		hexlike: False,
+		format_group: 0,
+		format_lines: 10,
 		no_double_encode_check: False,
 		range_start: Absent,
 		range_end: Absent,
@@ -23,10 +27,17 @@ CliCore := {}.{
 	transform : List(U8), Options, List(List(U8)) -> List(U8)
 	transform = |input, options, mapping| {
 		ranged = apply_range(input, options.range_start, options.range_end)
-		if options.decode {
+		if options.hexlike {
+			if options.decode {
+				Hexlike.decode(ranged)
+			} else {
+				Hexlike.encode(ranged, options.spaces)
+			}
+		} else if options.decode {
 			Codec.decode(ranged, mapping, options.spaces, options.strip_whitespace)
 		} else {
-			Codec.encode_with(ranged, mapping, options.spaces, options.tabs, options.crlf, options.preserve)
+			encoded = Codec.encode_with(ranged, mapping, options.spaces, options.tabs, options.crlf, options.preserve)
+			Codec.format_output(encoded, options.format_group, options.format_lines, options.spaces)
 		}
 	}
 
@@ -80,6 +91,9 @@ Options : {
 	strip_whitespace : Bool,
 	preserve : List(U8),
 	container : Bool,
+	hexlike : Bool,
+	format_group : U64,
+	format_lines : U64,
 	no_double_encode_check : Bool,
 	range_start : MaybeIndex,
 	range_end : MaybeIndex,
@@ -125,14 +139,24 @@ parse_args = |args, index, options| {
 				parse_args(args, index + 1, { ..options, passthrough: True })
 			} else if argument == "--container" or argument == "-C" {
 				parse_args(args, index + 1, { ..options, container: True })
+			} else if argument == "--hexlike" or argument == "-X" {
+				parse_args(args, index + 1, { ..options, hexlike: True })
+			} else if argument == "-dX" or argument == "-Xd" {
+				parse_args(args, index + 1, { ..options, hexlike: True, decode: True })
 			} else if argument == "--no-double-encode-check" {
 				parse_args(args, index + 1, { ..options, no_double_encode_check: True })
 			} else if argument == "-stn" {
 				parse_args(args, index + 1, { ..options, spaces: True, tabs: True, crlf: True })
 			} else if Str.starts_with(argument, "--preserve=") {
 				parse_args(args, index + 1, { ..options, preserve: Str.to_utf8(Str.drop_prefix(argument, "--preserve=")) })
+			} else if argument == "-f" or argument == "--format" {
+				parse_format_option(args, index, options, argument == "-f")
+			} else if Str.starts_with(argument, "--format=") {
+				apply_format(args, index + 1, options, Str.drop_prefix(argument, "--format="))
+			} else if Str.starts_with(argument, "-f=") {
+				apply_format(args, index + 1, options, Str.drop_prefix(argument, "-f="))
 			} else if Str.starts_with(argument, "-f") {
-				parse_args(args, index + 1, options)
+				apply_format(args, index + 1, options, Str.drop_prefix(argument, "-f"))
 			} else if argument == "--preserve" or argument == "-P" {
 				match List.get(args, index + 1) {
 					Ok(value) => parse_args(args, index + 2, { ..options, preserve: Str.to_utf8(value) })
@@ -149,6 +173,57 @@ parse_args = |args, index, options| {
 			} else {
 				parse_positional(argument, args, index, options)
 			}
+	}
+}
+
+parse_format_option : List(Str), U64, Options, Bool -> ParseResult
+parse_format_option = |args, index, options, allow_default| {
+	match List.get(args, index + 1) {
+		Ok(value) => match parse_format(value) {
+			ParsedFormat(group_size, lines) => parse_args(args, index + 2, { ..options, format_group: group_size, format_lines: lines })
+			InvalidFormat => if allow_default {
+				parse_args(args, index + 1, { ..options, format_group: 8, format_lines: 10 })
+			} else {
+				ParseError("Invalid format: ${value}")
+			}
+		}
+		Err(_) => if allow_default {
+			parse_args(args, index + 1, { ..options, format_group: 8, format_lines: 10 })
+		} else {
+			ParseError("Missing format value")
+		}
+	}
+}
+
+apply_format : List(Str), U64, Options, Str -> ParseResult
+apply_format = |args, next_index, options, value| {
+	match parse_format(value) {
+		ParsedFormat(group_size, lines) => parse_args(args, next_index, { ..options, format_group: group_size, format_lines: lines })
+		InvalidFormat => ParseError("Invalid format: ${value}")
+	}
+}
+
+FormatResult : [ParsedFormat(U64, U64), InvalidFormat]
+
+parse_format : Str -> FormatResult
+parse_format = |value| {
+	match Str.split_first(value, "x") {
+		Ok(parts) => match (U64.from_str(parts.before), U64.from_str(parts.after)) {
+			(Ok(group_size), Ok(lines)) => if group_size > 0 and lines > 0 {
+				ParsedFormat(group_size, lines)
+			} else {
+				InvalidFormat
+			}
+			_ => InvalidFormat
+		}
+		Err(_) => match U64.from_str(value) {
+			Ok(group_size) => if group_size > 0 {
+				ParsedFormat(group_size, 10)
+			} else {
+				InvalidFormat
+			}
+			Err(_) => InvalidFormat
+		}
 	}
 }
 

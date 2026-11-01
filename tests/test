@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Master test script for printable_binary
-# Runs all test suites
+# Shared CLI contract, parameterized by the exact prepared executable.
+# The root ./test remains the complete project entrypoint.
 
 set -u
 # Statistics are asserted explicitly below; ordinary codec cases stay quiet.
@@ -42,6 +42,10 @@ elif echo "$SHEBANG" | grep -qi "node"; then
     fi
 fi
 
+prepare_group() {
+# Every worker owns its temporary tree; no shared mutable test files.
+GROUP_SCRATCH="$(mktemp -d)" || exit 1
+export TMPDIR="$GROUP_SCRATCH"
 # Create temp files for testing
 TMP_BINARY=$(mktemp)
 TMP_ENCODED=$(mktemp)
@@ -54,15 +58,12 @@ TMP_ENCODED_WITH_WHITESPACE=$(mktemp)
 
 # Cleanup function
 cleanup() {
-    rm -f "$TMP_BINARY" "$TMP_ENCODED" "$TMP_DECODED" \
-          "$TMP_MAPPINGS" "$TMP_MAPPINGS_JSON" "$TMP_MAPPINGS_CSV" \
-          "$TMP_STATS_STDERR" "$TMP_ENCODED_WITH_WHITESPACE"
+    rm -rf -- "$GROUP_SCRATCH"
 }
 trap cleanup EXIT
+}
 
-echo -e "${BLUE}=== PrintableBinary Test Suite ===${NC}"
-echo -e "${YELLOW}Testing implementation: $SCRIPT${NC}"
-
+group_basic() {
 ###############################################################################
 # BASIC FUNCTIONALITY TESTS
 ###############################################################################
@@ -109,9 +110,6 @@ else
     echo "Got: $ENCODED"
     exit 1
 fi
-
-# Capture help output (used by Tests 7, 7b, 7c)
-HELP_OUTPUT=$("$SCRIPT" --help 2>&1) || exit 1
 
 # Test 2c: Spaces passthrough option
 echo -e "${BLUE}Test #2c: Spaces passthrough option${NC}"
@@ -229,8 +227,8 @@ echo -e "${BLUE}Test #5b: Buffer boundary roundtrip (4095/4096/4097/8192 bytes)$
 BOUNDARY_OK=1
 for sz in 4095 4096 4097 8192; do
     head -c "$sz" /dev/zero | tr '\0' 'Z' > "$TMP_BINARY"
-    if ! $SCRIPT "$TMP_BINARY" > "$TMP_ENCODED" 2>/dev/null; then BOUNDARY_OK=0; echo "encode crashed at size $sz"; break; fi
-    if ! $SCRIPT -d "$TMP_ENCODED" > "$TMP_DECODED" 2>/dev/null; then BOUNDARY_OK=0; echo "decode crashed at size $sz"; break; fi
+    if ! "$SCRIPT" "$TMP_BINARY" > "$TMP_ENCODED" 2>/dev/null; then BOUNDARY_OK=0; echo "encode crashed at size $sz"; break; fi
+    if ! "$SCRIPT" -d "$TMP_ENCODED" > "$TMP_DECODED" 2>/dev/null; then BOUNDARY_OK=0; echo "decode crashed at size $sz"; break; fi
     if ! cmp -s "$TMP_BINARY" "$TMP_DECODED"; then BOUNDARY_OK=0; echo "roundtrip mismatch at size $sz"; break; fi
 done
 if [[ "$BOUNDARY_OK" == "1" ]]; then
@@ -247,7 +245,7 @@ if [[ -f character_map.txt ]]; then
     BADMAP=$(mktemp)
     awk 'BEGIN{done=0} /^##/{print;next} (done==0){print "TOOLONG8"; done=1; next} {print}' character_map.txt > "$BADMAP"
     rc=0
-    PRINTABLE_BINARY_MAP="$BADMAP" $SCRIPT <<< "x" >/dev/null 2>&1 || rc=$?
+    PRINTABLE_BINARY_MAP="$BADMAP" "$SCRIPT" <<< "x" >/dev/null 2>&1 || rc=$?
     rm -f "$BADMAP"
     if [[ $rc -ge 128 ]]; then
         echo -e "${RED}FAIL${NC} (crashed with signal, exit $rc)"
@@ -271,8 +269,8 @@ fi
 
 # Test 5e: -f (bare, default grouping) and -f=NxM (attached spec) consistency
 echo -e "${BLUE}Test #5e: -f / -f=NxM format-flag consistency${NC}"
-rc1=0; printf 'AAAABBBB' | $SCRIPT -f >/dev/null 2>&1 || rc1=$?
-rc2=0; printf 'AAAABBBB' | $SCRIPT -f=2x2 >/dev/null 2>&1 || rc2=$?
+rc1=0; printf 'AAAABBBB' | "$SCRIPT" -f >/dev/null 2>&1 || rc1=$?
+rc2=0; printf 'AAAABBBB' | "$SCRIPT" -f=2x2 >/dev/null 2>&1 || rc2=$?
 if [[ $rc1 -eq 0 && $rc2 -eq 0 ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -315,23 +313,26 @@ fi
 
 # Test 7c: Disassembly options are rejected
 echo -e "${BLUE}Test #7c: Disassembly options are rejected${NC}"
-if $SCRIPT -a "$TMP_BINARY" >/dev/null 2>&1; then
+if "$SCRIPT" -a "$TMP_BINARY" >/dev/null 2>&1; then
     echo -e "${RED}FAIL${NC}"
     echo "Expected -a/--asm to be rejected, but it succeeded."
     exit 1
 fi
-if $SCRIPT --smart-asm "$TMP_BINARY" >/dev/null 2>&1; then
+if "$SCRIPT" --smart-asm "$TMP_BINARY" >/dev/null 2>&1; then
     echo -e "${RED}FAIL${NC}"
     echo "Expected --smart-asm to be rejected, but it succeeded."
     exit 1
 fi
-if $SCRIPT --arch=x64 "$TMP_BINARY" >/dev/null 2>&1; then
+if "$SCRIPT" --arch=x64 "$TMP_BINARY" >/dev/null 2>&1; then
     echo -e "${RED}FAIL${NC}"
     echo "Expected --arch to be rejected, but it succeeded."
     exit 1
 fi
 echo -e "${GREEN}PASS${NC}"
 
+}
+
+group_mapping_outputs() {
 # Test 8: Mappings table output
 echo -e "${BLUE}Test #8: Mappings table output${NC}"
 "$SCRIPT" --mappings > "$TMP_MAPPINGS" || exit 1
@@ -351,7 +352,7 @@ fi
 
 # Test 9: Mappings JSON output
 echo -e "${BLUE}Test #9: Mappings JSON output${NC}"
-if $SCRIPT --mappings-json > "$TMP_MAPPINGS_JSON"; then
+if "$SCRIPT" --mappings-json > "$TMP_MAPPINGS_JSON"; then
     if python3 - "$TMP_MAPPINGS_JSON" <<'PY'
 import json, sys
 path = sys.argv[1]
@@ -378,7 +379,7 @@ fi
 
 # Test 10: Mappings CSV output
 echo -e "${BLUE}Test #10: Mappings CSV output${NC}"
-if $SCRIPT --mappings-csv > "$TMP_MAPPINGS_CSV"; then
+if "$SCRIPT" --mappings-csv > "$TMP_MAPPINGS_CSV"; then
     HEADER=$(head -n 1 "$TMP_MAPPINGS_CSV")
     FIRST_LINE=$(sed -n '2p' "$TMP_MAPPINGS_CSV")
 if [[ "$HEADER" == "byte,hex,dec,ascii,mapping" ]] && [[ "$FIRST_LINE" == "0,0x00,0,\"NUL\",\"·\"" ]]; then
@@ -503,6 +504,9 @@ else
 fi
 
 ###############################################################################
+}
+
+group_character_maps() {
 # CHARACTER MAPS TESTS
 ###############################################################################
 
@@ -623,6 +627,9 @@ test_byte 224 "Extended 224"
 test_byte 255 "Extended 255"
 
 ###############################################################################
+}
+
+group_passthrough() {
 # PASSTHROUGH MODE TESTS
 ###############################################################################
 
@@ -748,6 +755,9 @@ fi
 rm "$PASSTHROUGH_BINARY" "$PASSTHROUGH_STDOUT" "$PASSTHROUGH_STDERR"
 
 ###############################################################################
+}
+
+group_decode() {
 # DECODE PASS-THROUGH TESTS (NEW BEHAVIOR)
 ###############################################################################
 
@@ -807,9 +817,9 @@ fi
 # Test: Decode is idempotent (multiple passes yield same result)
 echo -e "${BLUE}Test: Decode is idempotent${NC}"
 INPUT="hello world!;"
-PASS1=$(echo -n "$INPUT" | $SCRIPT -d 2>/dev/null)
-PASS2=$(echo -n "$PASS1" | $SCRIPT -d 2>/dev/null)
-PASS3=$(echo -n "$PASS2" | $SCRIPT -d 2>/dev/null)
+PASS1=$(echo -n "$INPUT" | "$SCRIPT" -d 2>/dev/null) || exit 1
+PASS2=$(echo -n "$PASS1" | "$SCRIPT" -d 2>/dev/null) || exit 1
+PASS3=$(echo -n "$PASS2" | "$SCRIPT" -d 2>/dev/null) || exit 1
 if [[ "$PASS1" == "$PASS2" && "$PASS2" == "$PASS3" && "$PASS3" == "$INPUT" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -887,6 +897,9 @@ else
 fi
 
 ###############################################################################
+}
+
+group_preservation_detection() {
 # ENCODE PRESERVATION FLAGS TESTS (NEW FEATURES)
 ###############################################################################
 
@@ -1107,6 +1120,9 @@ else
 fi
 
 ###############################################################################
+}
+
+group_ranges() {
 # BYTE-RANGE TESTS
 ###############################################################################
 
@@ -1129,7 +1145,7 @@ range_encode() {
 # R1: Basic range --range 0-9 -> first 10 bytes
 echo -e "${BLUE}Test R1: Basic range (--range 0-9)${NC}"
 RESULT=$("$SCRIPT" --range 0-9 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "abcdefghij")
+EXPECTED=$(range_encode "abcdefghij") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1142,7 +1158,7 @@ fi
 # R2: Omitted start --range -4 -> bytes 0-4
 echo -e "${BLUE}Test R2: Omitted start (--range -4)${NC}"
 RESULT=$("$SCRIPT" --range -4 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "abcde")
+EXPECTED=$(range_encode "abcde") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1155,7 +1171,7 @@ fi
 # R3: Omitted end --range 20- -> byte 20 to EOF
 echo -e "${BLUE}Test R3: Omitted end (--range 20-)${NC}"
 RESULT=$("$SCRIPT" --range 20- "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "uvwxyz")
+EXPECTED=$(range_encode "uvwxyz") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1168,7 +1184,7 @@ fi
 # R4: Hex range --range 0x00-0x09 -> same as R1
 echo -e "${BLUE}Test R4: Hex range (--range 0x00-0x09)${NC}"
 RESULT=$("$SCRIPT" --range 0x00-0x09 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "abcdefghij")
+EXPECTED=$(range_encode "abcdefghij") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1181,7 +1197,7 @@ fi
 # R5: OOB end --range 0-999 -> full data + stderr warning
 echo -e "${BLUE}Test R5: Out-of-bounds end (--range 0-999)${NC}"
 RESULT=$(PRINTABLE_BINARY_MUTE_STATS= "$SCRIPT" --range 0-999 "$TMP_RANGE_INPUT" 2>"$TMP_RANGE_STDERR") || exit 1
-EXPECTED=$(range_encode "$RANGE_INPUT")
+EXPECTED=$(range_encode "$RANGE_INPUT") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     if grep -q "clamping" "$TMP_RANGE_STDERR"; then
         echo -e "${GREEN}PASS${NC}"
@@ -1237,7 +1253,7 @@ fi
 # R8: Negative start --start -5 -> last 5 bytes
 echo -e "${BLUE}Test R8: Negative start (--start -5)${NC}"
 RESULT=$("$SCRIPT" --start -5 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "vwxyz")
+EXPECTED=$(range_encode "vwxyz") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1250,7 +1266,7 @@ fi
 # R9: Separate start/end --start 5 --end 9
 echo -e "${BLUE}Test R9: Separate start/end (--start 5 --end 9)${NC}"
 RESULT=$("$SCRIPT" --start 5 --end 9 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "fghij")
+EXPECTED=$(range_encode "fghij") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1263,7 +1279,7 @@ fi
 # R10: Positional range 5-9
 echo -e "${BLUE}Test R10: Positional range (5-9)${NC}"
 RESULT=$("$SCRIPT" 5-9 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "fghij")
+EXPECTED=$(range_encode "fghij") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1276,7 +1292,7 @@ fi
 # R11: Range with stdin
 echo -e "${BLUE}Test R11: Range with stdin (--range 0-4)${NC}"
 RESULT=$(printf '%s' "$RANGE_INPUT" | "$SCRIPT" --range 0-4 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "abcde")
+EXPECTED=$(range_encode "abcde") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1302,7 +1318,7 @@ fi
 # R13: Single byte --range 5-5
 echo -e "${BLUE}Test R13: Single byte (--range 5-5)${NC}"
 RESULT=$("$SCRIPT" --range 5-5 "$TMP_RANGE_INPUT" 2>/dev/null) || exit 1
-EXPECTED=$(range_encode "f")
+EXPECTED=$(range_encode "f") || exit 1
 if [[ "$RESULT" == "$EXPECTED" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1315,6 +1331,9 @@ fi
 rm -f "$TMP_RANGE_INPUT" "$TMP_RANGE_OUTPUT" "$TMP_RANGE_STDERR" "$TMP_RANGE_DECODED"
 
 ###############################################################################
+}
+
+group_hexlike() {
 # HEXLIKE ENCODING/DECODING TESTS
 ###############################################################################
 
@@ -1616,6 +1635,32 @@ else
     echo -e "\n${YELLOW}Skipping hexlike tests (--hexlike not supported by this implementation)${NC}"
 fi
 
+}
+
+run_group() {
+	prepare_group
+	"group_$1"
+}
+
+# Capture immutable help once before workers fork. Each worker gets private
+# shell variables and files; completed logs replay in the original case order.
+HELP_OUTPUT=$("$SCRIPT" --help 2>&1) || exit 1
+source "$SCRIPT_DIR/cli/group-runner.bash"
+if [[ -v PB_TEST_JOBS ]]; then
+	jobs="$PB_TEST_JOBS"
+else
+	jobs="${NIX_BUILD_CORES:-8}"
+	[[ "$jobs" =~ ^[0-9]+$ ]] || { printf 'Invalid NIX_BUILD_CORES\n' >&2; exit 2; }
+	if [[ "${#jobs}" -gt 1 || "$jobs" == 0 || "$jobs" == 9 ]]; then jobs=8; fi
+fi
+SUITE_SCRATCH="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$SUITE_SCRATCH"' EXIT
+echo -e "${BLUE}=== PrintableBinary Test Suite ===${NC}"
+echo -e "${YELLOW}Testing implementation: $SCRIPT${NC}"
+pb_run_test_groups "$jobs" "$SUITE_SCRATCH" run_group \
+	basic mapping_outputs character_maps passthrough decode preservation_detection ranges hexlike
+status=$?
+[[ "$status" == 0 ]] || exit "$status"
 # Print summary
 echo -e "\n${BLUE}=== Test Suite Summary ===${NC}"
 echo -e "${GREEN}All tests passed!${NC}"

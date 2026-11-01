@@ -48,3 +48,52 @@ expect CliCore.range_warning("abcdefghijklmnopqrstuvwxyz".to_utf8(), Present(10)
 expect CliCore.has_indented_spaces_after_newline("A\n  B".to_utf8())
 
 expect Bool.not(CliCore.has_indented_spaces_after_newline("A\nB C".to_utf8()))
+
+expect {
+	match CliCore.parse(["--hexlike"]) {
+		Run(options) => CliCore.transform("Hello, World!".to_utf8(), options, Map.glyphs) == "Hello Οχ2C20 World Οχ21".to_utf8()
+		_ => False
+	}
+}
+
+expect {
+	match CliCore.parse(["-X", "--spaces"]) {
+		Run(options) => CliCore.transform("Hello, World!".to_utf8(), options, Map.glyphs) == "Hello Οχ2C  World Οχ21".to_utf8()
+		_ => False
+	}
+}
+
+expect {
+	match CliCore.parse(["-dX"]) {
+		Run(options) => CliCore.transform("Hello Οχ2C20 World Οχ21".to_utf8(), options, Map.glyphs) == "Hello, World!".to_utf8()
+		_ => False
+	}
+}
+
+expect {
+	match CliCore.parse(["-f=2x2"]) {
+		Run(options) => CliCore.transform("AAAABBBB".to_utf8(), options, Map.glyphs) == "AA AA\nBB BB".to_utf8()
+		_ => False
+	}
+}
+
+expect {
+	match CliCore.parse(["--format", "2x2", "--spaces"]) {
+		Run(options) => CliCore.transform("AAAABBBB".to_utf8(), options, Map.glyphs) == "AA\tAA\nBB\tBB".to_utf8()
+		_ => False
+	}
+}
+
+expect {
+	match CliCore.parse(["--format=1x2"]) {
+		Run(options) => CliCore.transform([0, 9, 10], options, Map.glyphs) == "· ⇥\n¶".to_utf8()
+		_ => False
+	}
+}
+
+expect {
+	match CliCore.parse(["--format=0x2"]) {
+		ParseError(_) => True
+		_ => False
+	}
+}
