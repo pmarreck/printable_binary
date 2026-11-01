@@ -187,7 +187,10 @@ pub fn build(b: *std.Build) void {
         benchmark_module.addCSourceFile(.{ .file = b.path("tests/benchmark/tag_probe/clock.c"), .flags = &.{"-std=c11"} });
         const benchmark = b.addExecutable(.{ .name = "printable-binary-tag-probe", .root_module = benchmark_module });
         b.step("tag-probe", "Build the optimized tag namespace recognition experiment").dependOn(&b.addInstallArtifact(benchmark, .{}).step);
-        const benchmark_tests = b.addTest(.{ .root_module = benchmark_module });
+        const benchmark_tests = b.addTest(.{ .name = "test-tag-probe", .root_module = benchmark_module });
         b.step("test-tag-probe", "Verify recognition fixtures, work oracle and observer controls").dependOn(&b.addRunArtifact(benchmark_tests).step);
+        b.step("tag-probe-test-bin", "Prepare the tag-probe tests without executing them").dependOn(&b.addInstallArtifact(benchmark_tests, .{
+            .dest_dir = .{ .override = .{ .custom = "libexec" } },
+        }).step);
     }
 }

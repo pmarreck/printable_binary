@@ -75,6 +75,7 @@ annotate=[
 	tests/benchmark/tag_probe/oracle.zig = Reject incorrect bytes, sizes, counts and borrowed skipped-work results
 	tests/benchmark/tag_probe/test-adapter = Validate the optimized producer protocol and rejected request set
 	tests/benchmark/tag_probe/test-fixtures = Compare independently generated references with the prepared raw CLI
+	tests/benchmark/tag_probe/test-prepared = Fresh probe checks using retained safety and deliberate-defect executables
 	tests/capture.bash = Hermetic stdout/stderr/status capture helper
 	tests/cli/group-runner.bash = Bounded parallel waves with stable output and complete failure collection
 	tests/cli/test-about = Check one-line CLI identity and conflicting platform environments

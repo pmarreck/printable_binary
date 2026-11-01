@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Re-execute every tag-probe contract using exact, previously compiled artifacts.
+set -u
+bundle="${1:?Usage: test-prepared PROBE_BUNDLE RAW_CLI}"
+raw_cli="${2:?Prepared raw CLI required}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)" || exit 1
+for binary in "$bundle/bin/printable-binary-tag-probe" "$bundle/libexec/test-tag-probe" \
+	"$bundle/libexec/tag-probe-no-count" "$bundle/libexec/tag-probe-wrong-byte" "$raw_cli"; do
+	if [[ ! -x "$binary" ]]; then
+		printf 'FAIL: missing prepared tag-probe executable: %s\n' "$binary" >&2
+		exit 1
+	fi
+done
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run prepared probe checks through ./test or run-isolated\n' >&2
+	exit 1
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+if ! bash "$repo_root/tests/benchmark/tag_probe/test-fixtures" "$raw_cli" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	cat "$scratch/stdout" "$scratch/stderr" >&2
+	exit 1
+fi
+if ! "$bundle/libexec/test-tag-probe" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	cat "$scratch/stdout" "$scratch/stderr" >&2
+	exit 1
+fi
+if ! bash "$repo_root/tests/benchmark/tag_probe/test-adapter" "$bundle/bin/printable-binary-tag-probe" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	cat "$scratch/stdout" "$scratch/stderr" >&2
+	exit 1
+fi
+for defect in no-count wrong-byte; do
+	case "$defect" in
+		no-count) pattern=sparse; error=WrongCount ;;
+		wrong-byte) pattern=alphabet; error=WrongBytes ;;
+	esac
+	"$bundle/libexec/tag-probe-$defect" "$pattern" 32768 23 > "$scratch/record" 2> "$scratch/diagnostic"
+	if [[ "$?" == 0 || -s "$scratch/record" ]] || ! grep -q "$error" "$scratch/diagnostic"; then
+		printf 'FAIL: prepared %s mutant must report %s without measurement JSON\n' "$defect" "$error" >&2
+		exit 1
+	fi
+done
+printf 'PASS: prepared tag-probe fixtures, safety tests, adapter, and real defect controls\n'

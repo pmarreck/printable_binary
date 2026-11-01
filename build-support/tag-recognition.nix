@@ -18,37 +18,27 @@ pkgs.stdenvNoCC.mkDerivation {
 		        @memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);'
 		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
 			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$out"
+		zig build tag-probe-test-bin -Dtag-probe=true -Doptimize=ReleaseSafe \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$out"
+		# Compile the same real producer defects once; every check re-executes them.
+		cp tests/benchmark/tag_probe/observer.zig "$TMPDIR/observer.original"
+		cp tests/benchmark/tag_probe/core.zig "$TMPDIR/core.original"
+		substituteInPlace tests/benchmark/tag_probe/observer.zig --replace-fail 'candidates += 1;' 'candidates += 0;'
+		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$TMPDIR/no-count"
+		install -Dm755 "$TMPDIR/no-count/bin/printable-binary-tag-probe" "$out/libexec/tag-probe-no-count"
+		cp "$TMPDIR/observer.original" tests/benchmark/tag_probe/observer.zig
+		substituteInPlace tests/benchmark/tag_probe/core.zig --replace-fail 'result[pos] = byte;' 'result[pos] = byte ^ 1;'
+		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
+			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$TMPDIR/wrong-byte"
+		install -Dm755 "$TMPDIR/wrong-byte/bin/printable-binary-tag-probe" "$out/libexec/tag-probe-wrong-byte"
+		cp "$TMPDIR/core.original" tests/benchmark/tag_probe/core.zig
 		runHook postBuild
 	'';
 	doCheck = true;
 	checkPhase = ''
 		runHook preCheck
-		bash tests/benchmark/tag_probe/test-fixtures ${rawProduct}/bin/printable-binary
-		zig build test-tag-probe -Dtag-probe=true -Doptimize=ReleaseSafe \
-			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"}
-		bash tests/benchmark/tag_probe/test-adapter "$out/bin/printable-binary-tag-probe"
-		# Exercise the real producer's work checks with deliberately broken kernels.
-		cp tests/benchmark/tag_probe/observer.zig "$TMPDIR/observer.original"
-		substituteInPlace tests/benchmark/tag_probe/observer.zig --replace-fail 'candidates += 1;' 'candidates += 0;'
-		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
-			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$TMPDIR/no-count"
-		if "$TMPDIR/no-count/bin/printable-binary-tag-probe" sparse 32768 23 > "$TMPDIR/record" 2> "$TMPDIR/diagnostic"; then
-			echo 'FAIL: skipped namespace counting must not produce a valid measurement' >&2; exit 1
-		fi
-		if [[ -s "$TMPDIR/record" ]] || ! grep -q WrongCount "$TMPDIR/diagnostic"; then
-			echo 'FAIL: skipped counting must report WrongCount without measurement JSON' >&2; exit 1
-		fi
-		cp "$TMPDIR/observer.original" tests/benchmark/tag_probe/observer.zig
-		substituteInPlace tests/benchmark/tag_probe/core.zig --replace-fail 'result[pos] = byte;' 'result[pos] = byte ^ 1;'
-		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
-			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$TMPDIR/wrong-byte"
-		if "$TMPDIR/wrong-byte/bin/printable-binary-tag-probe" alphabet 32768 23 > "$TMPDIR/record" 2> "$TMPDIR/diagnostic"; then
-			echo 'FAIL: incorrect decoded bytes must not produce a valid measurement' >&2; exit 1
-		fi
-		if [[ -s "$TMPDIR/record" ]] || ! grep -q WrongBytes "$TMPDIR/diagnostic"; then
-			echo 'FAIL: corrupted output must report WrongBytes without measurement JSON' >&2; exit 1
-		fi
-		echo 'PASS: real optimized producer rejects skipped counting and corrupted decode results'
+		bash tests/benchmark/tag_probe/test-prepared "$out" ${rawProduct}/bin/printable-binary
 		runHook postCheck
 	'';
 	dontInstall = true;

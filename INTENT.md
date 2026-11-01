@@ -4,6 +4,8 @@
 
 PrintableBinary gives developers and technical users a reversible text representation of arbitrary bytes. It keeps ordinary ASCII recognizable while representing control and non-ASCII bytes as visible UTF-8 glyphs, so binary values can be inspected, copied, embedded in text formats, and restored byte-for-byte.
 
+The original use cases are safe terminal inspection of unknown binary data without emitting terminal-control sequences, and seeing recognizable text embedded in binary instead of obscuring it behind hexadecimal byte values. A readable-Unicode direction should extend those inspection goals rather than replace them with text-input validation.
+
 ## Desired outcomes
 
 - A single documented byte-to-glyph mapping with exact, bijective encode/decode behavior across its 256-byte domain.
@@ -30,4 +32,6 @@ The parameterized CLI and container tests, exhaustive mapping checks, independen
 
 ## Current direction
 
-Optional language-aware UTF-8 passthrough should keep multilingual logs readable while preserving exact byte recovery. CJK scripts do not collide with the current alphabet; broader Latin passthrough needs an explicit collision policy or replacement alphabet. Compatibility breaks are permitted at the current adoption level, but no replacement repertoire has been selected. [`PLAN.md`](PLAN.md) tracks this direction and the remaining opt-in framing work.
+Keep the existing byte-oriented format as `bytewise` and add an opt-in `textual` codec for readable multilingual logs. Textual encoding should preserve ordinary Unicode text while visibly encoding controls, syntax-sensitive characters, and reserved glyphs needed for unambiguous decoding. Reuse U+F000 as the escape introducer. Establish explicit domains, canonical output grammars, and two-sided inverse arguments for both codecs; lossless forward round trips alone are not the complete guarantee.
+
+Textual output should carry a mode tag by default; bytewise output should remain untagged by default. Explicit mode selection may also identify untagged payloads. Textual input must be valid UTF-8, including properly encoded control characters; malformed UTF-8 is rejected rather than repaired or silently replaced. Bytewise mode continues to accept arbitrary bytes. The precise Unicode-control policy and integration with the framing grammar remain unresolved. The direction is approved, not an implemented capability. The separate Latin-friendly alphabet investigation permits compatibility breaks at the current adoption level, but has not selected a replacement repertoire. [`PLAN.md`](PLAN.md) tracks implementation and framing work; [the design context](docs/plan_context/current-work.md) preserves the decisions and open questions.

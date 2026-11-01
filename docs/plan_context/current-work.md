@@ -138,18 +138,217 @@ existing persisted data must remain recoverable through the historical map.
 Pinned Unicode 16.0 inspection found that all 128 high-byte glyphs are Latin
 script (125 two-byte UTF-8 glyphs and three three-byte glyphs), while none fall
 in U+00C0–U+00FF. Common Latin-1 accents are therefore already disjoint; extended
-letters such as `ă` and `ź` are not. The outstanding owner choice is whether to
-prioritize a Latin-looking symbol alphabet with larger UTF-8 output and font/width
-qualification, or retain compact accented-letter mappings and quote collisions.
-The first option is the recommendation, not an accepted replacement alphabet.
+letters such as `ă` and `ź` are not. On 2026-11-01 at 12:36 EST, the owner selected
+the Latin-looking symbol direction: larger UTF-8 output is acceptable, and font
+rendering/terminal-width behavior must be qualified. Retaining the compact
+accented-letter alphabet plus collision quoting is not the selected priority.
+This accepts the investigation's tradeoff, not a concrete 128-glyph alphabet.
 
-A second unresolved choice is whether the optional readable-text mode preserves
-only CJK scripts and shared marks/punctuation, or general visible Unicode outside
-the active PB alphabet. General preservation would cover CJK, emoji, and many
-Latin letters without separate script lists; reserved glyphs still need normal
-byte encoding. Define Unicode control/format characters and joining/variation
-marks explicitly rather than conflating valid UTF-8 with visible text. Neither
-question has an owner answer yet, and neither proposal changes the default codec.
+The owner also selected general visible Unicode outside the active PB alphabet,
+not a CJK-only mode. This covers other languages and emoji without separate
+script allowlists; reserved PB glyphs and control characters still need normal
+byte encoding. No Unicode normalization is proposed. One remaining policy
+question concerns ZWJ/ZWNJ: preserving those invisible joiners supports joined
+emoji and language shaping, while C0/C1, bidi controls, and other format controls
+would stay encoded. Define combining and variation marks explicitly too, rather
+than conflating valid UTF-8 with visible text. Audit all 256 reserved glyphs,
+including lower-byte letters, before claiming any natural-script alphabet is
+collision-free. Neither investigation changes the default codec yet.
+
+The owner raised the byte-alignment consequence explicitly on 2026-11-01:
+arbitrary binary can contain syntactically valid multibyte UTF-8 without having
+textual intent. A readable mode cannot infer that intent. For example, `E4 B8 AD`
+is three source bytes; raw PB emits three code points, whereas preserving `中`
+emits one code point, commonly two terminal cells. Keep the canonical raw codec
+byte-oriented and make readable Unicode a separate opt-in profile rather than a
+silent default change. Its reversible byte mapping can remain lossless when the
+passthrough set excludes active PB glyphs and reserved framing controls, but it
+does not retain byte offsets derived from glyph counts, fixed-column layout, or
+alphabet-only detection. Larger UTF-8 representations in the replacement raw
+alphabet are a separate change: each byte can still emit one Unicode scalar.
+
+Before implementation, audit every implementation and consumer-facing API for
+byte counts versus scalars, grapheme clusters, terminal cells, and UTF-16 code
+units. Check sizing, worst-case repeated four-byte mapping glyphs, formatting,
+validation/detection, stream chunk boundaries, and framing. The proposed profile
+keeps existing ASCII escaping unchanged and adds non-ASCII text preservation;
+that boundary remains explicit rather than broadening JSON-sensitive ASCII
+passthrough accidentally. Unicode distinguishes grapheme clusters from code
+points in [UAX #29](https://www.unicode.org/reports/tr29/) and warns that terminal
+width needs implementation-specific tailoring in
+[UAX #11](https://www.unicode.org/reports/tr11/). No universal font-width guarantee
+is inferred from the East_Asian_Width property alone.
+
+The owner then identified the stronger representation problem: both literal `中`
+and the three raw PB glyphs for `E4 B8 AD` decode to the same source bytes. Thus
+`decode(encode(x)) == x` alone is not enough. Over the expanded accepted alphabet,
+decoding is many-to-one, and `encode(decode(y)) == y` cannot hold for both forms.
+A deterministic Unicode encoder can remain injective, but a bijective Unicode
+format would need an explicitly restricted canonical language and rejection of
+alternate bytewise spellings. Restricting the codomain to the encoder's image
+without enforcing that boundary does not preserve the existing simple-alphabet
+contract. The current permissive raw decoder already tolerates unknown Unicode;
+raw PB's bijection applies to its declared canonical alphabet, not every input
+the permissive decoder happens to accept.
+
+There is also a composability change: raw byte substitution satisfies
+`E(x ++ y) == E(x) ++ E(y)`. Unicode-aware encoding does not: separately encoding
+`E4` and `B8 AD` yields three PB glyphs, while encoding their concatenation can
+yield `中`. Streaming carry can make one logical message independent of read
+chunks, but independently encoded pieces need not concatenate to a canonical
+Unicode representation. On 2026-11-01 the owner requested further discussion
+rather than selecting a contract. Keep the Unicode path at the design stage;
+do not treat the recommended readable-view option as accepted.
+
+The subsequent proposal is selective escaping of nonprinting/control and
+syntax-sensitive characters, passing other content through. It is an exploratory
+alternative, not authorization to create a separate project, replace the raw
+format, or implement a mode. An explicit mode within this project is equally
+under consideration; repository separation and format-contract separation are
+different decisions. No version or project name has been selected.
+
+Selective escaping need not sacrifice bijectivity if literal replacement glyphs
+or escape syntax have an unambiguous canonical representation. Its input domain
+also matters: substituting only selected ASCII bytes can preserve ordinary UTF-8
+without recognizing multibyte characters, and an unambiguous bytewise escape
+grammar can preserve concatenation. It cannot also guarantee printable UTF-8
+for arbitrary invalid UTF-8 input while passing every other byte unchanged.
+C1 byte values cannot be treated as Unicode controls without considering their
+role inside UTF-8 sequences. The syntax-sensitive set is context-dependent;
+JSON, shell, and language-literal safety are not interchangeable guarantees.
+These are design questions, not accepted restrictions or implementation choices.
+
+The proposed user-facing names are `bijective` for the current bytewise format
+and `map-sensitive` for selectively mapping controls and syntax-sensitive
+characters while preserving other text. These names remain under discussion.
+Bijectivity describes a mapping guarantee, not an exclusive mode category: a
+text-preserving escape codec could also be bijective with an appropriate
+canonical grammar. Define the sensitive subset explicitly rather than treating
+all existing nonidentity byte mappings as Unicode character substitutions.
+Literal replacement glyphs still need a collision policy; preserving literal
+`¶` unchanged while mapping LF to `¶` would prevent exact recovery of both.
+No codec, command-line interface, or default has changed.
+
+The naming discussion then proposed `bytewise` and `textual`, conditional on
+establishing bijectivity for both. The martini U+F000 is already the intended
+escape character; the textual proposal should reuse that decision rather than
+invent another introducer. The existing accepted framing rule doubles the
+marker to quote it. A natural textual extension is `M` plus a reserved replacement
+glyph to emit that glyph literally, without rescanning produced output. Thus
+LF could encode as `¶`, literal `¶` as `M¶`, and literal `M` as `MM`. These
+illustrate the proposed grammar, not implemented behavior or a complete spec.
+
+A proof route for a simplified valid-UTF-8 input domain is to let `S` be the
+selected ASCII characters, `g` their injective single-glyph mapping, `G` its
+range, and `M` the marker. Require `S` and `G` to be disjoint and `M` outside
+both. Encode a member of `S` with `g`, a member of `G` or `M` with an `M` prefix,
+and every other scalar literally. Canonical output tokens are unprefixed
+scalars outside `S` and `M`, or `M` followed by a member of `G` or `M`. These
+tokens parse uniquely; decoding a bare mapped glyph reverses `g`, decoding a
+quoted token emits its second scalar, and other tokens pass through. Each token
+rule has a unique inverse, so induction over tokens can establish both inverse
+identities. Reject unnecessary quotes, bare sensitive characters, incomplete
+escapes, and undefined quote forms from that canonical language. Permissive
+acceptance of equivalent spellings must not be called bijective over that wider
+accepted set.
+
+This is a candidate proof construction, not proof of the full feature or its
+implementation. Settle the actual sensitive repertoire, Unicode-control policy,
+valid-UTF-8 versus arbitrary-byte domain, and framing integration first. Framing
+already permits omitted or explicit v1 spellings and optional closing tags, so
+its permissive wire language must not be conflated with a bijective canonical
+payload language. Verify the raw map independently over all 256 bytes and prove
+its string extension; for textual encoding, prove the declared grammar and then
+test actual code against it, including chunk boundaries and deliberate malformed
+or redundant escapes. Sampling two-way round trips alone is not a universal
+proof. This was still exploratory at that checkpoint; implementation approval
+arrived in the subsequent decision below.
+
+At 13:22 EST on 2026-11-01, the owner approved proceeding with `bytewise` and
+`textual` modes, with the stated bijection goal and martini quoting. This is work
+inside the existing project, not a new repository or a silent raw-format change.
+The remaining implementation choices still require a precise contract. The
+next mode-identification proposal reuses `ρΒ1_` for bytewise and adds
+`ρΤ1_` for textual; the latter uses Greek capital tau U+03A4, alongside rho
+U+03C1 and the existing beta U+0392. Each explicit-v1 opener is nine UTF-8 bytes.
+Matching textual closers would use `/ρΤ`. The namespace extension remains a
+proposal until checked against the full framing grammar.
+
+Untagged payload languages overlap, so content heuristics cannot reliably
+identify the intended codec. Tags provide in-band identification; explicit mode
+arguments or typed APIs provide out-of-band identification. Do not infer textual
+mode merely from valid UTF-8 or a marker-like character. Two owner questions
+were asked: whether textual output should be tagged by default while bytewise
+retains its untagged default, and whether textual input requires valid UTF-8 or
+also accepts arbitrary bytes with malformed-sequence escapes. The owner answered
+the first: tag textual output by default and keep bytewise untagged; explicit
+modes can also support untagged payloads. This explicitly updates the earlier
+opt-in-only tagging direction for textual mode, not bytewise mode. The owner
+subsequently accepted valid-UTF-8 input provided control characters are
+supported. They are: ASCII controls, including NUL, retain their single-byte
+UTF-8 spellings; C1 control code points require proper multibyte spellings (for
+example, U+0080 is `C2 80`, while a lone `80` is invalid UTF-8). These encoding
+rules follow [RFC 3629](https://www.rfc-editor.org/rfc/rfc3629#section-3).
+Textual input is therefore valid UTF-8, controls included; malformed UTF-8 is
+rejected without normalization or replacement. Arbitrary bytes remain the
+bytewise domain.
+
+The next question reopens the textual input-domain discussion: arbitrary-byte
+input would also expose readable UTF-8 runs embedded in otherwise binary data.
+This benefit does not inherently preclude bijectivity. A candidate extension
+greedily encodes valid UTF-8 scalars with the textual rules and uses a separate
+martini-prefixed raw-byte token for malformed bytes. For example, `MxHH` could
+represent one raw byte; that spelling is illustrative, not selected. Strict
+canonical decoding must reject alternate raw-byte-token runs that could instead
+have been represented by normal textual tokens. In particular, escaped bytes
+`E4 B8 AD` must not form a second accepted spelling for literal `中`. Proper
+Unicode C1 controls and lone invalid C1-valued bytes need distinct meanings.
+
+This adds bounded UTF-8 lookahead/carry and canonicality validation. Read-buffer
+boundaries must not change output; independently encoded pieces may still
+concatenate to a noncanonical representation when a UTF-8 scalar straddles their
+source boundary. Invalid-byte escapes may substantially expand binary-heavy
+data, and CPU cost needs measurement rather than an assumed percentage. The
+benefit is one arbitrary-byte input domain with readable text runs and no
+malformed-UTF-8 rejection. The previously approved valid-UTF-8-only baseline is
+not silently replaced by this question; the owner has requested the tradeoffs,
+not yet selected this extension.
+
+The original motivation was clarified as safe inspection of arbitrary binary
+without disturbing terminal state, while retaining readable embedded ASCII
+instead of hexadecimal. The requested next step is now a size experiment:
+compare random-like/compressed data with UTF-8-heavy data and mixtures, including
+roughly half text by source bytes. This authorizes experimental codecs and
+measurements, not silently selecting the production escape grammar.
+
+Compare an explicit `MxHH` raw-byte escape against a more compact candidate:
+reuse existing PB glyphs for invalid bytes and encoded Unicode controls, preserve
+eligible UTF-8 scalars, and martini-quote literal reserved glyphs or the martini.
+The compact candidate still needs canonical validation: bytewise glyphs spelling
+a source scalar that should have been preserved or quoted are alternate forms
+and must be rejected. Do not assume per-invalid-byte martinis are necessary.
+Report all expansion in UTF-8 bytes, separate the nine-byte default textual tag,
+distinguish deliberately inserted text fraction from accidentally valid UTF-8
+in random input, and verify recovery independently before counting savings.
+
+The complete Linux Nix check run passed all 26 checks at 13:25 EST. It includes
+the retained tag-probe safety test and both actual optimized mutant artifacts,
+all previous implementation contracts, and cross-target build-architecture
+checks. Foreign-system evaluation and exact-commit CI verification remain
+separate gates. This passing build does not establish the fresh full-suite
+execution budget; the measured 0.20-second result is still a subset only.
+
+Checkpoint: `d66e722` is published with all 27 Mechatron Prime CI targets green.
+The next test-preparation increment retains the tag-probe safety and two real
+mutant executables. Its missing-artifact control failed against the previous
+package, its focused Nix check passes, and fresh run
+`pb-prepared-tag-20261101-1244` executes the same fixtures/safety/adapter/mutant
+contracts in 0.20 seconds (0.33 seconds recorder total), with unchanged source
+identity `33b405196596df431e97ab3c8b139b518345ba15ad9a080f89d731e46d3560bd`.
+Compilation took 79 seconds in its separate preparation phase. Full-suite
+qualification and shipment of this increment remain pending; the full-project
+fresh-execution budget is still open. The semantic-search service did not return
+an audit result, so the initial sizing/Unicode audit used direct source inspection.
 
 The requested optional mode should preserve readable Chinese, Japanese, and
 Korean text instead of byte-encoding every UTF-8 octet. An inspection of all 256
@@ -274,7 +473,7 @@ A bare opener/closer pair costs 16 bytes; an explicit-v1 pair costs 17. The clos
 
 There are two intended initial states: a tag-aware PB decoder begins in PB mode, while an excerpt decoder begins in literal mode. A closer switches either to literal passthrough until another opener. This is a two-state model without a nesting stack. Activation, final command spellings, redundant opener/closer policy, handling of incomplete prefixes shorter than the reserved namespace, and interactions with non-default preservation options must be qualified before implementing a public parser. These integration details are not silently resolved by the wire spelling.
 
-Encoding rejects an actual leading tag unless explicit raw-input intent overrides that guard. The remaining owner question is whether the guard applies to all CLI encoding, including untagged output, or only tagged-output mode. The raw library codec stays unconditional. Neither an ordinary byte-encoded tag nor a decoded output tag proves accidental double encoding: both can represent intentional literal source bytes. Preserve those raw payloads exactly, and never apply a recursive encoded-tag rejection rule.
+Tagged-output encoding rejects an actual leading tag unless explicit raw-input intent overrides that guard. On 2026-11-01 the owner scoped this guard to tagged-output mode only: ordinary raw CLI encoding and the raw library codec stay unconditional. Neither an ordinary byte-encoded tag nor a decoded output tag proves accidental double encoding: both can represent intentional literal source bytes. Preserve those raw payloads exactly, and never apply a recursive encoded-tag rejection rule.
 
 The recognition experiment observes the seven-byte opener namespace on the existing raw decoder's lookup-miss path, leaving production code unchanged. It preserves and independently verifies raw output; it counts namespace candidates, not validated frames. Version validation, quote handling, mode transitions, arbitrary-binary resynchronization, and incremental chunk boundaries are outside that prototype. Its timing cannot establish a complete framed decoder's slowdown. In particular, a malformed UTF-8 prefix can hide a marker within the existing raw fallback group; a future mixed-binary parser must scan literal bytes independently and carry partial marker state across chunks.
 
