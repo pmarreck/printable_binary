@@ -331,6 +331,37 @@ Report all expansion in UTF-8 bytes, separate the nine-byte default textual tag,
 distinguish deliberately inserted text fraction from accidentally valid UTF-8
 in random input, and verify recovery independently before counting savings.
 
+The size experiment is complete: three seeded 262,144-byte source pools produced
+45 random, compressed and text-mixture fixtures, each checked against the
+existing JavaScript codec and a separately prepared Zig CLI. Both experimental
+textual variants recover every source exactly and reject their noncanonical
+alternatives. Compact PB fallback averages approximately 1.79 output bytes per
+input byte for random-like data, versus bytewise 1.85 and explicit raw-byte hex
+escapes 3.49. Half-random/half-CJK data measures about 1.43 versus bytewise 1.95;
+repeated literal reserved `ă` is a counterexample at 2.50 versus bytewise 2.00.
+Full methods, qualification limits and byte ledgers are in
+[the size-study report](../TEXTUAL_SIZE_STUDY.md). These are deterministic size
+measurements, not speed claims or production-code proof. All measured textual
+totals include the nine-byte default opener. The compact fallback is the new
+recommendation for arbitrary-byte textual input, not an implicitly approved
+production grammar. The conservative study policy escapes joiners; the pending
+Unicode joining/format-control policy question remains open.
+
+At 13:52 EST the owner explicitly selected arbitrary-byte textual input with
+compact PB fallback for malformed bytes, strict canonical decoding and martini
+quoting. This supersedes the earlier valid-UTF-8-only baseline and turns the
+recommendation above into the accepted direction. The complete Linux suite now
+passes all 26 checks including the prototype and its required regressions;
+all declared systems also pass evaluation without claiming foreign execution.
+The production joining/format-control policy remains pending. No production
+codec or raw mapping has changed in this experiment increment.
+
+The prior preparation increment is published at `4468278`; origin/yolo was
+independently verified, and Mechatron Prime CI passed all 27 targets in its
+40-second validation run. This does not settle the still-open fresh complete-
+suite execution budget. The size-study code and its regressions now join the
+existing JavaScript unit check in the complete test entry point.
+
 The complete Linux Nix check run passed all 26 checks at 13:25 EST. It includes
 the retained tag-probe safety test and both actual optimized mutant artifacts,
 all previous implementation contracts, and cross-target build-architecture

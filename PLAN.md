@@ -4,15 +4,14 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Codec and Rust consumer requests
 
-- [x] Restore Roc hexlike/formatting parity exposed by the complete case inventory; all shared cases and independent all-byte comparisons now pass (done 2026-11-01 12:30 EST; context: docs/plan_context/current-work.md).
 
 ## Optional stream tagging
 
-- [ ] Compare bytewise size with provisional textual escape grammars on seeded random/compressed data and exact text-byte mixtures; verify byte recovery, reject alternate spellings, and report quoting/fallback costs before selecting the format (context: docs/plan_context/current-work.md).
-- [ ] Implement the approved opt-in `textual` codec alongside unchanged `bytewise`, with martini quoting and explicit bijection domains/proofs; settle malformed-UTF-8 and Unicode-control policy before implementing those choices (context: docs/plan_context/current-work.md).
+- [x] Compare bytewise versus provisional textual sizes? Answer: compact PB fallback measured 1.79× on random input versus bytewise 1.85× and explicit escapes 3.49×; half-CJK measured 1.43× versus 1.95×, while glyph-heavy text can grow; 45 fixtures recover exactly (done 2026-11-01 13:49 EST; context: docs/TEXTUAL_SIZE_STUDY.md).
+- [ ] Implement approved arbitrary-byte `textual` encoding with compact PB fallback alongside unchanged `bytewise`, martini quoting and canonical validation; settle Unicode-control policy before public integration (context: docs/plan_context/current-work.md).
 	- [x] Separate project or mode? Answer: proceed with bytewise/textual modes in this project and establish bijectivity for both; a new repository is not needed for this increment (done 2026-11-01 13:22 EST; context: docs/plan_context/current-work.md).
 	- [x] Must textual input be valid UTF-8 if controls remain supported? Answer: yes; all Unicode controls have valid UTF-8 encodings, malformed byte sequences are rejected, and arbitrary bytes remain supported by bytewise mode (done 2026-11-01 13:25 EST; context: docs/plan_context/current-work.md).
-	- [ ] Revisit valid-UTF-8-only textual input for mixed binary/text inspection; explain distinct raw-byte escapes, canonicality validation, streaming boundaries, and size/performance tradeoffs before changing the domain (context: docs/plan_context/current-work.md).
+	- [x] Which textual input contract follows the size study? Answer: accept arbitrary bytes with compact PB fallback for malformed bytes, strict canonical decoding and martini quoting; this supersedes valid-UTF-8-only input (done 2026-11-01 13:52 EST; context: docs/TEXTUAL_SIZE_STUDY.md).
 	- [ ] Define textual martini quoting for replacement glyphs and the marker itself, reconcile framing dispatch, and prove unique parsing/two-sided inverses over explicit domains before implementation (context: docs/plan_context/current-work.md).
 	- [ ] Add bytewise/textual dispatch using `ρΒ1_`/`ρΤ1_` tags or explicit out-of-band mode selection; do not guess from untagged content (context: docs/plan_context/current-work.md).
 	- [x] Should textual output be tagged by default? Answer: yes; keep bytewise output untagged by default, with explicit modes also supporting untagged payloads (done 2026-11-01 13:24 EST; context: docs/plan_context/current-work.md).
@@ -37,7 +36,6 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 ## Final verification and shipping
 
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
-	- [x] Run isolated shared-CLI groups with bounded concurrency and all assertions; fresh Node execution fell from 10.76 to 4.55 seconds and all 26 Linux checks pass (done 2026-11-01 12:30 EST; context: docs/plan_context/current-work.md).
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 	- [x] Retain precompiled tag-probe safety/mutant artifacts and re-execute the unchanged contracts in 0.20 seconds; all 26 Linux checks pass (done 2026-11-01 13:25 EST; context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.

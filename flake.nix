@@ -327,6 +327,9 @@
         };
         allPackages = buildProducts // {
           inherit printableBinaryNative printableBinaryWasm printableBinaryZig tagRecognition;
+          textualSizeStudy = pkgs.writeShellScriptBin "printable-binary-textual-size-study" ''
+            exec ${pkgs.nodejs_24}/bin/node ${packageSource}/tests/benchmark/textual_size/study.mjs "$@"
+          '';
           default = canonicalPackage buildProducts.${selectedProduct} canonicalRow;
           allImplementations = pkgs.linkFarm "printable-binary-implementations-${platform}"
             (map (row: {
@@ -598,10 +601,11 @@
           test-js-unit = pkgs.stdenv.mkDerivation {
             name = "test-js-unit";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ nodejs_24 ];
+            nativeBuildInputs = with pkgs; [ nodejs_24 allPackages.textualSizeStudy ];
             buildPhase = ''
               export HOME=$TMPDIR
               node tests/js/test_printable_binary.js
+              node tests/benchmark/textual_size/test.mjs
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
