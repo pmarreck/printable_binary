@@ -31,6 +31,11 @@ pub fn build(b: *std.Build) void {
         .pic = true,
     });
     static_lib_mod.addAnonymousImport("character_map.txt", .{ .root_source_file = b.path("character_map.txt") });
+    static_lib_mod.addImport("ffi_allocator", b.createModule(.{
+        .root_source_file = b.path("src/zig/ffi_allocator.zig"),
+        .target = target,
+        .optimize = optimize,
+    }));
 
     const static_lib = b.addLibrary(.{
         .name = "printable_binary",
@@ -92,6 +97,7 @@ pub fn build(b: *std.Build) void {
     test_mod.addAnonymousImport("character_map.txt", .{ .root_source_file = b.path("character_map.txt") });
 
     const lib_tests = b.addTest(.{
+        .name = "test-core",
         .root_module = test_mod,
     });
 
@@ -107,16 +113,32 @@ pub fn build(b: *std.Build) void {
     });
     ffi_test_mod.addAnonymousImport("character_map.txt", .{ .root_source_file = b.path("character_map.txt") });
     const ffi_tests = b.addTest(.{
+        .name = "test-ffi",
         .root_module = ffi_test_mod,
+        .filters = &.{"FFI:"},
     });
+    ffi_test_mod.addImport("ffi_allocator", b.createModule(.{
+        .root_source_file = b.path("tests/unit/ffi-allocator.zig"),
+        .target = target,
+        .optimize = optimize,
+    }));
     test_step.dependOn(&b.addRunArtifact(ffi_tests).step);
 
-    const identity_tests = b.addTest(.{ .root_module = b.createModule(.{
+    const identity_tests = b.addTest(.{ .name = "test-platform-identity", .root_module = b.createModule(.{
         .root_source_file = b.path("src/zig/platform_identity.zig"),
         .target = target,
         .optimize = optimize,
     }) });
     test_step.dependOn(&b.addRunArtifact(identity_tests).step);
+
+    // Prepare exactly the same tests without executing them; Nix retains these
+    // artifacts so fresh execution can be measured independently of compilation.
+    const test_bins = b.step("test-bins", "Prepare unit-test executables without running them");
+    for ([_]*std.Build.Step.Compile{ lib_tests, ffi_tests, identity_tests }) |artifact| {
+        test_bins.dependOn(&b.addInstallArtifact(artifact, .{
+            .dest_dir = .{ .override = .{ .custom = "libexec" } },
+        }).step);
+    }
 
     // =========================================================================
     // Library-only step (for Makefile integration)

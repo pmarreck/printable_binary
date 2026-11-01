@@ -82,3 +82,6 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 ## Retired 2026-11-01
 
 - [x] [Build portability] Replace the experimental Roc compiler fork with a tested official flake and matching glue source, building and testing for the host platform (done 2026-10-24 00:09 EDT).
+- [x] [Build portability] Add a source-availability check that cannot pass solely because a pinned GitHub revision is already cached locally (done 2026-10-24 00:09 EDT).
+- [x] [Codec and Rust consumer requests] Prevent malformed UTF-8 aliases in Zig's compact two-/three-byte lookups; exhaust both lookup domains and retain real CLI regressions (done 2026-10-24 00:09 EDT).
+- [x] [Codec and Rust consumer requests] Fix the reproduced Rust decoder aliasing of malformed and truncated UTF-8; exhaust all two-byte inputs against exact canonical glyph matches (done 2026-10-24 00:09 EDT).

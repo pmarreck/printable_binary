@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# A stable RSS trace cannot excuse target failure or incomplete sampling.
+set -u
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -f -- "$scratch/stdout" "$scratch/stderr"; rmdir -- "$scratch"' EXIT
+failures=0
+cases=0
+export LEAK_SECONDS=1 LEAK_GROWTH_FACTOR=1.5 LEAK_MIN_GROWTH_KB=4096 LEAK_TARGET_TRACE=stable
+
+for mode in FFI CLI; do
+	for target_status in 0 7 124 139; do
+		cases=$((cases + 1))
+		if [[ "$mode" == FFI ]]; then
+			LEAK_HARNESS="$repo_root/tests/fixtures/leak-target" IMPLEMENTATION_TO_TEST= LEAK_TARGET_EXIT="$target_status" \
+				bash "$repo_root/tests/leak_test" > "$scratch/stdout" 2> "$scratch/stderr"
+		else
+			IMPLEMENTATION_TO_TEST="$repo_root/tests/fixtures/leak-target" LEAK_TARGET_EXIT="$target_status" \
+				bash "$repo_root/tests/leak_test" > "$scratch/stdout" 2> "$scratch/stderr"
+		fi
+		actual=$?
+		if [[ "$target_status" == 0 ]]; then
+			if [[ "$actual" != 0 ]] || ! grep -q 'PASS' "$scratch/stderr"; then
+				printf 'FAIL: %s stable successful target was rejected\n' "$mode" >&2
+				failures=$((failures + 1))
+			fi
+		elif [[ "$actual" == 0 ]] || grep -q 'PASS' "$scratch/stderr"; then
+			printf 'FAIL: %s stable trace masked target exit %s\n' "$mode" "$target_status" >&2
+			failures=$((failures + 1))
+		fi
+	done
+done
+
+for trace in short growing; do
+	cases=$((cases + 1))
+	LEAK_HARNESS="$repo_root/tests/fixtures/leak-target" IMPLEMENTATION_TO_TEST= LEAK_TARGET_TRACE="$trace" LEAK_TARGET_EXIT=0 \
+		bash "$repo_root/tests/leak_test" > "$scratch/stdout" 2> "$scratch/stderr"
+	if [[ "$?" == 0 ]] || grep -q 'PASS' "$scratch/stderr"; then
+		printf 'FAIL: %s RSS trace was accepted\n' "$trace" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+if [[ "$failures" != 0 ]]; then exit 1; fi
+printf 'PASS: leak runner process-result and sampling contracts (%s cases)\n' "$cases"

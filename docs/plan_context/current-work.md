@@ -2,6 +2,13 @@
 
 ## Cross-platform build migration authorized on 2026-10-23
 
+The accumulated work was published as `f806bca411ef5e1756b13a7ecd5950f4395449a8`
+on 2026-11-01. The fetched remote matches that revision. Mechatron Prime CI
+passed all 26 exact-commit targets, finishing at 16:40:39 UTC. Its 41-second
+run is not a fresh execution-only suite measurement. The Rust consumer received
+a durable inbox delivery containing the published pin and option API; delivery
+does not establish acknowledgment.
+
 Cutover completed on 2026-11-01 after the shell-configuration project reported
 qualified native-before-generic PATH selection. Fresh shell verification selects
 `bin/linux-amd64/printable-binary`, whose one-line identity reports Zig and
@@ -18,6 +25,54 @@ cached Nix check results cannot establish that budget. The existing check
 derivations mix compilation and execution, so their combined phase times remain
 mixed until execution-only spans or prepared test runners are available.
 
+The first runtime investigation found a hard lower bound: `test-leak` ran two
+serial six-second RSS loops. Its shell adapter also accepted nonzero target exits
+once four stable samples existed. A ten-case process/sampling regression failed
+on exits 7, 124, and 139 in both FFI and CLI modes; the adapter now rejects them.
+The candidate default gate replaces those elapsed-time windows with fixed-work
+allocation lifecycles. The standalone C adapter records actual requested
+malloc/calloc/realloc/free ownership, verifies canonical encoded bytes and
+round trips, and requires zero residuals after each cycle. Deliberately retained
+results and skipped work must fail. Its first Nix check passed with 610 requests,
+75,008 peak requested bytes, and zero residuals; libc-internal allocations and
+bookkeeping are explicitly outside that metric.
+
+The Zig C ABI now receives its allocator through the build graph: the shipped
+adapter still uses the page allocator without libc; the test adapter records
+ownership through the standard testing allocator. A positive-allocation assertion
+failed before wiring that dependency, preventing an uninstrumented pass. Fixed
+lifecycles and allocation-failure sweeps now pass. The unit check retains the
+same compiled test executables and separates build/check phases. FFI-filtered
+tests avoid rerunning the imported core suite, which remains fully covered by
+its own executable. The extended RSS tools remain recoverable and usable, but
+no longer impose a wall-clock delay on default correctness checks. Full-suite
+qualification and fresh execution measurements remain pending for this candidate.
+
+The complete candidate then passed all 25 Linux Nix checks on 2026-11-01.
+Fresh host measurements used prepared, safety-enabled test executables, private
+filesystem confinement for mutating suites, the pinned shared latency recorder,
+and the existing host resource admission envelope. No compilation occurred in
+the execution spans. Run `pb-unit-node-20261101-1207` measured a five-sub-suite
+subset at 10.82 seconds: correctness passed, latency exceeded the five-second
+budget. An attribution run, `pb-unit-node-phases-20261101-1208`, measured 11.23
+seconds, including 10.76 seconds for the shared Node CLI suite, 0.33 seconds for
+the C ownership/RSS-driver controls, 0.08 seconds for the Zig core, and 0.06
+seconds for Zig FFI. Both runs retained unchanged before/after source identity
+`f9bc9f290f22a45d5cfd52240c26e9e7f0172dc811b7f6eaf80198e63916b1b4`.
+These are fresh subset observations, not a complete-suite budget pass or a
+historical baseline approval. The initial measurement attempt ran no tests
+because its configured history directory was absent; successful diagnostic
+records use an explicit private user-state history override.
+
+The next optimization is isolated parallel groups within the shared CLI suite;
+parallelizing implementations alone cannot beat its measured Node critical path.
+Retain every assertion, real executable invocation, and failure propagation.
+Compilation dominates the separately inspected 51-second tag-probe check phase:
+that phase still builds a safety test and two deliberate-defect executables.
+Move compilation to preparation before attributing its runtime. SIMD is deferred
+here because the measured costs are process orchestration and mandatory waiting,
+not evidence of an unvectorized codec hot path.
+
 On 2026-11-01 the owner authorized committing and pushing the accumulated work
 without waiting for the remaining framing choice. All 25 Linux Nix checks
 passed again after retirement of the legacy products and the memory migration.
@@ -26,6 +81,31 @@ execution result. The repository CI guide is a regular, self-contained file
 that links to the shared authority rather than depending on a sibling checkout.
 
 ## CJK-readable log encoding requested on 2026-11-01
+
+The high-byte mapping was intentionally chosen to progress roughly through
+accented Latin letters, giving readers a visual estimate of numeric order, while
+favoring shorter UTF-8 representations. The owner explicitly permits an alphabet
+compatibility break at the project's current adoption level to preserve ordinary
+Latin-language text. Retain those ordering and byte-economy goals when comparing
+replacement alphabets. Do not merely move collisions to another natural script
+without discussing that tradeoff. No replacement alphabet is selected, and
+existing persisted data must remain recoverable through the historical map.
+
+Pinned Unicode 16.0 inspection found that all 128 high-byte glyphs are Latin
+script (125 two-byte UTF-8 glyphs and three three-byte glyphs), while none fall
+in U+00C0–U+00FF. Common Latin-1 accents are therefore already disjoint; extended
+letters such as `ă` and `ź` are not. The outstanding owner choice is whether to
+prioritize a Latin-looking symbol alphabet with larger UTF-8 output and font/width
+qualification, or retain compact accented-letter mappings and quote collisions.
+The first option is the recommendation, not an accepted replacement alphabet.
+
+A second unresolved choice is whether the optional readable-text mode preserves
+only CJK scripts and shared marks/punctuation, or general visible Unicode outside
+the active PB alphabet. General preservation would cover CJK, emoji, and many
+Latin letters without separate script lists; reserved glyphs still need normal
+byte encoding. Define Unicode control/format characters and joining/variation
+marks explicitly rather than conflating valid UTF-8 with visible text. Neither
+question has an owner answer yet, and neither proposal changes the default codec.
 
 The requested optional mode should preserve readable Chinese, Japanese, and
 Korean text instead of byte-encoding every UTF-8 octet. An inspection of all 256

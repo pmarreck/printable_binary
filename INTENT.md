@@ -18,6 +18,7 @@ The project includes implementations and adapters in languages and runtimes that
 ## Constraints and tradeoffs
 
 - The mapping's readable glyph choices balance semantic resemblance, UTF-8 byte economy, and stable monospace display width.
+- High-byte glyphs should progress roughly alphabetically, giving readers a visual estimate of byte order; a future Latin-friendly alphabet must weigh that readability against encoding size and ordinary-language collisions.
 - Correctness means both directions of the mapping are independently checked over all 256 values; agreeing implementations alone are insufficient evidence.
 - Full CLI behavior must preserve raw bytes on stdout and keep diagnostics, status, and warnings on stderr.
 - Reproducible builds and tests define supported implementation surfaces. Every supported implementation must be covered by its appropriate Nix check and the complete test entry point.
@@ -29,4 +30,4 @@ The parameterized CLI and container tests, exhaustive mapping checks, independen
 
 ## Current direction
 
-The current planned addition is a Roc full CLI. It must demonstrate the same externally observable behavior and independent byte-level interoperability as the other full CLI implementations; [`PLAN.md`](PLAN.md) tracks delivery work.
+Optional language-aware UTF-8 passthrough should keep multilingual logs readable while preserving exact byte recovery. CJK scripts do not collide with the current alphabet; broader Latin passthrough needs an explicit collision policy or replacement alphabet. Compatibility breaks are permitted at the current adoption level, but no replacement repertoire has been selected. [`PLAN.md`](PLAN.md) tracks this direction and the remaining opt-in framing work.

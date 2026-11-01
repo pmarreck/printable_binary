@@ -80,7 +80,7 @@ Key optimizations in the Zig core:
 - **O(1) decode lookup**: direct tables for 1- and 2-byte UTF-8 sequences plus a compact 24 KiB table for the map's three 3-byte lead-byte planes, replacing the former binary search.
 - **No inner decode loop**: a single UTF-8 length check + direct lookup per character.
 
-The C and Lua decoders were tuned in a measured pass: C uses direct 1-/2-byte lookup tables (**1.9×** decode). Lua got two passes — resolving each glyph by its UTF-8 leading-byte length (instead of brute-forcing all four), then writing decoded bytes straight into a LuaJIT `string.buffer` via its FFI `reserve`/`commit` API (no per-byte `string.char`). Together that took Lua **decode from ~8 to ~91 MB/s** — now faster than its own encode (which uses `string.buffer:put`, ~1.2×). Every optimization is benchmarked before and after (hyperfine), and a continuous memory-leak suite (`tests/leak_test`) guards the FFI/C paths against regressions.
+The C and Lua decoders were tuned in a measured pass: C uses direct 1-/2-byte lookup tables (**1.9×** decode). Lua got two passes — resolving each glyph by its UTF-8 leading-byte length (instead of brute-forcing all four), then writing decoded bytes straight into a LuaJIT `string.buffer` via its FFI `reserve`/`commit` API (no per-byte `string.char`). Together that took Lua **decode from ~8 to ~91 MB/s** — now faster than its own encode (which uses `string.buffer:put`, ~1.2×). Every optimization is benchmarked before and after (hyperfine). The complete `./test` checks C and Zig FFI allocation lifecycles with fixed, verified workloads, zero residual ownership, and deliberate-defect controls. `tests/leak_test` and its C harness remain available for extended RSS diagnostics; RSS is supplemental, not proof that every allocation was freed.
 
 An earlier PGO experiment measured a further ~1–3% through the Zig library's public C ABI. That manual recipe is retired from the supported build interface; it requires a declared Nix output before it can qualify a current build.
 
@@ -884,7 +884,7 @@ This implementation uses a carefully chosen set of UTF-8 characters to represent
 - Control characters (0-31) use visually distinct symbols, primarily from Unicode blocks like Mathematical Symbols, Arrows, and Latin Extended
 - Standard printable ASCII characters (33-126, except ", ', and \\) remain themselves
 - Special characters (space, double quote, single quote, backslash) get more visible representations
-- Extended bytes (128-255) are driven by `character_map.txt` and ordered alphabetically to keep neighbouring glyphs visually related
+- Extended bytes (128-255) are driven by `character_map.txt` and ordered alphabetically to keep neighboring glyphs visually related
 
 ### Encoding/Decoding Maps
 

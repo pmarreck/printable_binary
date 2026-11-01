@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Controlled process result for the RSS runner's adapter contract.
+set -u
+
+case "${LEAK_TARGET_TRACE:-stable}" in
+	stable) printf 'RSS 1024\nRSS 1024\nRSS 1024\nRSS 1024\n' ;;
+	short) printf 'RSS 1024\nRSS 1024\n' ;;
+	growing) printf 'RSS 1024\nRSS 1024\nRSS 1024\nRSS 8192\nRSS 8192\nRSS 8192\n' ;;
+	*) exit 64 ;;
+esac
+exit "${LEAK_TARGET_EXIT:-0}"

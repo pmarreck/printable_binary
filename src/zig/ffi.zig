@@ -10,8 +10,7 @@
 const std = @import("std");
 const pb = @import("printable_binary.zig");
 
-// Use page allocator for FFI - simple and doesn't require libc
-const ffi_allocator = std.heap.page_allocator;
+const allocation = @import("ffi_allocator");
 
 /// C ABI export for double-encoding detection
 export fn pb_detect_double_encode(input: ?[*]const u8, input_len: usize, threshold: f32) callconv(.c) pb.DoubleEncodeInfo {
@@ -28,7 +27,7 @@ export fn pb_hexlike_encode(input: ?[*]const u8, input_len: usize, spaces: c_int
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	}
 	const input_slice = if (input_len > 0) input.?[0..input_len] else &[_]u8{};
-	const result = pb.hexlikeEncode(ffi_allocator, input_slice, .{ .spaces = spaces != 0 }) catch {
+	const result = pb.hexlikeEncode(allocation.allocator, input_slice, .{ .spaces = spaces != 0 }) catch {
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	};
 	return pb.FFIResult{ .data = result.ptr, .len = result.len, .error_code = 0 };
@@ -40,7 +39,7 @@ export fn pb_hexlike_decode(input: ?[*]const u8, input_len: usize, spaces: c_int
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	}
 	const input_slice = if (input_len > 0) input.?[0..input_len] else &[_]u8{};
-	const result = pb.hexlikeDecode(ffi_allocator, input_slice, .{ .spaces = spaces != 0 }) catch {
+	const result = pb.hexlikeDecode(allocation.allocator, input_slice, .{ .spaces = spaces != 0 }) catch {
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	};
 	return pb.FFIResult{ .data = result.data.ptr, .len = result.data.len, .error_code = 0 };
@@ -72,7 +71,7 @@ export fn pb_apply_range(input_len: usize, has_start: c_int, start: i64, has_end
 /// Free memory allocated by pb_encode, pb_decode, or pb_format
 export fn pb_free(ptr: ?[*]u8, len: usize) callconv(.c) void {
 	if (ptr) |p| {
-		ffi_allocator.free(p[0..len]);
+		allocation.allocator.free(p[0..len]);
 	}
 }
 
@@ -101,7 +100,7 @@ export fn pb_encode(
 		.preserve_chars = preserve_slice,
 	};
 
-	const result = pb.encode(ffi_allocator, input_slice, options) catch {
+	const result = pb.encode(allocation.allocator, input_slice, options) catch {
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	};
 
@@ -129,7 +128,7 @@ export fn pb_decode(
 		.strip_whitespace = (flags & @intFromEnum(pb.DecodeFlags.strip_whitespace)) != 0,
 	};
 
-	const result = pb.decode(ffi_allocator, input_slice, options) catch {
+	const result = pb.decode(allocation.allocator, input_slice, options) catch {
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	};
 
@@ -160,7 +159,7 @@ export fn pb_format(
 		.use_tabs = use_tabs != 0,
 	};
 
-	const result = pb.format(ffi_allocator, input_slice, options) catch {
+	const result = pb.format(allocation.allocator, input_slice, options) catch {
 		return pb.FFIResult{ .data = null, .len = 0, .error_code = 1 };
 	};
 
@@ -236,4 +235,71 @@ test "FFI: pb_crc32 matches vectors + null safety" {
 	const s = "123456789";
 	try std.testing.expectEqual(@as(u32, 0xCBF43926), pb_crc32(s.ptr, s.len));
 	try std.testing.expectEqual(@as(u32, 0), pb_crc32(null, 100));
+}
+
+test "FFI: every complete lifecycle returns all requested bytes" {
+	const adapter = @import("ffi_allocator");
+	var tracker = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+	adapter.allocator = tracker.allocator();
+	defer adapter.allocator = std.testing.allocator;
+	for (0..16) |_| {
+		try exerciseFfiLifecycle(adapter.allocator);
+		// Positive allocation evidence prevents an unwired adapter from passing.
+		try std.testing.expect(tracker.allocated_bytes > 0);
+		try std.testing.expectEqual(tracker.allocated_bytes, tracker.freed_bytes);
+	}
+}
+
+test "FFI: allocation failures release every partially completed lifecycle" {
+	try std.testing.checkAllAllocationFailures(std.testing.allocator, exerciseFfiLifecycle, .{});
+}
+
+fn ffiBytes(result: pb.FFIResult) ![]const u8 {
+	if (result.error_code != 0) return error.OutOfMemory;
+	return result.data.?[0..result.len];
+}
+
+fn exerciseFfiLifecycle(allocator: std.mem.Allocator) !void {
+	const adapter = @import("ffi_allocator");
+	const previous = adapter.allocator;
+	adapter.allocator = allocator;
+	defer adapter.allocator = previous;
+	const input = try std.testing.allocator.alloc(u8, 8192);
+	defer std.testing.allocator.free(input);
+	for (input, 0..) |*byte, index| byte.* = @truncate(index);
+	for ([_]usize{ 0, 1, 2, 255, 256, 257, 8192 }) |len| {
+		const original = input[0..len];
+		const encoded = pb_encode(original.ptr, len, 0, null, 0);
+		const bytes = try ffiBytes(encoded);
+		defer pb_free(encoded.data, encoded.len);
+		var offset: usize = 0;
+		for (original) |byte| {
+			const glyph = pb.character_map[byte];
+			try std.testing.expect(bytes.len >= offset + glyph.len);
+			try std.testing.expectEqualSlices(u8, glyph, bytes[offset..][0..glyph.len]);
+			offset += glyph.len;
+		}
+		try std.testing.expectEqual(offset, bytes.len);
+		try std.testing.expectEqual(@as(c_int, 1), pb_validate(encoded.data, encoded.len, 0).is_valid);
+		const decoded = pb_decode(encoded.data, encoded.len, 0);
+		const decoded_bytes = try ffiBytes(decoded);
+		defer pb_free(decoded.data, decoded.len);
+		try std.testing.expectEqualSlices(u8, original, decoded_bytes);
+		const formatted = pb_format(encoded.data, encoded.len, 8, 10, 0);
+		_ = try ffiBytes(formatted);
+		defer pb_free(formatted.data, formatted.len);
+		const unformatted = pb_decode(formatted.data, formatted.len, @intFromEnum(pb.DecodeFlags.strip_whitespace));
+		const unformatted_bytes = try ffiBytes(unformatted);
+		defer pb_free(unformatted.data, unformatted.len);
+		try std.testing.expectEqualSlices(u8, original, unformatted_bytes);
+		const hex = pb_hexlike_encode(original.ptr, len, 0);
+		_ = try ffiBytes(hex);
+		defer pb_free(hex.data, hex.len);
+		const unhex = pb_hexlike_decode(hex.data, hex.len, 0);
+		const unhex_bytes = try ffiBytes(unhex);
+		defer pb_free(unhex.data, unhex.len);
+		try std.testing.expectEqualSlices(u8, original, unhex_bytes);
+		_ = pb_detect_double_encode(encoded.data, encoded.len, 0.05);
+		_ = pb_detect_hexlike(hex.data, hex.len);
+	}
 }

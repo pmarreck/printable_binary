@@ -54,6 +54,11 @@ if command -v timeout >/dev/null 2>&1; then
 else
     "${TARGET[@]}" >"$LOG" 2>/dev/null
 fi
+target_status=$?
+if [ "$target_status" -ne 0 ]; then
+    echo -e "${RED}FAIL${NC} — target exited with status $target_status; RSS samples cannot establish a successful run." >&2
+    exit 1
+fi
 
 mapfile -t RSS < <(awk '/^RSS /{print $2}' "$LOG" | grep -E '^[0-9]+$')
 N="${#RSS[@]}"

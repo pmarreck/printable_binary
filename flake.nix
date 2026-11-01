@@ -505,9 +505,20 @@
             nativeBuildInputs = [ zig ];
             buildPhase = ''
               export HOME=$TMPDIR
-              zig build test -Doptimize=ReleaseSafe
+              zig build test-bins -Doptimize=ReleaseSafe
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            doCheck = true;
+            checkPhase = ''
+              for suite in test-core test-ffi test-platform-identity; do
+                if ./zig-out/libexec/$suite > unit.log 2>&1; then
+                  echo "PASS: $suite"
+                else
+                  cat unit.log >&2
+                  exit 1
+                fi
+              done
+            '';
+            installPhase = "mkdir -p $out && cp -R zig-out/libexec $out/ && touch $out/passed";
           };
 
           test-zig = pkgs.stdenv.mkDerivation {
@@ -768,22 +779,35 @@
             installPhase = "mkdir -p $out && touch $out/passed";
           };
 
-          # Continuous memory-leak detection: drive the FFI in a long-lived loop
-          # and fail if RSS climbs over time (a leak) rather than plateauing.
+          # Fixed-work ownership checks replace two serial wall-clock windows.
+          # Zig's C ABI has allocator/failure controls in test-zig-unit; retain
+          # tests/leak_test and leak_harness.c for extended RSS diagnostics.
           test-leak = pkgs.stdenv.mkDerivation {
             name = "test-leak";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ zig clang ];
+            nativeBuildInputs = with pkgs; [ clang ];
             buildPhase = ''
               export HOME=$TMPDIR
-              zig build
-              clang -O2 -Isrc -o leak_harness tests/leak_harness.c zig-out/lib/libprintable_binary.a
-              LEAK_HARNESS=./leak_harness LEAK_SECONDS=6 bash tests/leak_test
-              # CLI mode: drive the C standalone's buffer_t path via --leak-seconds.
-              clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c LEAK_SECONDS=6 bash tests/leak_test
+              patchShebangs tests/fixtures/leak-target
+              clang -O2 -Wall -Wextra -I. -o test-c-allocation-lifecycle tests/unit/test-c-allocation-lifecycle.c
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            doCheck = true;
+            checkPhase = ''
+              bash tests/unit/test-leak-driver
+              ./test-c-allocation-lifecycle
+              for defect in retain-result skip-work; do
+                if ./test-c-allocation-lifecycle --$defect > control.log 2>&1; then
+                  echo "FAIL: allocation control accepted $defect" >&2
+                  exit 1
+                fi
+                case "$defect" in
+                  retain-result) grep -q 'retained requested bytes' control.log || { cat control.log >&2; exit 1; } ;;
+                  skip-work) grep -q 'skipped allocating work' control.log || { cat control.log >&2; exit 1; } ;;
+                esac
+              done
+              echo "PASS: deliberate C ownership leak and skipped-work controls rejected"
+            '';
+            installPhase = "mkdir -p $out/libexec && cp test-c-allocation-lifecycle $out/libexec/ && touch $out/passed";
           };
 
           # Guard against a stale generated C header: regenerating from
