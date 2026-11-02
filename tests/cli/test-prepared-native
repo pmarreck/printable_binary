@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Re-execute the existing native CLI contracts, never a compiler or cached verdict.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run prepared native tests through ./test or run-isolated\n' >&2
+	exit 1
+fi
+if [[ "$#" != 2 ]]; then
+	printf 'Usage: test-prepared-native c|zig|ape ARTIFACT_ROOT\n' >&2
+	exit 2
+fi
+kind=$1
+case "$kind" in
+	c) command_name=printable-binary-c ;;
+	zig) command_name=printable-binary ;;
+	ape) command_name=printable-binary-ape.com ;;
+	*) printf 'FAIL: unknown prepared native role: %s\n' "$kind" >&2; exit 2 ;;
+esac
+artifact_root="$(cd "$2" && pwd -P)" || exit 1
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+cli="$artifact_root/bin/$command_name"
+if [[ ! -f "$cli" || ! -x "$cli" || -L "$cli" ]]; then
+	printf 'FAIL: missing regular executable for %s: %s\n' "$kind" "$command_name" >&2
+	exit 1
+fi
+if [[ "$kind" == c ]]; then
+	domain="$artifact_root/libexec/test-c-two-byte-domain"
+	if [[ ! -f "$domain" || ! -x "$domain" || -L "$domain" ]]; then
+		printf 'FAIL: missing regular C two-byte domain executable\n' >&2
+		exit 1
+	fi
+	"$domain" || exit 1
+fi
+if [[ "$kind" == ape ]]; then
+	[[ "$(head -c 2 "$cli")" == MZ ]] || { printf 'FAIL: APE artifact lost its portable header\n' >&2; exit 1; }
+fi
+if [[ "$kind" != zig ]]; then
+	bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$cli" || exit 1
+fi
+IMPLEMENTATION_TO_TEST="$cli" bash "$repo_root/tests/cli/test-suite-output" bash "$repo_root/tests/test" || exit 1
+if [[ "$kind" == zig ]]; then
+	node "$repo_root/tests/cli/test-zig-textual.mjs" "$cli" || exit 1
+fi
+printf 'PASS: retained %s artifacts execute the complete native CLI contract\n' "$kind"

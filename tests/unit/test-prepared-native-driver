@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Reject every missing/symlinked artifact role and invalid invocation cleanly.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run native-driver checks through ./test or run-isolated\n' >&2
+	exit 1
+fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+mkdir -p "$scratch/empty" "$scratch/links/bin" || exit 1
+failures=0
+reject() {
+	local expected=$1 diagnostic=$2 out='' err='' rc=0
+	shift 2
+	capture bash "$repo_root/tests/cli/test-prepared-native" "$@" || exit 1
+	if [[ "$rc" != "$expected" || -n "$out" || "$err" != *"$diagnostic"* ]]; then
+		printf 'FAIL: prepared native driver did not reject %q cleanly\n' "$*" >&2
+		failures=$((failures + 1))
+	fi
+}
+for kind in c zig ape; do
+	case "$kind" in
+		c) command_name=printable-binary-c ;;
+		zig) command_name=printable-binary ;;
+		ape) command_name=printable-binary-ape.com ;;
+	esac
+	reject 1 "missing regular executable for $kind: $command_name" "$kind" "$scratch/empty"
+	ln -s "$BASH" "$scratch/links/bin/$command_name" || exit 1
+	reject 1 "missing regular executable for $kind: $command_name" "$kind" "$scratch/links"
+done
+for kind in cpp rust wasm '' C; do
+	reject 2 'unknown prepared native role:' "$kind" "$scratch/links"
+done
+reject 2 'Usage:'
+reject 2 'Usage:' c
+reject 2 'Usage:' c "$scratch/empty" extra
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: native artifact roles reject missing files, symlinks and invalid invocations\n'

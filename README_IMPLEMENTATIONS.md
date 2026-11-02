@@ -165,6 +165,14 @@ Full CLIs accept `PRINTABLE_BINARY_MAP` for a 256-glyph override. Mapping report
 
 The shared CLI contract runs eight independent groups with private temporary trees and stable output order. Its worker limit defaults to the Nix core budget, capped at eight. Direct, isolated prepared-suite invocations accept `PB_TEST_JOBS=1` for serial diagnosis; pure Nix checks do not inherit that caller override. Every case remains required. An ordered inventory captured before parallelization rejects missing, duplicate, or reordered case results. Compilation, cached verdicts, and fresh test execution are separate evidence; a fast cached `./test` does not establish fresh runtime.
 
+The `test-c`, `test-zig` and separate `test-ape` Nix results retain the exact
+executables used by their contracts. `tests/cli/test-prepared-native` re-executes
+those same checks after installation, including the C two-byte domain test,
+malformed-byte regressions and Zig's textual CLI cases. For isolated, fresh
+prepared execution, `nix develop .#tests` supplies the declared runtime tools,
+including Python and Node, without a compiler. The complete suite remains
+`./test`; this native trio is only a subset.
+
 Linux verification has exercised all nine installed host codecs in both mapping directions against the canonical table. Zig has also compiled all five targets with verified ELF, Mach-O, and PE headers. That is cross-build evidence; macOS, Windows, and Linux arm64 execution remain separate verification requirements.
 
 The comparative runner covers Roc, Rust, WebAssembly, and APE as well as C, Zig, LuaJIT, and Node. It verifies round trips before timing, uses deterministic workloads, and includes runtime startup in end-to-end results. APE uses a clean-environment adapter; Rust uses stdin; WASM includes wazero. Historical timings do not establish current performance on another machine.

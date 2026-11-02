@@ -734,6 +734,38 @@ avoidable invalidation, not fresh test execution. The next actionable increment
 is retaining exact native CLI/domain-test artifacts for compilation-free
 contract execution; full-suite runtime remains unqualified.
 
+The runtime-source change shipped as
+`e3acf815af3b0d5453d8e61daf2d1044abe3b393`; the fetched remote matched and all
+27 exact-commit Mechatron Prime CI targets passed in 44 seconds, finishing
+2026-11-02T08:42:49Z. The next retention regression first failed after the old C
+tests passed because the installed CLI artifact was missing. C, Zig and separate
+APE checks now retain their exact executables and run the same contracts after
+fixup rather than mixing execution into compilation. C retains its exhaustive
+65,536-input decoder test; Zig retains its textual CLI cases; APE retains its MZ
+header check and distinct role. The driver also rejects all three missing and
+symlinked artifact roles, five unknown roles and three invalid argument counts.
+Focused checks pass. The new compiler-free `.#tests` shell supplies the existing
+fixtures' runtime dependencies explicitly; the ordinary development shell did
+not supply Python, which the fresh run exposed rather than silently skipping.
+
+Fresh, confined native-trio jobs
+`pb-native-cli-trio-20261102-0350-cores1` and `-cores12` passed without compiling.
+Execution took 4.907075310 seconds with serial roles/groups on one CPU and
+1.663718260 seconds with three concurrent roles, four CLI groups each, on twelve
+CPUs. Admission/shell setup took 2.170673304/0.484840566 seconds; recorder
+begin-to-finish totals were 7.240537417/2.266985314 seconds. Both source identities
+remained `0ad8e6d614d36d7f6380a4048914c77fe9e0da99cc8fb13e62b0bb8ccb5fc211`.
+The four counted outer units are the driver-control group and three complete
+native contracts, each retaining its 224-line ordered CLI inventory. This is a
+subset observation, not a full-suite budget pass or historical speedup claim.
+Earlier launcher/dependency failures remain ERROR/incomplete in history. One
+launcher failure also exposed systemd argument expansion of inline Bash arrays;
+that diagnosis was delivered durably to the CI service project without changing
+its launcher or bypassing resource controls. The complete local gate passed,
+including the unchanged tag-probe controls. The next unblocked preparation item
+is retaining the isolated packaged-crate tests and their independent inventory;
+the full-suite execution-budget item remains open.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful

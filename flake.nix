@@ -353,6 +353,13 @@
           packages = [ performance-profiling.packages.${system}.default pkgs.bash pkgs.gitMinimal ];
           PB_PROFILE_PF = platform;
         };
+        # Execute exact prepared tests without a host compiler or ambient tools.
+        devShells.tests = pkgs.mkShell {
+          packages = with pkgs; [
+            bash coreutils diffutils gawk gnugrep gnused jq python3
+            xxd hexdump luajit nodejs_24
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.bubblewrap pkgs.util-linux ];
+        };
         devShells.default = pkgs.mkShell {
           buildInputs =
             let
@@ -512,12 +519,18 @@
             nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump ];
             buildPhase = ''
               clang -O2 -Wall -Wextra -I. -o test-c-two-byte-domain tests/unit/test-c-two-byte-domain.c
-              ./test-c-two-byte-domain
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              bash tests/cli/test-decoder-malformed-utf8 ./printable-binary-c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/cli/test-suite-output bash ./tests/test
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              install -Dm755 printable-binary-c "$out/bin/printable-binary-c"
+              install -Dm755 test-c-two-byte-domain "$out/libexec/test-c-two-byte-domain"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              bash tests/unit/test-prepared-native-driver
+              bash tests/cli/test-prepared-native c "$out"
+            '';
           };
 
           test-zig-unit = pkgs.stdenv.mkDerivation {
@@ -552,10 +565,15 @@
             buildPhase = ''
               export HOME=$TMPDIR
               zig build -Doptimize=ReleaseFast
-              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/cli/test-suite-output bash ./tests/test
-              node tests/cli/test-zig-textual.mjs ./zig-out/bin/printable-binary
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              install -Dm755 zig-out/bin/printable-binary "$out/bin/printable-binary"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              bash tests/cli/test-prepared-native zig "$out"
+            '';
           };
 
           # The installed command name is a compatibility contract: Zig is the
@@ -966,10 +984,15 @@
               # Host-native build tools must still produce a portable APE.
               test "$(head -c 2 printable-binary-ape.com)" = MZ
               chmod +x printable-binary-ape.com
-              bash tests/cli/test-decoder-malformed-utf8 ./printable-binary-ape.com
-              IMPLEMENTATION_TO_TEST=./printable-binary-ape.com bash ./tests/cli/test-suite-output bash ./tests/test
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              install -Dm755 printable-binary-ape.com "$out/bin/printable-binary-ape.com"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              bash tests/cli/test-prepared-native ape "$out"
+            '';
           };
         };
       });
