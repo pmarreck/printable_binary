@@ -15,8 +15,13 @@ fn clock(cpu: bool) !u64 {
 }
 
 const SystemClock = struct {
-	fn read(_: @This(), cpu: bool) !u64 {
-		return clock(cpu);
+	values: [4]u64 = undefined,
+	index: usize = 0,
+	fn read(self: *@This(), cpu: bool) !u64 {
+		const value = try clock(cpu);
+		self.values[self.index] = value;
+		self.index += 1;
+		return value;
 	}
 };
 
@@ -39,13 +44,28 @@ fn run(comptime instrumented: bool, allocator: std.mem.Allocator, input: []const
 	std.mem.doNotOptimizeAway(output);
 	const count = try std.fmt.parseInt(usize, std.mem.trim(u8, fixture.count, "\n"), 10);
 	try oracle.verify(input, output, fixture.expected, repetitions, probe.candidates, if (instrumented) count * repetitions else 0);
-	return .{ .cpu_ns = try elapsed(cpu_start, cpu_end), .wall_ns = try elapsed(wall_start, wall_end) };
+	return .{
+		.cpu_ns = elapsed(cpu_start, cpu_end) catch return error.InvalidCpuClockInterval,
+		.wall_ns = elapsed(wall_start, wall_end) catch return error.InvalidWallClockInterval,
+	};
 }
 
 fn repeat(allocator: std.mem.Allocator, pattern: []const u8, repetitions: usize) ![]u8 {
 	const result = try allocator.alloc(u8, pattern.len * repetitions);
 	for (0..repetitions) |index| @memcpy(result[index * pattern.len ..][0..pattern.len], pattern);
 	return result;
+}
+
+fn measuredRun(comptime instrumented: bool, allocator: std.mem.Allocator, input: []const u8, fixture: fixtures.Case, repetitions: usize) !Sample {
+	var system_clock: SystemClock = .{};
+	return run(instrumented, allocator, input, fixture, repetitions, &system_clock) catch |err| {
+		if (err == error.InvalidCpuClockInterval or err == error.InvalidWallClockInterval) {
+			std.debug.print("Rejected clock readings: CPU {d} -> {d}; wall {d} -> {d}\n", .{
+				system_clock.values[0], system_clock.values[3], system_clock.values[1], system_clock.values[2],
+			});
+		}
+		return err;
+	};
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -66,8 +86,8 @@ pub fn main(init: std.process.Init) !void {
 	const input = try repeat(allocator, fixture.input, repetitions);
 	defer allocator.free(input);
 	for (0..warmup_count) |_| {
-		_ = try run(false, allocator, input, fixture, repetitions, SystemClock{});
-		_ = try run(true, allocator, input, fixture, repetitions, SystemClock{});
+		_ = try measuredRun(false, allocator, input, fixture, repetitions);
+		_ = try measuredRun(true, allocator, input, fixture, repetitions);
 	}
 	var original: Samples = .{};
 	var candidate: Samples = .{};
@@ -75,11 +95,11 @@ pub fn main(init: std.process.Init) !void {
 		var a: Sample = undefined;
 		var b: Sample = undefined;
 		if (index % 2 == 0) {
-			a = try run(false, allocator, input, fixture, repetitions, SystemClock{});
-			b = try run(true, allocator, input, fixture, repetitions, SystemClock{});
+			a = try measuredRun(false, allocator, input, fixture, repetitions);
+			b = try measuredRun(true, allocator, input, fixture, repetitions);
 		} else {
-			b = try run(true, allocator, input, fixture, repetitions, SystemClock{});
-			a = try run(false, allocator, input, fixture, repetitions, SystemClock{});
+			b = try measuredRun(true, allocator, input, fixture, repetitions);
+			a = try measuredRun(false, allocator, input, fixture, repetitions);
 		}
 		original.cpu_ns[index] = a.cpu_ns;
 		original.wall_ns[index] = a.wall_ns;
@@ -141,4 +161,21 @@ test "invalid clock intervals fail rather than emitting zero measurements" {
 	try std.testing.expectError(error.InvalidClockInterval, elapsed(2, 1));
 	try std.testing.expectError(error.InvalidClockInterval, elapsed(2, 2));
 	try std.testing.expectEqual(@as(u64, 3), try elapsed(2, 5));
+}
+
+test "a failed sample identifies the CPU or wall clock without accepting its interval" {
+	const FixtureClock = struct {
+		values: [4]u64,
+		index: usize = 0,
+		fn read(self: *@This(), _: bool) !u64 {
+			const value = self.values[self.index];
+			self.index += 1;
+			return value;
+		}
+	};
+	const fixture = fixtures.cases[0];
+	var cpu_clock: FixtureClock = .{ .values = .{ 10, 20, 21, 10 } };
+	try std.testing.expectError(error.InvalidCpuClockInterval, run(false, std.testing.allocator, fixture.input, fixture, 1, &cpu_clock));
+	var wall_clock: FixtureClock = .{ .values = .{ 10, 20, 20, 11 } };
+	try std.testing.expectError(error.InvalidWallClockInterval, run(false, std.testing.allocator, fixture.input, fixture, 1, &wall_clock));
 }

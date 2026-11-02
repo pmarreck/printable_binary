@@ -5,18 +5,24 @@ binary="${1:?Usage: test-adapter PREPARED_PROBE}"
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 text_seed='c46a9b6e20f74894957202c0e932b2ab'
-if ! "$binary" ascii 32768 "$text_seed" > "$scratch/record" 2> "$scratch/stderr" ||
+# Tiny decodes can finish without an observable process-CPU clock advance.
+# Exercise a representative sample instead; the producer still rejects invalid
+# intervals rather than accepting zeros or retrying a measurement until green.
+sample_size=1048576
+if ! "$binary" ascii "$sample_size" "$text_seed" > "$scratch/record" 2> "$scratch/stderr" ||
 	! jq -e --arg seed "$text_seed" '.seed == $seed' "$scratch/record" >/dev/null 2>&1; then
 	printf 'FAIL: producer must preserve the shared engine default hexadecimal seed as text\n' >&2; exit 1
 fi
 for name in ascii spaces alphabet unicode sparse dense encoded_header; do
-	if ! "$binary" "$name" 32768 23 > "$scratch/record" 2> "$scratch/stderr" || [[ -s "$scratch/stderr" ]]; then
-		printf 'FAIL: optimized %s producer must succeed quietly\n' "$name" >&2; exit 1
+	if ! "$binary" "$name" "$sample_size" 23 > "$scratch/record" 2> "$scratch/stderr" || [[ -s "$scratch/stderr" ]]; then
+		printf 'FAIL: optimized %s producer must succeed quietly\n' "$name" >&2
+		cat "$scratch/stderr" >&2
+		exit 1
 	fi
-	if ! jq -e '
+	if ! jq -e --argjson size "$sample_size" '
 		.schema == "performance-measurement/v1" and .correct == true and
 		.build_mode == "ReleaseFast" and .worker_threads == 1 and .seed == "23" and
-		(.rows | length) == 1 and .rows[0].size == 32768 and
+		(.rows | length) == 1 and .rows[0].size == $size and
 		.rows[0].input_bytes > 0 and .rows[0].decoded_bytes > 0 and
 		([.rows[0].samples.cpu_ns, .rows[0].samples.wall_ns,
 		  .rows[0].baseline_samples.cpu_ns, .rows[0].baseline_samples.wall_ns] |

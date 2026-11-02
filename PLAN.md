@@ -22,12 +22,13 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Final verification and shipping
 
+- [x] Check CI for the exact current pushed commit; Answer: remote yolo matches f4dcf9913d190ad6bf8dc95742ec1ce4dc7097a4 and all 28 targets passed in 72 seconds, finished 09:48 EST (done 2026-11-02 09:59 EST).
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 		- [ ] Should Roc unit checks remain explicitly mixed compile/test timing, or should test-artifact export be a separate compiler task? Its pinned compiler caches verdicts and publishes no test executable; owner decision pending.
-		- [x] Retain the exact Roc CLI/reference and re-execute all CLI/container/parity/muting contracts independently of all 61 required compiler-driven unit cases; fresh CLI execution takes 1.16–2.05 seconds (done 2026-11-02 05:44 EST; context: docs/plan_context/current-work.md).
 		- [ ] Integrate the remaining prepared runtime cases into one bounded concurrent complete runner through ./test, with compilation/setup/admission measured separately and no coverage omissions.
-			- [x] Verify the 26-group runtime coordinator, inherited-function/stderr controls, APE loader tools and deterministic probe clocks; full gate/all-system evaluation and fresh 26/26 execution pass at 24.79 seconds, over budget; Roc units stay mixed (done 2026-11-02 08:34 EST; context: docs/plan_context/current-work.md).
 			- [ ] Reduce the measured build/product/profile and Zig unit/differential costs without removing cases or required safety checks; the diagnostic observed 19.84 and 6.12 seconds respectively (context: docs/plan_context/current-work.md).
-				- [x] Verify rolling workers, concurrent isolated build phases and recording scope ports against all 26 retained runtime groups; complete gates pass and fresh execution takes 7.95 seconds, still over budget (done 2026-11-02 09:45 EST; context: docs/plan_context/current-work.md).
+				- [x] Measure checked backing for all 65,536 textual pairs with safety/traces/leak/failure checks retained; controlled old/new/new/old core runs pass at 4.79/0.73/0.73/4.71 seconds and complete gates pass (done 2026-11-02 10:09 EST; context: docs/plan_context/current-work.md).
+				- [x] Verify clock diagnostics and a one-MiB smoke sample through complete gates; repeated 32-KiB CPU readings caused rejection, all 500 larger probes pass and nonpositive intervals remain errors (done 2026-11-02 10:09 EST; context: docs/plan_context/current-work.md).
+				- [ ] Measure nested worker limits under the declared resource envelope; the checked-backing 26/26 run still takes 18.78 seconds under high shared-host load (context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.

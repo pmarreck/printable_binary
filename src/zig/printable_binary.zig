@@ -1539,15 +1539,30 @@ test "textual: exhaust every one- and two-byte input in both directions" {
 		defer allocator.free(decoded);
 		try std.testing.expectEqualSlices(u8, &input, decoded);
 	}
+	// Keep per-allocation safety, traces and a leak check for every pair without
+	// asking the OS to map/unmap a fresh debug-allocator page for each tiny value.
+	// The backing block is itself owned by the normal testing allocator.
+	const storage = try allocator.alignedAlloc(u8, .fromByteUnits(4096), 64 * 1024);
+	defer allocator.free(storage);
+	const PairAllocator = std.heap.DebugAllocator(.{
+		.stack_trace_frames = if (std.debug.sys_can_stack_trace) 10 else 0,
+		.resize_stack_traces = true,
+		.backing_allocator_zeroes = false,
+		.page_size = 4096,
+	});
 	for (0..65536) |pair| {
+		var backing = std.heap.FixedBufferAllocator.init(storage);
+		var checked: PairAllocator = .{ .backing_allocator = backing.allocator() };
+		defer std.testing.expect(checked.deinit() == .ok) catch @panic("textual pair leaked memory");
+		const pair_allocator = checked.allocator();
 		const input = [_]u8{ @intCast(pair >> 8), @truncate(pair) };
-		const encoded = try textual.encodePayload(allocator, &input);
-		defer allocator.free(encoded);
-		const decoded = try textual.decodePayload(allocator, encoded);
-		defer allocator.free(decoded);
+		const encoded = try textual.encodePayload(pair_allocator, &input);
+		defer pair_allocator.free(encoded);
+		const decoded = try textual.decodePayload(pair_allocator, encoded);
+		defer pair_allocator.free(decoded);
 		try std.testing.expectEqualSlices(u8, &input, decoded);
-		const canonical = try textual.encodePayload(allocator, decoded);
-		defer allocator.free(canonical);
+		const canonical = try textual.encodePayload(pair_allocator, decoded);
+		defer pair_allocator.free(canonical);
 		try std.testing.expectEqualStrings(encoded, canonical);
 	}
 }

@@ -1111,6 +1111,76 @@ single observed runtime than the earlier 24.787-second sample, not a claim of
 an approved historical baseline or controlled speedup: host load differed.
 The five-second runtime budget and the Roc mixed-phase decision remain open.
 
+The scheduling increment shipped as
+`f4dcf9913d190ad6bf8dc95742ec1ce4dc7097a4`; fetched remote identity matched and
+Mechatron Prime CI passed all 28 exact-commit targets in 72 seconds. A subsequent
+per-case diagnostic (`pb-runtime-case-attribution-20261102-0948`) executed all
+26 groups but is explicitly ERROR, not a runtime baseline: the real optimized
+tag producer rejected an invalid clock interval. Its recorded largest groups
+were Zig units 7.162 seconds, build checks 6.402, scheduler controls 5.763 and
+Node CLI 5.741, including each diagnostic's confinement startup. A bounded
+real-producer reproduction stopped on attempt 178 with `InvalidClockInterval`.
+Preserve that failure, improve captured diagnostics and identify the clock;
+do not accept nonpositive samples or silently retry them into a green result.
+
+A syscall attribution run of the exact retained ReleaseSafe core executable
+passed all 55 tests and counted 294,914 mmap and 589,815 munmap calls. The
+dominant interval was the exhaustive 65,536-pair textual test. Tracing changes
+timing, so its syscall durations are not throughput measurements. A test-only
+refactor keeps every pair and assertion, ten-frame allocation/resize traces,
+debug-allocator safety and an explicit leak check per pair, while supplying
+reusable heap-owned backing storage instead of new OS mappings per tiny value.
+The normal testing allocator still owns that backing block and covers all
+single-byte and allocation-failure cases. Measure the retained new executable
+and its full group before retaining the change; production allocation policy
+and codec behavior are unchanged.
+
+The new core and independent Unicode oracle pass the focused Nix check. Confined
+single-CPU job `pb-checked-backing-abba-20261102-0954` ran old/new/new/old exact
+ReleaseSafe executables without compilation: 4.790, 0.734, 0.727 and 4.709
+seconds respectively, all four groups passing. Each executable ran all 55 core
+tests. Source identity stayed
+`644eeddd3da7b3dd37139721690035a779b6adb64d52be369dad0e99d16b4912`;
+admission took 0.274 seconds, environment setup 7.513 and total 19.464 seconds.
+This bounded within-job comparison supports retaining the test-only change,
+not a whole-suite budget pass. A deterministic clock-adapter regression also
+failed before CPU/wall error classification was added; nonpositive readings
+remain errors, with production diagnostics now preserving their actual values.
+
+The new trace counted 2,177 mmap and 4,339 munmap calls, with all 55 tests still
+passing; its durations remain tracing diagnostics, not benchmark samples.
+The instrumented real-clock reproduction failed on attempt 28 at 32 KiB:
+CPU readings were both 897323 ns while wall readings advanced from
+3069555630073600 to 3069555630077477 ns (3,877 ns). This establishes a
+non-advancing CPU reading, not backwards time or a codec failure. The smoke
+adapter now requests one MiB per sample, checks that exact requested size in
+JSON and retains the same fixtures, sample counts, invalid-request controls and
+real mutants. All 500 bounded one-MiB probes then passed. That is empirical
+coverage, not a guarantee that clocks cannot fail; the producer still rejects
+every nonpositive CPU/wall interval and never silently retries bad samples.
+The ordinary benchmark configuration already requests sixteen MiB per case.
+
+The complete Linux gate and all-three-system evaluation pass the checked-backing
+and clock-diagnostic increment. Fresh confined
+`pb-runtime-26-checked-backing-20261102-1005-cores12` passed 26/26 groups in
+18.780 seconds, still OVER_BUDGET. Admission took 0.266 seconds, environment
+setup 8.594 and recorder total 28.047 seconds. Host load was 53.58/55.09/32.61
+before execution, with other compiler processes active. Both source checks
+matched `c19895997408e74c7c9c946024b5de6116f787f66f29ddd988420bd89b419e8d`.
+Do not present that run as a whole-suite speedup or excuse its budget failure.
+
+Per-case job `pb-runtime-checked-case-attribution-20261102-1007` also passed
+26/26: its overlapping execution union was 16.245 seconds (17.960 seconds
+total). Largest groups were build checks 14.616 seconds, Node CLI 13.948,
+scheduler controls 10.542, Rust 8.897 and Zig units 7.101. The larger real tag
+samples took 0.810 seconds, so they do not explain the full-suite slowdown.
+Host load remained high and broadly slowed independent groups; keep the
+controlled single-CPU core comparison separate from these observations.
+The next investigation is nested worker oversubscription and shared resource
+contention, not removing safety cases or replacing real CLI contracts with
+cached verdicts. SIMD cannot remove the measured mapping syscalls; no production
+vectorization change was made in this test-harness increment.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and
