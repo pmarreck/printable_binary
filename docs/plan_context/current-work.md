@@ -841,6 +841,25 @@ whole-project budget pass or approved historical comparison. Remaining runtime
 preparation should reuse exact artifacts and one admitted runtime environment,
 not enter a new shell or compile again for every subsuite.
 
+Packaged Rust retention shipped as
+`cfa62ae973b0f93b7090c59dd9f4e9887ea88a55`; the fetched remote matched and all
+27 exact-commit Mechatron Prime CI targets passed in 41 seconds, finishing
+2026-11-02T09:30:46Z. The next dependency-context regression failed against the
+old check graph, which separately built native CLI copies. Layout, container,
+Rust, Elixir and Roc differential checks now consume exact retained C/Zig/FFI
+artifacts through declared same-system Nix dependencies. The Zig result retains
+its static archive too; the FFI adapter links it with the unchanged `-O2` flags.
+The C CLI stays `-O3`, and the native Zig CLI/library stays ReleaseFast, matching
+the former default `zig build` mode. No executable source, assertion, safety
+profile or portable-runtime gate was removed. The contract verifies producer
+derivation contexts and removes explicit Zig compiler inputs from consumers.
+The complete Linux gate passed, and `nix flake check --all-systems --no-build`
+passed for x86-64 Linux, ARM64 Linux and ARM64 macOS. Foreign evaluation does
+not establish foreign execution. No runtime speedup or full-suite latency pass
+is claimed from this dependency refactor. Next is retaining module-symbol
+archives and extracting robust fresh analysis, including a regression for
+malformed consumer archives whose `nm` failure was hidden by a pipeline.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful

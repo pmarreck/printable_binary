@@ -467,6 +467,7 @@
         packages = assert (import ./tests/nix/build-matrix-contract.nix { packages = allPackages; inherit platform canonical; });
           assert (import ./tests/nix/source-filter-contract.nix (import ./build-support/source-filter.nix "/project"));
           assert (import ./tests/nix/source-identity-contract.nix);
+          assert (import ./tests/nix/prepared-reuse-contract.nix { checks = self.checks.${system}; inherit zig; });
           allPackages;
 
         checks = assert (import ./tests/nix/runtime-source-contract.nix); {
@@ -568,6 +569,7 @@
             '';
             installPhase = ''
               install -Dm755 zig-out/bin/printable-binary "$out/bin/printable-binary"
+              install -Dm644 zig-out/lib/libprintable_binary.a "$out/lib/libprintable_binary.a"
               touch "$out/passed"
             '';
             doInstallCheck = true;
@@ -582,15 +584,14 @@
           test-cli-layout = pkgs.stdenvNoCC.mkDerivation {
             name = "test-cli-layout";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ zig luajit ];
+            nativeBuildInputs = with pkgs; [ luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-luajit
-              zig build -Doptimize=ReleaseFast
               test -x ${printableBinaryZig}/bin/printable-binary
               test ! -e ${printableBinaryZig}/bin/printable-binary-zig
               bash ./tests/test_cli_layout \
-                ./zig-out/bin/printable-binary \
+                ${self.checks.${system}.test-zig}/bin/printable-binary \
                 ./bin/printable-binary-luajit
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
@@ -656,11 +657,9 @@
           test-container-zig = pkgs.stdenv.mkDerivation {
             name = "test-container-zig";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ zig ];
             buildPhase = ''
               export HOME=$TMPDIR
-              zig build -Doptimize=ReleaseFast
-              IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/test_container
+              IMPLEMENTATION_TO_TEST=${self.checks.${system}.test-zig}/bin/printable-binary bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -669,14 +668,13 @@
           test-container-cross = pkgs.stdenv.mkDerivation {
             name = "test-container-cross";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ zig clang nodejs_24 luajit ];
+            nativeBuildInputs = with pkgs; [ nodejs_24 luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-node.js bin/printable-binary-luajit
-              zig build
-              clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c zig-out/lib/libprintable_binary.a
-              clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              for impl in ./zig-out/bin/printable-binary ./pb-ffi ./printable-binary-c ./bin/printable-binary-luajit; do
+              for impl in ${self.checks.${system}.test-zig}/bin/printable-binary \
+                ${self.checks.${system}.test-ffi-cli}/libexec/test-ffi-cli \
+                ${self.checks.${system}.test-c}/bin/printable-binary-c ./bin/printable-binary-luajit; do
                 IMPL_A=./bin/printable-binary-node.js IMPL_B="$impl" bash ./tests/test_container_cross || exit 1
               done
             '';
@@ -688,12 +686,9 @@
           test-container-ffi = pkgs.stdenv.mkDerivation {
             name = "test-container-ffi";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ zig clang ];
             buildPhase = ''
               export HOME=$TMPDIR
-              zig build
-              clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c zig-out/lib/libprintable_binary.a
-              IMPLEMENTATION_TO_TEST=./pb-ffi bash ./tests/test_container
+              IMPLEMENTATION_TO_TEST=${self.checks.${system}.test-ffi-cli}/libexec/test-ffi-cli bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -702,11 +697,9 @@
           test-container-c = pkgs.stdenv.mkDerivation {
             name = "test-container-c";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ clang ];
             buildPhase = ''
               export HOME=$TMPDIR
-              clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
-              IMPLEMENTATION_TO_TEST=./printable-binary-c bash ./tests/test_container
+              IMPLEMENTATION_TO_TEST=${self.checks.${system}.test-c}/bin/printable-binary-c bash ./tests/test_container
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -729,7 +722,7 @@
           test-rust = pkgs.stdenv.mkDerivation {
             name = "test-rust";
             src = runtimeSource;
-            nativeBuildInputs = [ rustToolchain zig pkgs.jq pkgs.nodejs_24 ];
+            nativeBuildInputs = [ rustToolchain pkgs.jq pkgs.nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
               export CARGO_HOME=$TMPDIR/cargo
@@ -742,8 +735,7 @@
               cargo metadata --locked --offline --no-deps --format-version 1 --manifest-path rust/Cargo.toml > rust-test-metadata.json
               node tests/cli/test-rust-textual.mjs ./rust/target/release/examples/textual
               bash tests/cli/test-rust-malformed-utf8 ./rust/target/release/printable-binary-rs
-              zig build
-              bash tests/cli/test-rust-spaces ./rust/target/release/printable-binary-rs ./zig-out/bin/printable-binary
+              bash tests/cli/test-rust-spaces ./rust/target/release/printable-binary-rs ${self.checks.${system}.test-zig}/bin/printable-binary
               for i in $(seq 0 255); do printf "\\$(printf '%03o' "$i")"; done > allbytes
               ./rust/target/release/printable-binary-rs < allbytes > r.out 2> r.err
               grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' r.err || {
@@ -751,7 +743,7 @@
                 cat r.err >&2
                 exit 1
               }
-              PRINTABLE_BINARY_MUTE_STATS=1 ./zig-out/bin/printable-binary < allbytes > z.out
+              PRINTABLE_BINARY_MUTE_STATS=1 ${self.checks.${system}.test-zig}/bin/printable-binary < allbytes > z.out
               cmp r.out z.out || { echo "FAIL: Rust encode != Zig encode" >&2; exit 1; }
               ./rust/target/release/printable-binary-rs -d < z.out > rt.out 2> rt.err
               grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' rt.err || {
@@ -769,7 +761,7 @@
               mkdir -p "$out/bin"
               install -m755 rust/target/release/printable-binary-rs "$out/bin/printable-binary-rs"
               install -m755 rust/target/release/examples/textual "$out/libexec/textual-example"
-              install -m755 zig-out/bin/printable-binary "$out/libexec/printable-binary-reference"
+              install -m755 ${self.checks.${system}.test-zig}/bin/printable-binary "$out/libexec/printable-binary-reference"
               touch "$out/passed"
             '';
             doInstallCheck = true;
@@ -787,21 +779,20 @@
           test-elixir = pkgs.stdenv.mkDerivation {
             name = "test-elixir";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ elixir zig luajit ];
+            nativeBuildInputs = with pkgs; [ elixir luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
               export MIX_HOME=$TMPDIR/mix
               export HEX_HOME=$TMPDIR/hex
               export ELIXIR_ERL_OPTIONS="+fnu"
               ( cd elixir && mix test --no-deps-check --seed 0 )
-              zig build
               for i in $(seq 0 255); do printf "\\$(printf '%03o' "$i")"; done > allbytes
               luajit utils/prng --seed 42 --bytes 8192 > rand.bin
               ( cd utils && luajit prng --seed 42 --bytes 8192 ) > rand-again.bin
               cmp rand.bin rand-again.bin
               test "$(wc -c < rand.bin)" = 8192
-              PRINTABLE_BINARY_MUTE_STATS=1 ./zig-out/bin/printable-binary < allbytes > z_all.out
-              PRINTABLE_BINARY_MUTE_STATS=1 ./zig-out/bin/printable-binary < rand.bin  > z_rand.out
+              PRINTABLE_BINARY_MUTE_STATS=1 ${self.checks.${system}.test-zig}/bin/printable-binary < allbytes > z_all.out
+              PRINTABLE_BINARY_MUTE_STATS=1 ${self.checks.${system}.test-zig}/bin/printable-binary < rand.bin  > z_rand.out
               ( cd elixir && mix run --no-start -e '
                   for {enc, orig} <- [{"../z_all.out", "../allbytes"}, {"../z_rand.out", "../rand.bin"}] do
                     got = PrintableBinary.decode(File.read!(enc))
@@ -819,11 +810,10 @@
           test-ffi-cli = pkgs.stdenv.mkDerivation {
             name = "test-ffi-cli";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ zig clang ];
+            nativeBuildInputs = with pkgs; [ clang ];
             buildPhase = ''
               export HOME=$TMPDIR
-              zig build
-              clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c zig-out/lib/libprintable_binary.a
+              clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c ${self.checks.${system}.test-zig}/lib/libprintable_binary.a
               LC_ALL=C awk 'BEGIN { for (i=0; i<4096; i++) printf "%c", i%256 }' > in.bin
               patchShebangs tests/fixtures/fault-ffi-stage
             '';
@@ -892,7 +882,7 @@
             name = "test-roc";
             src = runtimeSource;
             strictDeps = true;
-            nativeBuildInputs = with pkgs; [ hexdump jq luajit python3 xxd zig rocCompiler ];
+            nativeBuildInputs = with pkgs; [ hexdump jq luajit python3 xxd rocCompiler ];
             buildPhase = ''
               export HOME="$TMPDIR/home"
               export XDG_CACHE_HOME="$HOME/.cache"
@@ -909,9 +899,8 @@
               roc test --jobs="$NIX_BUILD_CORES" roc/TestCliOutput.roc
               bash tests/test_roc_map_sync
               roc build --jobs="$NIX_BUILD_CORES" --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
-              zig build -Doptimize=ReleaseFast
-              bash tests/test_roc ./printable-binary-roc ./zig-out/bin/printable-binary
-              bash tests/cli/test-roc-codec-parity ./printable-binary-roc ./zig-out/bin/printable-binary
+              bash tests/test_roc ./printable-binary-roc ${self.checks.${system}.test-zig}/bin/printable-binary
+              bash tests/cli/test-roc-codec-parity ./printable-binary-roc ${self.checks.${system}.test-zig}/bin/printable-binary
               for muted in 1 true yes; do
                 printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
                 test ! -s muted.stderr

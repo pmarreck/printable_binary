@@ -136,6 +136,7 @@ annotate=[
 	tests/integration/test-shared-suite-failure = Prove correct stdout cannot hide a failed encoder exit status
 	tests/module_consumer.zig = Test fixture: minimal downstream importer of the printable_binary Zig module (mirrors how difz/blip consume it) for the FFI-symbol-leak test
 	tests/nix/build-matrix-contract.nix = Validate exact Nix package/profile sets and canonical command selection
+	tests/nix/prepared-reuse-contract.nix = Require exact prepared artifact dependencies and prevent repeated Zig compiler inputs in consumers
 	tests/nix/runtime-source-contract.nix = Classify runtime source paths and verify metadata-independent source identity
 	tests/nix/source-filter-contract.nix = Check source inclusion over selector, current, and future file classes
 	tests/nix/source-identity-contract.nix = Compare real Nix source hashes for metadata-only and code changes

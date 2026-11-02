@@ -178,6 +178,15 @@ prepared execution, `nix develop .#tests` supplies the declared runtime tools,
 including Python and Node, without a compiler. The complete suite remains
 `./test`; this native trio is only a subset.
 
+Layout, container and differential checks consume the exact retained native
+artifacts through declared Nix dependencies. The Zig result also retains its
+static FFI archive; the FFI check links its C adapter once with the existing
+`-O2` flags. The C CLI remains `-O3`, and the shared Zig CLI/library remains
+ReleaseFast for the native check target. A dependency-context regression checks
+these producer references and the absence of repeated Zig compiler inputs in
+consumers. Required assertions, safety-enabled unit tests and portable-runtime
+checks remain in the complete gate.
+
 Linux verification has exercised all nine installed host codecs in both mapping directions against the canonical table. Zig has also compiled all five targets with verified ELF, Mach-O, and PE headers. That is cross-build evidence; macOS, Windows, and Linux arm64 execution remain separate verification requirements.
 
 The comparative runner covers Roc, Rust, WebAssembly, and APE as well as C, Zig, LuaJIT, and Node. It verifies round trips before timing, uses deterministic workloads, and includes runtime startup in end-to-end results. APE uses a clean-environment adapter; Rust uses stdin; WASM includes wazero. Historical timings do not establish current performance on another machine.
