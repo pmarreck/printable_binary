@@ -4,6 +4,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Codec and Rust consumer requests
 
+- [x] Spell both tag headers with explicit U+F000 and UTF-8 bytes in the README/codec contract; a regression failed before the tables and the complete local gate now passes (done 2026-11-02 03:07 EST).
 - [x] Deliver a working textual codec to the requesting CJK/logging consumer through its durable inbox after publication and exact-commit CI, including revision, integration examples and legacy-log reading; receipt acknowledged and consumer integration underway (done 2026-11-02 02:07 EST; commit cf9859d; context: docs/plan_context/current-work.md).
 	- [x] Implement and publish the Rust textual library first, retaining legacy-log decoding without waiting for the canonical Zig port; all 27 exact-commit CI targets passed (done 2026-11-02 02:06 EST; commit cf9859d).
 	- [x] Implement the Rust payload and whole-value tagged APIs with legacy-log reading, frozen Unicode policy and independent exhaustive-scalar checks; the complete local Nix test gate passes (done 2026-11-02 02:02 EST; context: docs/plan_context/current-work.md).
@@ -23,6 +24,8 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 	- [x] Does accidental valid UTF-8 break byte/glyph alignment? Answer: yes in the proposed readable mode, not raw mode; losslessness can remain, but byte offsets, glyph counts, column widths, and alphabet-only detection need a separate contract (done 2026-11-01 12:42 EST).
 	- [x] Audit active Rust/Zig textual paths for byte/scalar/column units, capacity, scalar iteration, formatting, detection and whole-value framing; unported runtimes remain bytewise (done 2026-11-02 02:24 EST; context: docs/CODEC_MODES.md).
 - [ ] Evaluate a Latin-friendly high-byte alphabet retaining rough alphabetic progression, UTF-8 byte economy, and terminal readability; compatibility breaks are permitted, but select the replacement repertoire explicitly (context: docs/plan_context/current-work.md).
+	- [x] Evaluate a 128-symbol mathematical-letter candidate: sampled Latin shrinks 1.415×→1.000× but random textual grows 1.781×→2.628×; twelve low-byte Latin glyphs remain reserved and no palette is adopted (done 2026-11-02 03:01 EST; context: docs/plan_context/current-work.md).
+	- [ ] Await font-distinction feedback on `𝐚 𝒂 𝖺 𝗮 𝚊`, then select or reject a concrete versioned textual repertoire without changing existing bytewise/v1 data interpretation.
 - [ ] Specify optional `ρΒ_`/`ρΒ1_` v1 tagging with reserved-prefix errors, standard martini quoting, a leading-tag encoder guard/raw-input override, and single-pass excerpts before implementation (context: docs/plan_context/current-work.md).
 	- [ ] Should mixed-excerpt decoding reject openers inside an active frame and closers outside any frame, or allow implicit switches/literal stray closers? Owner decision pending; EOF still permits an omitted final closer.
 	- [ ] Reconcile textual payload quoting with single-pass mixed-region framing and test parser transitions before adding excerpt decoding.
@@ -42,5 +45,6 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
 	- [x] Capture/assert all FFI smoke diagnostics with eight defect controls, enforce the Elixir VM's UTF-8 filename mode and seeded fixtures; complete local gate passes and fresh FFI execution takes 0.40–0.46 seconds (done 2026-11-02 02:42 EST; context: docs/plan_context/current-work.md).
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
+		- [ ] Retain native Rust test executables and CLI/reference artifacts as Nix outputs with checked target inventories, without removing existing test execution.
 	- [x] Retain precompiled tag-probe safety/mutant artifacts and re-execute the unchanged contracts in 0.20 seconds; all 26 Linux checks pass (done 2026-11-01 13:25 EST; context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.

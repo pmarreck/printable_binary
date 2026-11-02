@@ -152,6 +152,7 @@ annotate=[
 	tests/unit/test-c-two-byte-domain.c = Exhaust the shared C decoder against exact canonical two-byte glyphs
 	tests/unit/test-cli-case-inventory = Reject missing, duplicate, or reordered CLI case traces
 	tests/unit/test-cli-group-runner = Verify worker budgets, complete execution, output order, and FIFO overlap
+	tests/unit/test-codec-tag-docs.mjs = Pin both documented mode headers to escaped markers and exact nine-byte UTF-8 sequences
 	tests/unit/test-ffi-smoke-driver = Reject eight FFI stage defects and require real/no-fault positive controls
 	tests/unit/test-leak-driver = Reject failed targets and incomplete or growing RSS traces
 	tests/unit/test-raw-alphabet = Test the complete alphabet and rejected reserved or malformed sequences

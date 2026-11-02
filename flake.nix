@@ -490,12 +490,13 @@
           test-docs-benchmark-contract = pkgs.stdenvNoCC.mkDerivation {
             name = "test-docs-benchmark-contract";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ bash binutils file gawk gnugrep jq ];
+            nativeBuildInputs = with pkgs; [ bash binutils file gawk gnugrep jq nodejs_24 ];
             PB_REQUIRED_CI_TARGETS = pkgs.writeText "printable-binary-required-ci-targets" (pkgs.lib.concatStringsSep "\n"
               ([ "packages.x86_64-linux.default" ] ++ map (name: "checks.x86_64-linux.${name}") (builtins.attrNames self.checks.x86_64-linux)) + "\n");
             buildPhase = ''
               export HOME=$TMPDIR
               bash ./tests/test_docs_benchmark_contract
+              node tests/unit/test-codec-tag-docs.mjs
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

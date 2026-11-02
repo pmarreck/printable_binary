@@ -161,12 +161,25 @@ slicing encoded input can produce a missing tag or invalid/noncanonical payload.
 
 ## Mode tags and framing boundary
 
-The intended explicit-v1 openers are `ρΒ1_` for bytewise and `ρΤ1_` for
+The canonical explicit-v1 openers are `ρΒ1_` for bytewise and `ρΤ1_` for
 textual, each nine UTF-8 bytes. Rho is U+03C1, beta U+0392, tau U+03A4. The
-matching proposed closers are `/ρΒ` and `/ρΤ`, each eight bytes. These
+matching closers are `/ρΒ` and `/ρΤ`, each eight bytes. These
 introducer characters are outside the current PB alphabet. A textual payload
 quote cannot be confused with either opener or closer: its quoted follower is
 `M` or a member of `R`, neither rho nor ASCII slash.
+
+Both openers begin with **U+F000**, which some fonts render invisibly. The
+visible `ρΤ1_` alone is six UTF-8 bytes, not a textual tag. In escaped notation,
+`\u{f000}` denotes the actual scalar, not literal backslash/ASCII source bytes:
+
+| Mode | Escaped spelling | UTF-8 bytes |
+| --- | --- | --- |
+| Bytewise | `\u{f000}ρΒ1_` | `ef 80 80 cf 81 ce 92 31 5f` |
+| Textual | `\u{f000}ρΤ1_` | `ef 80 80 cf 81 ce a4 31 5f` |
+
+Prefer the exported Rust `textual::TAG` or Zig `textual.tag` constant when
+constructing a textual header. Rendering is not evidence that the marker is
+present or absent; inspect code points or bytes when copying a literal tag.
 
 Untagged mode identification must come from an explicit argument, typed API or
 external metadata. Overlapping payload languages cannot establish intended

@@ -286,6 +286,7 @@ Use `--textual` for readable multilingual text embedded in arbitrary bytes:
 ```bash
 printf '中文 日本語 한국어\n' | printable-binary --textual
 # Output: ρΤ1_中文 日本語 한국어¶
+# The header starts with U+F000; some fonts hide that three-byte marker.
 printable-binary --textual input.bin | printable-binary --decode-auto > restored.bin
 ```
 
@@ -384,7 +385,7 @@ The Rust library also provides the Unicode-preserving **textual v1** codec:
 
 ```rust
 let raw = "中文 日本語 한국어 👩‍🚀\n".as_bytes();
-let encoded = printable_binary::textual::encode(raw); // includes ρΤ1_
+let encoded = printable_binary::textual::encode(raw); // header: \u{f000}ρΤ1_ (9 UTF-8 bytes)
 assert_eq!(printable_binary::decode_auto(&encoded).unwrap(), raw);
 ```
 

@@ -618,7 +618,12 @@ includes the revision, typed Rust adapters, legacy-log migration and scope
 limits. Delivery and a native session notification succeeded; the recipient
 acknowledged the exact revision at 02:07 EST and owns the consumer integration,
 including error propagation and upgrading readers with writers. Consumer CI
-is not yet reported. No consumer source/lockfile/hash was modified here.
+was initially pending. The recipient later reported adoption at consumer
+revision `8a100f8`, pushed after its full local Nix gate: tagged CJK stays literal,
+legacy literals remain readable, malformed values propagate errors, and mutants
+that swallow errors or drop legacy support fail. Exact-commit consumer CI was
+then independently verified: all three targets passed in 15 seconds, finishing
+2026-11-02T07:50:45Z. No consumer source/lockfile/hash was modified here.
 Next: port the accepted contract to the Zig library, then integrate explicit
 CLI selection and finish the remaining framing/verification work.
 
@@ -671,6 +676,17 @@ closers. Recommend rejecting misplaced delimiters without nesting; an optional
 final closer still permits EOF to terminate the active frame. Do not implement
 that unresolved transition while proceeding with independent test cleanup.
 
+The cleanup shipped as `04a985e2d034994050987e4f4b3f32c741e9f49e`; the fetched
+remote matched it and all 27 exact-commit Mechatron Prime CI targets passed in
+36 seconds, finishing 2026-11-02T07:56:08Z. The consumer then identified that
+the leading private-use marker can disappear visually. A new documentation
+regression failed before explicit header tables were added; it now compares
+both escaped spellings and all nine UTF-8 bytes. README examples identify the
+marker explicitly. The complete local Linux gate passed at the next checkpoint
+on 2026-11-02 before committing these documentation changes. Next unblocked
+execution-budget work is retaining exact Rust artifacts without replacing or
+dropping any current native/package/CLI checks.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful
@@ -702,6 +718,53 @@ The harness remains serial. Both runs retain identical before/after source
 identity `b2627d13fa777b68693a8342e1598e05ba3b70c4418997698432e88f41e0ccb7`.
 These are subset budget passes under the existing resource envelope, not a
 complete-project latency pass, comparative speedup or baseline-epoch approval.
+
+## Latin-friendly alphabet investigation: unadopted candidate
+
+A bounded Node/Unicode 16.0 experiment kept the low half of the current map and
+replaced its 128 high-byte glyphs with lowercase mathematical Latin-looking
+symbols. The five contiguous styles start at U+1D41A, U+1D482, U+1D5BA, U+1D5EE
+and U+1D68A. Iterate letters a–z, five styles per letter for a–x and four for
+y/z: this defines 128 distinct four-byte scalars, ordered by the underlying
+letter. Example a forms: `𝐚 𝒂 𝖺 𝗮 𝚊`; z forms: `𝐳 𝒛 𝗓 𝘇`. They are mathematical
+symbols with compatibility decompositions, not ordinary prose letters.
+[Unicode 16.0 character data](https://www.unicode.org/Public/16.0.0/ucd/UnicodeData.txt)
+records those identities; the pinned Node property/normalization checks agree.
+
+Four 262,144-byte fixtures compare current versus candidate textual payloads,
+including nine bytes of header accounting, with ordinary spaces/joiners
+preserved. Random bytes use xorshift32 seed 42; CJK repeats `中文 日本語 한국어`,
+and Latin repeats `Příliš žluťoučký kůň. Zażółć gęślą jaźń. Őrült tükör. ĂÂăâ ȘșȚț.`.
+Prefixes are cut at byte boundaries, so a final incomplete scalar is intentionally
+possible. Half-CJK concatenates half the random prefix with half the CJK prefix.
+Both experimental decoders recovered every fixture exactly.
+
+| Input | Current textual | Candidate textual | Current bytewise |
+| --- | ---: | ---: | ---: |
+| Seeded random | 1.781× | 2.628× | 1.852× |
+| Half CJK | 1.390× | 1.813× | 1.983× |
+| CJK | 1.000× | 1.000× | 2.115× |
+| Latin sample | 1.415× | 1.000× | 1.830× |
+
+This is a one-seed exploratory size result, not a throughput measurement or
+adopted format. Applying the candidate to bytewise too would increase its
+random-data ratio to 2.843×. Keeping compact bytewise unchanged and considering
+a new textual version is therefore the stronger direction for evaluation.
+All 128 candidate glyphs collapse to only 26 ASCII letters under NFKC, so
+normalizing the encoded representation cannot preserve bytes. NFC stability
+does not make NFKC safe. Font coverage, stylistic distinction and actual terminal
+columns remain unverified; Unicode's width property alone is insufficient for
+terminal layout. [Unicode 16.0 width guidance](https://www.unicode.org/reports/tr11/tr11-43.html)
+explicitly calls for terminal-specific handling.
+
+Replacing only the high half still leaves twelve Latin-script low-byte glyphs:
+`ª ȯ ʘ Ɣ º ɨ Ƶ ǁ ǀ ǃ Ꞩ Ɂ`, representing bytes
+`07 0e 0f 10 13 16 1a 1d 1e 21 24 3f`. They would still require literal quoting;
+this candidate is not a complete Latin-free alphabet. Its four-byte entries
+also require a fresh audit of every production buffer/lookup path before use.
+The owner has a queued font-preview question. No alphabet has changed. Since
+textual v1 is now used in persisted consumer logs, any incompatible map must
+get a distinct format version and retain v1 decoding, not silently replace v1.
 
 ## Decisions that remain deferred or on hold
 
