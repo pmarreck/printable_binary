@@ -5,10 +5,6 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 ## Codec and Rust consumer requests
 
 - [x] Spell both tag headers with explicit U+F000 and UTF-8 bytes in the README/codec contract; a regression failed before the tables and the complete local gate now passes (done 2026-11-02 03:07 EST).
-- [x] Deliver a working textual codec to the requesting CJK/logging consumer through its durable inbox after publication and exact-commit CI, including revision, integration examples and legacy-log reading; receipt acknowledged and consumer integration underway (done 2026-11-02 02:07 EST; commit cf9859d; context: docs/plan_context/current-work.md).
-	- [x] Implement and publish the Rust textual library first, retaining legacy-log decoding without waiting for the canonical Zig port; all 27 exact-commit CI targets passed (done 2026-11-02 02:06 EST; commit cf9859d).
-	- [x] Implement the Rust payload and whole-value tagged APIs with legacy-log reading, frozen Unicode policy and independent exhaustive-scalar checks; the complete local Nix test gate passes (done 2026-11-02 02:02 EST; context: docs/plan_context/current-work.md).
-	- [x] Preserve ordinary spaces and ZWJ/ZWNJ in textual v1? Answer: yes; retain combining/variation marks too, and visibly encode other whitespace and format controls (done 2026-11-02 01:41 EST; context: docs/CODEC_MODES.md).
 
 ## Optional stream tagging
 
@@ -45,7 +41,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 	- [x] Capture/assert all FFI smoke diagnostics with eight defect controls, enforce the Elixir VM's UTF-8 filename mode and seeded fixtures; complete local gate passes and fresh FFI execution takes 0.40–0.46 seconds (done 2026-11-02 02:42 EST; context: docs/plan_context/current-work.md).
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 		- [x] Reuse exact declared C/Zig/FFI artifacts across layout, container and differential checks; dependency-context regression, full Linux gate and all-three-system evaluation pass (done 2026-11-02 04:40 EST; context: docs/plan_context/current-work.md).
-		- [ ] Separate module-symbol compilation from fresh archive analysis; retain both archives and reject malformed or missing symbol-tool inputs.
+		- [x] Retain module/FFI archives and reject malformed inputs, missing fixture work and tool faults; full Linux gate/all-system evaluation pass and fresh verification takes 0.69–0.80 seconds (done 2026-11-02 05:10 EST; context: docs/plan_context/current-work.md).
 		- [x] Retain both Rust test bundles with original Cargo metadata, exporter/runner defect controls and full-gate verification; fresh native/control execution takes 0.87–0.88 seconds (done 2026-11-02 04:26 EST; context: docs/plan_context/current-work.md).
 		- [x] Retain exact C, Zig and separate APE CLI/domain-test artifacts; unchanged contracts pass after installation and fresh concurrent execution takes 1.66 seconds; complete gate passes (done 2026-11-02 03:53 EST; context: docs/plan_context/current-work.md).
 		- [x] Preserve runtime check derivations across known metadata-only edits while retaining full documentation checks and all executable inputs; classifier/identity regressions and complete gate pass (done 2026-11-02 03:41 EST; context: docs/plan_context/current-work.md).

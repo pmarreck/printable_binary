@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Classify complete symbol-type sets, not one matching example.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+source "$repo_root/tests/module-symbols.bash" || exit 1
+rows() {
+	local types=$1 index
+	for ((index=0; index<${#types}; index++)); do
+		printf '00000000 %s pb_value_%s\n' "${types:index:1}" "$index"
+	done
+}
+included="$(rows 'TtDdRrBb')"
+excluded="$(rows 'ACEFGHIJKLMNOPQSUVWXYZacefghijklmnopqsuvwxyz?')"
+[[ "$(pb_count_symbol_defs "$included")" == 8 ]] || exit 1
+[[ "$(pb_count_symbol_defs "$excluded")" == 0 ]] || exit 1
+[[ "$(pb_count_symbol_defs "$included"$'\n'"$excluded")" == 8 ]] || exit 1
+invalid=$'archive.o:\n                 U pb_undefined\ngarbage T pb_bad_address\n0000 T xpb_wrong_prefix\n0000 T pb_extra extra\n'
+[[ "$(pb_count_symbol_defs "$invalid")" == 0 && "$(pb_count_symbol_defs '')" == 0 ]] || exit 1
+pb_has_consumer_export $'archive.o:\n00000000 T module_consumer_touch\n' || exit 1
+for line in '' '0000 t module_consumer_touch' '0000 U module_consumer_touch' \
+	'0000 D module_consumer_touch' 'garbage T module_consumer_touch' \
+	'0000 T module_consumer_touch_suffix' '0000 T module_consumer_touch extra'; do
+	if pb_has_consumer_export "$line"; then
+		printf 'FAIL: invalid consumer export was classified as real work\n' >&2
+		exit 1
+	fi
+done
+printf 'PASS: complete symbol-type sets and consumer-work classifications\n'

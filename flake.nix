@@ -353,11 +353,11 @@
           packages = [ performance-profiling.packages.${system}.default pkgs.bash pkgs.gitMinimal ];
           PB_PROFILE_PF = platform;
         };
-        # Execute exact prepared tests without a host compiler or ambient tools.
+        # Runtime tools for exact prepared tests; language builds stay in derivations.
         devShells.tests = pkgs.mkShell {
           packages = with pkgs; [
             bash coreutils diffutils gawk gnugrep gnused jq python3
-            xxd hexdump luajit nodejs_24
+            xxd hexdump luajit nodejs_24 binutils
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.bubblewrap pkgs.util-linux ];
         };
         devShells.default = pkgs.mkShell {
@@ -936,19 +936,27 @@
           # must emit ZERO `pb_*` C symbols (the C ABI lives only in the FFI-root
           # static lib). Two static (musl) consumers of pb otherwise collide on
           # `duplicate symbol: pb_*` under ld.lld — this blocked difz. nm is an
-          # independent oracle. Linux-only: the dup-symbol hazard is specific to
-          # static-musl linking (darwin links dynamically and tolerates dupes),
-          # and the test's nm output parsing assumes ELF symbol naming (no Mach-O
-          # leading underscore). See tests/test_module_no_ffi_symbols.
+          # independent oracle. Linux-only: this parser uses ELF symbol spelling,
+          # not Mach-O's leading underscore. Static-musl downstream links exposed
+          # this duplicate-symbol fault. See tests/test_module_no_ffi_symbols.
           test-no-ffi-symbols = pkgs.stdenv.mkDerivation {
             name = "test-no-ffi-symbols";
             src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig binutils ];
             buildPhase = ''
               export HOME=$TMPDIR
-              bash ./tests/test_module_no_ffi_symbols
+              zig build consumer-lib -Doptimize=ReleaseFast
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              install -Dm644 zig-out/lib/libmodule_consumer.a "$out/lib/libmodule_consumer.a"
+              install -Dm644 ${self.checks.${system}.test-zig}/lib/libprintable_binary.a "$out/lib/libprintable_binary.a"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              bash tests/unit/test-module-symbols
+              bash tests/unit/test-module-symbol-driver "$out/lib/libmodule_consumer.a" "$out/lib/libprintable_binary.a"
+            '';
           };
 
           test-ape = pkgs.stdenvNoCC.mkDerivation {

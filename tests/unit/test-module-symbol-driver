@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Genuine archives establish the positive case; real corruption and tool faults must fail.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run archive controls through ./test or run-isolated\n' >&2
+	exit 1
+fi
+consumer=${1:?consumer archive}
+ffi=${2:?FFI archive}
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+analysis="$repo_root/tests/test_module_no_ffi_symbols"
+failures=0
+out='' err='' rc=0
+capture bash "$analysis" "$consumer" "$ffi" || exit 1
+if [[ "$rc" != 0 || -n "$err" || "$out" != *'All FFI symbol-leak checks passed'* ]]; then
+	printf 'FAIL: genuine archive analysis failed\n%s\n%s\n' "$out" "$err" >&2
+	exit 1
+fi
+reject() {
+	local label=$1 diagnostic=$2 out='' err='' rc=0
+	shift 2
+	capture "$@" || exit 1
+	if [[ "$rc" == 0 || "$err" != *"$diagnostic"* ]]; then
+		printf 'FAIL: archive gate accepted %s or failed for the wrong reason\n' "$label" >&2
+		failures=$((failures + 1))
+	fi
+}
+printf 'not an archive\n' > "$scratch/bad consumer.a"
+out='' err='' rc=0
+capture ar qc "$scratch/empty.a" || exit 1
+[[ "$rc" == 0 && -z "$out" && -z "$err" ]] || exit 1
+reject 'malformed consumer' 'symbol tool failed' bash "$analysis" "$scratch/bad consumer.a" "$ffi"
+reject 'malformed FFI' 'symbol tool failed' bash "$analysis" "$consumer" "$scratch/bad consumer.a"
+reject 'missing consumer' 'expected archive not found' bash "$analysis" "$scratch/missing.a" "$ffi"
+reject 'missing FFI' 'expected archive not found' bash "$analysis" "$consumer" "$scratch/missing.a"
+reject 'polluted consumer' 'module consumer leaks' bash "$analysis" "$ffi" "$ffi"
+reject 'empty FFI namespace' 'defines no pb_' bash "$analysis" "$consumer" "$consumer"
+reject 'skipped consumer fixture' 'module_consumer_touch' bash "$analysis" "$scratch/empty.a" "$ffi"
+failed_nm() { printf '00000000 T module_consumer_touch\n'; printf 'controlled tool failure\n' >&2; return 23; }
+warning_nm() { printf '00000000 T module_consumer_touch\n'; printf 'controlled tool warning\n' >&2; }
+blank_warning_nm() { printf '00000000 T module_consumer_touch\n'; printf '\n' >&2; }
+export -f failed_nm warning_nm blank_warning_nm
+reject 'tool failure with valid-looking output' 'symbol tool failed' env NM=failed_nm bash "$analysis" "$consumer" "$ffi"
+reject 'unasserted tool warning' 'unexpected symbol-tool diagnostics' env NM=warning_nm bash "$analysis" "$consumer" "$ffi"
+reject 'newline-only tool warning' 'unexpected symbol-tool diagnostics' env NM=blank_warning_nm bash "$analysis" "$consumer" "$ffi"
+reject 'unavailable symbol tool' 'symbol tool unavailable' env NM="$scratch/no-nm" bash "$analysis" "$consumer" "$ffi"
+reject 'missing arguments' 'Usage:' bash "$analysis"
+reject 'one argument' 'Usage:' bash "$analysis" "$consumer"
+reject 'extra arguments' 'Usage:' bash "$analysis" "$consumer" "$ffi" extra
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: module archive analysis rejects corruption, missing work, namespace defects and tool faults\n'

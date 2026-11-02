@@ -14,46 +14,56 @@
 
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$SCRIPT_DIR"
-
-ZIG="${ZIG:-zig}"
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run symbol analysis through ./test or run-isolated\n' >&2
+	exit 1
+fi
+if [[ "$#" != 2 ]]; then
+	printf 'Usage: test_module_no_ffi_symbols CONSUMER_ARCHIVE FFI_ARCHIVE\n' >&2
+	exit 2
+fi
+CONSUMER_A=$1
+FFI_A=$2
 fails=0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
+source "$SCRIPT_DIR/module-symbols.bash" || exit 1
 
 # Locate an nm: prefer plain nm (binutils), fall back to llvm-nm.
-NM=""
-for cand in nm llvm-nm; do
-	if command -v "$cand" >/dev/null 2>&1; then NM="$cand"; break; fi
-done
+NM="${NM:-}"
+if [[ -z "$NM" ]]; then
+	for cand in nm llvm-nm; do
+		if command -v "$cand" >/dev/null 2>&1; then NM="$cand"; break; fi
+	done
+fi
 if [ -z "$NM" ]; then
 	echo "Error: need 'nm' or 'llvm-nm' to inspect symbols" >&2
+	exit 1
+fi
+if ! command -v "$NM" >/dev/null 2>&1; then
+	printf 'Error: symbol tool unavailable: %s\n' "$NM" >&2
 	exit 1
 fi
 
 echo "=== FFI symbol-leak test (nm = $NM) ==="
 
-# Count DEFINED pb_* symbols in an archive (uppercase type letter = external/defined;
-# also accept lowercase local defs). 'U' (undefined) is excluded by the type class.
-count_defined_pb() {
-	"$NM" "$1" 2>/dev/null | grep -E '^[0-9a-fA-F]* [TtDdRrBb] pb_' | wc -l | tr -d ' '
+# Preserve even newline-only diagnostics; command substitution would trim them.
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+read_symbols() {
+	local role=$1 archive=$2 status
+	"$NM" -- "$archive" > "$scratch/$role.out" 2> "$scratch/$role.err"
+	status=$?
+	if [[ "$status" != 0 ]]; then
+		printf 'Error: symbol tool failed for %s (exit %s)\n' "$role" "$status" >&2
+		cat "$scratch/$role.err" >&2
+		return 1
+	fi
+	if [[ -s "$scratch/$role.err" ]]; then
+		printf 'Error: unexpected symbol-tool diagnostics for %s\n' "$role" >&2
+		cat "$scratch/$role.err" >&2
+		return 1
+	fi
 }
-
-echo "Building module-consumer static lib (zig build consumer-lib)..."
-if ! "$ZIG" build consumer-lib >/tmp/pb_consumer_build.log 2>&1; then
-	echo "✗ failed to build consumer-lib:" >&2
-	cat /tmp/pb_consumer_build.log >&2
-	exit 1
-fi
-
-echo "Building FFI static lib (zig build)..."
-if ! "$ZIG" build >/tmp/pb_lib_build.log 2>&1; then
-	echo "✗ failed to build lib:" >&2
-	cat /tmp/pb_lib_build.log >&2
-	exit 1
-fi
-
-CONSUMER_A="zig-out/lib/libmodule_consumer.a"
-FFI_A="zig-out/lib/libprintable_binary.a"
 
 for a in "$CONSUMER_A" "$FFI_A"; do
 	if [ ! -f "$a" ]; then
@@ -63,16 +73,25 @@ for a in "$CONSUMER_A" "$FFI_A"; do
 done
 
 if [ "$fails" -eq 0 ]; then
-	consumer_pb=$(count_defined_pb "$CONSUMER_A")
-	ffi_pb=$(count_defined_pb "$FFI_A")
+	read_symbols consumer "$CONSUMER_A" || fails=$((fails + 1))
+	read_symbols ffi "$FFI_A" || fails=$((fails + 1))
+fi
+
+if [ "$fails" -eq 0 ]; then
+	consumer_symbols="$(<"$scratch/consumer.out")"
+	consumer_pb=$(pb_count_symbol_defs "$consumer_symbols") || exit 1
+	ffi_pb=$(pb_count_symbol_defs "$(<"$scratch/ffi.out")") || exit 1
 
 	# (1) The importable module must not leak any pb_* C symbols.
 	if [ "$consumer_pb" -eq 0 ]; then
 		echo "✓ module consumer defines 0 pb_* symbols"
 	else
 		echo "✗ module consumer leaks $consumer_pb pb_* C symbols (the C ABI must live only in the FFI root):" >&2
-		"$NM" "$CONSUMER_A" 2>/dev/null | grep -E '^[0-9a-fA-F]* [TtDdRrBb] pb_' >&2
 		((fails++))
+	fi
+	if ! pb_has_consumer_export "$consumer_symbols"; then
+		printf 'Error: consumer fixture export missing: module_consumer_touch\n' >&2
+		fails=$((fails + 1))
 	fi
 
 	# (2) The FFI static library must still export the C ABI.

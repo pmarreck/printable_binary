@@ -175,7 +175,8 @@ executables used by their contracts. `tests/cli/test-prepared-native` re-execute
 those same checks after installation, including the C two-byte domain test,
 malformed-byte regressions and Zig's textual CLI cases. For isolated, fresh
 prepared execution, `nix develop .#tests` supplies the declared runtime tools,
-including Python and Node, without a compiler. The complete suite remains
+including Python, Node and binary-inspection tools; language builds stay in Nix
+derivations. The complete suite remains
 `./test`; this native trio is only a subset.
 
 Layout, container and differential checks consume the exact retained native
@@ -186,6 +187,12 @@ ReleaseFast for the native check target. A dependency-context regression checks
 these producer references and the absence of repeated Zig compiler inputs in
 consumers. Required assertions, safety-enabled unit tests and portable-runtime
 checks remain in the complete gate.
+
+The Linux module-symbol check retains its consumer and FFI archives and analyzes
+them without compiling again. It requires the consumer fixture's own export,
+rejects symbol-tool failures and any diagnostics, and checks the C-ABI namespace
+separation. Pure classifier tests cover included/excluded ELF symbol-type sets;
+real archive corruption, missing work and controlled tool faults must fail.
 
 Linux verification has exercised all nine installed host codecs in both mapping directions against the canonical table. Zig has also compiled all five targets with verified ELF, Mach-O, and PE headers. That is cross-build evidence; macOS, Windows, and Linux arm64 execution remain separate verification requirements.
 

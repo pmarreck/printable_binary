@@ -860,6 +860,39 @@ is claimed from this dependency refactor. Next is retaining module-symbol
 archives and extracting robust fresh analysis, including a regression for
 malformed consumer archives whose `nm` failure was hidden by a pipeline.
 
+Native artifact reuse shipped as `351feffb781666fcbf0d12d0c3e5d2699a3632aa`;
+the fetched remote matched and all 27 exact-commit Mechatron Prime CI targets
+passed in 47 seconds, finishing 2026-11-02T09:46:57Z. Module-symbol extraction
+then reproduced five defective outcomes: malformed consumer acceptance,
+malformed FFI failure for the wrong reason, missing consumer work acceptance,
+and ignored injected tool failure/warning. Compilation now stays in the Nix
+build phase; both archives are retained and analyzed after fixup. The FFI
+archive is the exact declared Zig check dependency. Pure classifiers cover all
+53 alphabetic/unknown symbol-type rows as included/excluded sets, malformed
+rows and the fixture export. The adapter checks real tool status and preserves
+even newline-only diagnostics before counting symbols. Its positive genuine
+archives and fourteen rejection controls pass, including corruption, missing
+files, polluted/absent namespaces, empty consumer work, tool failures/warnings,
+missing tools and invalid arities. Focused checks pass; the complete gate and
+fresh execution measurement remain next. No ABI implementation changed.
+
+The complete Linux gate and all-three-system evaluation passed. Fresh confined
+jobs `pb-module-symbols-20261102-0506-cores1` and `-cores12` passed both outer
+groups: pure classification and all fifteen genuine/fault adapter cases.
+Execution took 0.688327027/0.803374676 seconds with source identity fixed at
+`5642da4b369d0f0909fe6808bbc054a72d4aad528d7a5210e0f283539371fd69`.
+One/twelve are CPU allowances, not parallel classifier workers. Admission/launch
+took 0.369892532/0.099124356 seconds; Nix environment entry took
+6.793827815/0.387616463 seconds; recorder begin-to-finish totals were
+9.374921406/1.483716907 seconds. Instrumentation accounted for
+1.237910302/0.040814408 seconds. Ten other compiler processes were active before
+the pair, with load averages 22.68/27.86/27.53. Setup/instrumentation remain
+visible findings, not execution time or zeros; finer cold-cache versus host-load
+attribution is not established. These are subset observations, without a
+historical speedup or whole-suite budget claim. Next unblocked work is retaining
+the remaining Elixir/Roc runtime artifacts and wiring one bounded complete fresh
+runner, keeping unsplit compiler/test work explicit.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful
