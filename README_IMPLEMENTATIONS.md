@@ -137,6 +137,11 @@ the raw CLI, the textual example adapter and an independent Zig reference.
 Its source-local paths are removed from the retained target inventory. An
 installed-artifact check compares every native target with Cargo metadata,
 rejects missing/duplicate targets, and executes the retained tests after fixup.
+The isolated packaged crate has its own `packaged/` test bundle and path-free
+Cargo inventory, built from the extracted archive. Those tests run again after
+the temporary crate/build tree is gone. A shared exporter validates target
+completeness and safe names before writing; its controls cover ignored build
+messages, omissions, duplication, empty inventories and unsafe names.
 Existing package, native, documentation and CLI checks remain in the complete
 test entry point. Retention enables fresh runtime measurement; it does not by
 itself establish the complete-suite execution budget.

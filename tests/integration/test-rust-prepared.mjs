@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 assert(process.env.NIX_BUILD_TOP || process.env.TEST_WORKSPACE, 'run prepared tests in confinement');
+const role = process.argv[4] ?? 'source';
+assert(['source', 'package'].includes(role), 'unknown Rust artifact role');
 const root = realpathSync(process.argv[2]);
 const metadata = JSON.parse(readFileSync(process.argv[3], 'utf8'));
 const manifest = JSON.parse(readFileSync(join(root, 'share/rust-native-tests.json'), 'utf8'));
@@ -50,5 +52,7 @@ for (const test of manifest.native_tests) {
 	const result = spawnSync(executable(test.file), [], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
 	assert.equal(result.status, 0, `${test.name}: ${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
 }
-for (const relative of ['bin/printable-binary-rs', 'libexec/textual-example', 'libexec/printable-binary-reference']) executable(relative);
-console.log(`PASS: all ${expected.length} retained Rust native test targets execute; CLI/reference artifacts are available`);
+if (role === 'source') {
+	for (const relative of ['bin/printable-binary-rs', 'libexec/textual-example', 'libexec/printable-binary-reference']) executable(relative);
+}
+console.log(`PASS: all ${expected.length} retained Rust ${role} test targets execute`);

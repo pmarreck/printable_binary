@@ -766,6 +766,81 @@ including the unchanged tag-probe controls. The next unblocked preparation item
 is retaining the isolated packaged-crate tests and their independent inventory;
 the full-suite execution-budget item remains open.
 
+Native CLI artifact retention shipped as
+`ab9d64f6a7569954c66d0eab8d979defb402317f`; the fetched remote matched and all
+27 exact-commit Mechatron Prime CI targets passed in 38 seconds. Packaged Rust
+retention first failed because the installed `packaged/` bundle was missing,
+after the existing package/source/CLI checks passed. Both source and extracted
+crate builds now export their own five test targets and independent path-free
+Cargo inventories through one shared exporter. Installed checks re-execute both
+sets after the package scratch tree is removed. The archive is still built and
+tested offline in an isolated directory; no source or package checks were
+removed. Export controls retain all lib/bin/test roles, ignore non-test compiler
+records, and reject omissions, duplicates, empty sets and unsafe names before
+creating output. A stricter unsafe-name control failed before adding its
+specific validation diagnostic, preventing an unrelated filesystem failure from
+satisfying that negative test. Focused artifact checks and the confined export
+controls and the complete local gate pass.
+
+Fresh confined jobs `pb-rust-retained-20261102-0405-cores1` and `-cores12`
+executed the source bundle, package bundle and export controls without a
+compiler. Execution took 0.785261107/0.748686840 seconds; combined
+admission/shell setup took 3.590053360/3.067978641 seconds, and recorder
+begin-to-finish totals were 5.287970435/3.933161776 seconds. Source identity stayed
+`c38eab7a57b8cbc2972749349196a178845cbf73075e5cca8c7b2da7c5ef737f`.
+The three recorded outer units include ten native executables (30 native test
+functions) and the export-control group. Outer units run sequentially; one and
+twelve denote CPU allowances, not twelve worker processes. This remains a
+subset measurement, not a complete Rust/whole-project execution claim or a
+historical speedup. Setup dominates result delivery in these observations;
+queue admission and shell/evaluation are not separately attributed yet. The
+next prepared-run integration should split those phases rather than treat the
+three-second setup as zero. Next unblocked work is reusing declared exact
+prepared CLI artifacts in remaining checks, then retaining the remaining
+runtime artifacts without dropping their assertions. Final review identified a
+circular package-inventory check: it used the exporter's projection as its own
+expected metadata. A separate original-Cargo-metadata requirement failed before
+the package harness preserved that input outside the exported bundle. Both
+source and package installation checks now compare against Cargo's original
+metadata. A producer-fault fixture that omits a non-test metadata target must be
+rejected in both roles, before attempting fixture execution. The earlier timing
+observations precede these stronger controls and remain historical subset
+evidence; the final strengthened gate must pass before publication.
+
+The strengthened full gate passed. A subsequent attribution launcher had a
+multilayer-quoting error: its measured `bash -c` received no program, while the
+three test commands ran outside that measured child. The recorder rejected the
+observation despite the caller reporting success, preserving the real child
+failure. Those commands only created private temporary fixtures or read/run
+retained artifacts; they did not publish products or touch selectors. A shared
+checked-in retained-Rust runner now replaces inline test code and is reached
+from the mandatory Nix installation check with the original Cargo metadata.
+Fresh measurement must use that script through the confinement adapter, never
+the failed observation. Its admission split did identify about 0.11 seconds of
+admission/launch versus 2.47 seconds entering the Nix environment, but its
+execution duration is invalid. Other compilation was active on the shared host
+(11 compiler processes; load averages 29.22/51.08/47.27 before that attempt).
+
+The file-based runner and strengthened original-metadata checks passed the
+complete local gate. Runner controls inject each of the three group failures,
+verify all groups still run, retain exact arguments with spaces, cover both
+metadata-selection forms and reject invalid arities. Final fresh, confined jobs
+`pb-rust-retained-runner-20261102-0425-cores1` and `-cores12` passed both real test
+bundles plus exporter and runner controls. Execution took 0.878890302 and
+0.865120314 seconds. The four outer units cover ten native executables (30 test
+functions), nine export controls and eight runner-adapter cases. CPU allowances
+were one and twelve; the outer groups remain sequential. Source identity stayed
+`946ea87b7edb6931358bf36ea0c2f7630b4bf6c02ba41a385cf4b506f426e450`.
+Admission/launch took 0.121144842/0.121184647 seconds; Nix environment entry took
+2.540488686/0.403094282 seconds; recorder totals were
+3.833147232/1.541064424 seconds. This localizes the variable setup cost to Nix
+environment entry rather than admission; finer evaluation/cache/load
+attribution remains unknown. The host had eight compiler processes and load
+averages 29.32/37.76/40.21 before this pair. These are subset observations, not a
+whole-project budget pass or approved historical comparison. Remaining runtime
+preparation should reuse exact artifacts and one admitted runtime environment,
+not enter a new shell or compile again for every subsuite.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful

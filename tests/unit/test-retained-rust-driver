@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Inject a process adapter; record argv and fail each independent group in turn.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run runner controls through ./test or run-isolated\n' >&2
+	exit 1
+fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+node() {
+	local number=0
+	if [[ -f "$RUST_RUNNER_EFFECTS/count" ]]; then read -r number < "$RUST_RUNNER_EFFECTS/count" || return 1; fi
+	number=$((number + 1))
+	printf '%s\n' "$number" > "$RUST_RUNNER_EFFECTS/count" || return 1
+	printf '%s\n' "$@" > "$RUST_RUNNER_EFFECTS/call-$number" || return 1
+	[[ "$number" != "$RUST_RUNNER_FAIL_AT" ]]
+}
+export -f node
+export RUST_RUNNER_EFFECTS RUST_RUNNER_FAIL_AT
+artifact_root="$scratch/artifacts with spaces"
+for RUST_RUNNER_FAIL_AT in 0 1 2 3; do
+	RUST_RUNNER_EFFECTS="$(mktemp -d "$scratch/effects.XXXXXXXX")" || exit 1
+	out='' err='' rc=0
+	capture bash "$repo_root/tests/cli/test-retained-rust" "$artifact_root" 'source metadata.json' 'package metadata.json' || exit 1
+	expected=1; [[ "$RUST_RUNNER_FAIL_AT" != 0 ]] || expected=0
+	[[ "$rc" == "$expected" && -z "$out" && -z "$err" ]] || exit 1
+	[[ "$(<"$RUST_RUNNER_EFFECTS/count")" == 3 ]] || exit 1
+	cmp -s <(printf '%s\n' tests/unit/test-rust-test-export.mjs) "$RUST_RUNNER_EFFECTS/call-1" || exit 1
+	cmp -s <(printf '%s\n' tests/integration/test-rust-prepared.mjs "$artifact_root" 'source metadata.json' source) "$RUST_RUNNER_EFFECTS/call-2" || exit 1
+	cmp -s <(printf '%s\n' tests/integration/test-rust-prepared.mjs "$artifact_root/packaged" 'package metadata.json' package) "$RUST_RUNNER_EFFECTS/call-3" || exit 1
+done
+RUST_RUNNER_FAIL_AT=0
+RUST_RUNNER_EFFECTS="$(mktemp -d "$scratch/effects.XXXXXXXX")" || exit 1
+out='' err='' rc=0
+capture bash "$repo_root/tests/cli/test-retained-rust" "$artifact_root" || exit 1
+[[ "$rc" == 0 && -z "$out" && -z "$err" && "$(<"$RUST_RUNNER_EFFECTS/count")" == 3 ]] || exit 1
+cmp -s <(printf '%s\n' tests/integration/test-rust-prepared.mjs "$artifact_root" "$artifact_root/share/rust-test-targets.json" source) "$RUST_RUNNER_EFFECTS/call-2" || exit 1
+cmp -s <(printf '%s\n' tests/integration/test-rust-prepared.mjs "$artifact_root/packaged" "$artifact_root/packaged/share/rust-test-targets.json" package) "$RUST_RUNNER_EFFECTS/call-3" || exit 1
+reject_arity() {
+	local out='' err='' rc=0
+	capture bash "$repo_root/tests/cli/test-retained-rust" "$@" || return 1
+	[[ "$rc" == 2 && -z "$out" && "$err" == Usage:* && "$(<"$RUST_RUNNER_EFFECTS/count")" == 3 ]]
+}
+reject_arity || exit 1
+reject_arity "$artifact_root" extra || exit 1
+reject_arity "$artifact_root" source package extra || exit 1
+printf 'PASS: retained Rust runner preserves argv and cannot hide any failed group\n'

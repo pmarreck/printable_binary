@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Build the distributable crate without access to its repository parent.
 set -u
+if [[ -z "${NIX_BUILD_TOP:-}" || "$#" != 2 ]]; then
+	printf 'FAIL: prepare the packaged crate through Nix with artifact and original-metadata destinations\n' >&2
+	exit 1
+fi
+artifact_root=$1
+metadata_file=$2
+[[ ! -e "$artifact_root" && ! -L "$artifact_root" ]] || { printf 'FAIL: artifact destination already exists\n' >&2; exit 1; }
+[[ ! -e "$metadata_file" && ! -L "$metadata_file" ]] || { printf 'FAIL: metadata destination already exists\n' >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
@@ -24,4 +32,12 @@ if ! cargo test --manifest-path "$scratch/isolated/printable_binary-$version/Car
 	cat "$scratch/build.log" >&2
 	exit 1
 fi
+manifest="$scratch/isolated/printable_binary-$version/Cargo.toml"
+if ! cargo test --manifest-path "$manifest" --locked --offline --release --no-run \
+	--target-dir "$scratch/target" --message-format=json > "$scratch/test-artifacts.json" 2> "$scratch/export.log"; then
+	cat "$scratch/export.log" >&2
+	exit 1
+fi
+cargo metadata --manifest-path "$manifest" --locked --offline --no-deps --format-version 1 > "$metadata_file" || exit 1
+node "$repo_root/tests/integration/export-rust-tests.mjs" "$scratch/test-artifacts.json" "$metadata_file" "$artifact_root" || exit 1
 printf 'PASS: isolated packaged Rust crate builds and tests offline\n'
