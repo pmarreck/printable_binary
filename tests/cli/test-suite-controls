@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Run every required scheduler/process-adapter control with the original argv.
+set -u
+while IFS= builtin read -r inherited_function; do
+	builtin unset -f -- "$inherited_function" || exit 1
+done < <(builtin compgen -A function)
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" || "$#" != 1 ]]; then exit 2; fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+legacy_cli=$1
+source "$repo_root/tests/cli/group-runner.bash"
+if [[ -v PB_TEST_JOBS ]]; then
+	jobs=$PB_TEST_JOBS
+else
+	jobs=${NIX_BUILD_CORES:-8}
+	[[ "$jobs" =~ ^[0-9]+$ ]] || exit 2
+	if [[ "${#jobs}" -gt 1 || "$jobs" == 0 || "$jobs" == 9 ]]; then jobs=8; fi
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+run_control() {
+	local state_root suite=${1//_/-}
+	state_root="$(mktemp -d "$scratch/$1.XXXXXXXX")" || return 1
+	export HOME="$state_root/home" TMPDIR="$state_root/tmp"
+	export XDG_CONFIG_HOME="$state_root/config" XDG_DATA_HOME="$state_root/data"
+	export XDG_STATE_HOME="$state_root/state" XDG_CACHE_HOME="$state_root/cache"
+	export XDG_RUNTIME_DIR="$state_root/runtime"
+	mkdir -p "$HOME" "$TMPDIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" \
+		"$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" || return 1
+	if [[ "$suite" == test-shared-suite-failure ]]; then
+		"$BASH" "$repo_root/tests/integration/$suite" "$legacy_cli"
+	else
+		"$BASH" "$repo_root/tests/unit/$suite"
+	fi
+}
+pb_run_test_groups "$jobs" "$scratch" run_control test_cli_group_runner test_cli_case_inventory \
+	test_runtime_runner test_build_suite_driver test_build_prepared_driver test_shared_suite_failure

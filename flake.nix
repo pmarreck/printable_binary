@@ -483,13 +483,9 @@
             nativeBuildInputs = with pkgs; [ bash coreutils gawk luajit python3 xxd hexdump ];
             buildPhase = ''
               patchShebangs tests/fixtures/build-suite-case
-              bash tests/unit/test-cli-group-runner
-              bash tests/unit/test-cli-case-inventory
-              bash tests/unit/test-runtime-runner
-              bash tests/unit/test-build-suite-driver
-              bash tests/unit/test-build-prepared-driver
               patchShebangs tests/fixtures/fail-first-codec-call bin/printable-binary-luajit
-              bash tests/integration/test-shared-suite-failure "$PWD/bin/printable-binary-luajit"
+              bash tests/unit/test-suite-control-driver
+              bash tests/cli/test-suite-controls "$PWD/bin/printable-binary-luajit"
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

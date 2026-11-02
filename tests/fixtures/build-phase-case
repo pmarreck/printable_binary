@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Process adapter for the three prepared-build verification phases.
 set -u
-name="$(basename "$0")" || exit 1
+name=${0##*/}
 case "$name:$#" in test_build_all:0|test-built-products:3|test-built-profiles:1) ;; *) exit 23 ;; esac
 if [[ "$#" == 0 ]]; then
 	: > "${BUILD_PHASE_CALLS:?}/$name"

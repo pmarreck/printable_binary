@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Record a private build-test request before returning a controlled failure.
 set -u
-name="$(basename "$0")" || exit 1
+name=${0##*/}
 case "$name" in
 	build)
 		[[ "$#" == 2 ]] || exit 23

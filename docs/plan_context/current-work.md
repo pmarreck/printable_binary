@@ -1181,6 +1181,75 @@ contention, not removing safety cases or replacing real CLI contracts with
 cached verdicts. SIMD cannot remove the measured mapping syscalls; no production
 vectorization change was made in this test-harness increment.
 
+The checked-backing increment shipped as
+`f6677483c9f270b01a1eeed2e4123b30c938d98e`; fetched remote identity matched
+and Mechatron Prime CI passed all 28 exact-commit targets in 65 seconds,
+finished 10:13 EST. The requested CI status was checked against both the
+remote branch and that exact commit, not a previous green badge.
+
+Job `pb-nested-worker-abba-20261102-1012` kept the same artifacts, twelve allowed
+CPUs and eight outer workers while trying eight/two/two/eight inner workers.
+All four 26-group executions passed, taking 19.327, 12.294, 7.894 and 8.184
+seconds. The downward trend confounds the worker comparison: do not adopt a
+new default or call it a controlled speedup. Preserve eight as the default.
+
+Recording fixtures now use Bash parameter expansion instead of spawning
+`basename` for every request. Existing path-with-spaces, exact-argv, failure
+and completeness controls pass. Source-only Nix fixture preparation supported
+job `pb-recording-fixture-abba-20261102-1018`: old/new/new/old complete control
+groups passed in 5.365, 5.136, 5.130 and 5.305 seconds, with twelve allowed CPUs.
+Its unchanged source identity was
+`78af25e45ecc74a5f87a72d8f3684c9a60ff90e6d9a575a4fd3739bc1c0312e2`;
+total was 26.183 seconds. This is a modest subset improvement, not a whole-suite
+budget pass.
+
+The serial control group alone still exceeded five seconds. Its six independent
+suites now use bounded rolling workers with private HOME, temporary and XDG
+state. An independent driver enumerates the original six programs and records
+NUL-delimited argc/argv with append-only effects, detecting omissions, duplicates
+and changed arguments. Positive control passed under the old serial driver;
+five selected failures proved it skipped later work before parallel dispatch
+was implemented. All six selected-failure cases and the real original controls
+now pass the focused Nix gate. This independent driver runs outside the pool
+it verifies, avoiding recursive self-testing or an unexecuted verifier.
+
+The runtime inventory prioritizes this measured long-running control group in
+the first worker wave. The same complete 26-case inventory remains validated;
+no check, portable implementation, profile or real failure control is removed.
+Fresh complete execution follows the full artifact gate, with the five-second
+budget still open until measured.
+
+The complete gate passes the parallel-control increment. The shared CLI suite
+still generated each of its two all-byte fixtures with 256 formatting command
+substitutions, adding 512 forks per implementation run. It now uses one pinned
+GNU Awk process per fixture and compares the result's exact 256-byte hex dump
+against a separately stored literal `00` through `ff` oracle. A mutually wrong
+codec round trip therefore cannot conceal a malformed input generator. All CLI
+labels and required cases remain unchanged; Node and Lua pass their original
+ordered inventories and clean-stderr checks. Freeze this source increment before
+full artifact preparation and fresh complete measurement.
+
+The frozen increment passes the complete Linux gate and all-system evaluation.
+Fresh job `pb-runtime-26-parallel-controls-20261102-1035-cores12` passed 26/26
+groups in 6.454 seconds, still 1.454 seconds over budget. Admission took 0.125
+seconds, environment setup 4.817 and total 11.552 seconds. Source identity stayed
+`757862d3908be3ce03050fd921754fc4ab3b573dc40e1db4cfd3e56c2b68638b`.
+It retained twelve allowed CPUs and eight outer/inner workers. All fixture
+copying, real process starts, independent oracles and failure controls count
+inside execution. This is a few-seconds observation, not a five-second pass or
+fresh execution of the separate Roc compiler-driven unit prerequisite.
+
+Per-case attribution `pb-runtime-final-case-attribution-20261102-1037` passed
+all 26 groups with a 6.467-second overlapping execution union. Build checks
+took 6.467 seconds, Node CLI 5.962, controls 4.910, Rust 4.098 and Zig units
+3.082. Job `pb-balanced-worker-abba-20261102-1040` then compared eight/eight
+versus four/four outer/inner workers on identical artifacts: all four runs
+passed, taking 6.382, 7.099, 8.598 and 15.266 seconds respectively. Rising load
+again confounds the comparison and four/four shows no reliable win; keep the
+default unchanged. The next isolated target is dummy artifact creation in the
+scope/alias controller tests, with all real filesystem-adapter and installed
+product checks retained independently.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

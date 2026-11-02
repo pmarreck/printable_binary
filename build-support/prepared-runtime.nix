@@ -18,12 +18,8 @@ let
 			esac
 		'';
 		test-cli-groups = ''
-			bash tests/unit/test-cli-group-runner || exit 1
-			bash tests/unit/test-cli-case-inventory || exit 1
-			bash tests/unit/test-runtime-runner || exit 1
-			bash tests/unit/test-build-suite-driver || exit 1
-			bash tests/unit/test-build-prepared-driver || exit 1
-			bash tests/integration/test-shared-suite-failure "$PWD/bin/printable-binary-luajit" || exit 1
+			bash tests/unit/test-suite-control-driver || exit 1
+			bash tests/cli/test-suite-controls "$PWD/bin/printable-binary-luajit" || exit 1
 		'';
 		test-docs-benchmark-contract = ''
 			export PB_REQUIRED_CI_TARGETS=${checks.test-docs-benchmark-contract.PB_REQUIRED_CI_TARGETS}
@@ -128,7 +124,7 @@ let
 	coverage = import ../tests/nix/prepared-runtime-contract.nix { inherit names expected; };
 	tools = with pkgs; [ bash coreutils diffutils findutils gawk gnugrep gnused gzip jq python3
 		xxd hexdump luajit nodejs_24 binutils elixir gnumake git file ];
-	heavy = [ "test-js" "test-build-all" "test-rust" "test-zig-unit" "test-roc" "test-ape" "test-c" "test-zig" ];
+	heavy = [ "test-js" "test-build-all" "test-cli-groups" "test-rust" "test-zig-unit" "test-roc" "test-ape" "test-c" "test-zig" ];
 	ordered = heavy ++ builtins.filter (name: !(builtins.elem name heavy)) names;
 	identifier = name: builtins.replaceStrings [ "-" ] [ "_" ] name;
 	caseScript = name: pkgs.writeShellScript "prepared-${name}" ''

@@ -63,6 +63,14 @@ cleanup() {
 trap cleanup EXIT
 }
 
+write_all_bytes() {
+	LC_ALL=C awk 'BEGIN { for (byte=0; byte<256; byte++) printf "%c", byte }' > "$1" || return 1
+	if ! cmp -s <(xxd -p -c 256 "$1") "$SCRIPT_DIR/fixtures/all-bytes.hex"; then
+		printf 'FAIL: all-byte fixture must contain exactly 00 through ff\n' >&2
+		return 1
+	fi
+}
+
 group_basic() {
 ###############################################################################
 # BASIC FUNCTIONALITY TESTS
@@ -202,10 +210,7 @@ fi
 # Test 5: Full binary roundtrip (all 256 bytes)
 echo -e "${BLUE}Test #5: Full binary roundtrip (all 256 bytes)${NC}"
 # Create a file with all 256 possible byte values
-> "$TMP_BINARY"
-for i in {0..255}; do
-    printf "\\$(printf '%03o' $i)" >> "$TMP_BINARY"
-done
+write_all_bytes "$TMP_BINARY" || exit 1
 "$SCRIPT" "$TMP_BINARY" > "$TMP_ENCODED" || exit 1
 "$SCRIPT" -d "$TMP_ENCODED" > "$TMP_DECODED" || exit 1
 if cmp -s "$TMP_BINARY" "$TMP_DECODED"; then
@@ -521,9 +526,7 @@ DECODED_FILE=$(mktemp)
 trap 'cleanup; rm -f "$TEST_FILE" "$ENCODED_FILE" "$DECODED_FILE"' EXIT
 
 # Create file with all 256 byte values
-for i in {0..255}; do
-    printf "\\$(printf '%03o' $i)" >> "$TEST_FILE"
-done
+write_all_bytes "$TEST_FILE" || exit 1
 
 # Encode the test file
 echo -e "${BLUE}Encoding all 256 byte values...${NC}"
