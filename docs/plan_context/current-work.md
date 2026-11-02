@@ -611,7 +611,32 @@ dependencies. The complete `./test --option substitute false` gate passed on
 executed by that command. Compilation/setup are not claimed as test execution:
 the Rust check's build phase took 42 seconds, while its seven new native tests
 took 0.05 seconds. The complete-suite fresh execution budget is still open.
-Next: commit, push, verify exact-commit CI and deliver the consumer handoff.
+Published as `cf9859d4f6bbda0a7732131556d1336323149fc9`; origin/yolo was
+independently verified and exact-commit Mechatron Prime CI passed all 27 targets
+in 40 seconds, finishing 2026-11-02T07:06:18Z. The requested durable handoff
+includes the revision, typed Rust adapters, legacy-log migration and scope
+limits. Delivery and a native session notification succeeded; the recipient
+acknowledged the exact revision at 02:07 EST and owns the consumer integration,
+including error propagation and upgrading readers with writers. Consumer CI
+is not yet reported. No consumer source/lockfile/hash was modified here.
+Next: port the accepted contract to the Zig library, then integrate explicit
+CLI selection and finish the remaining framing/verification work.
+
+The Zig port first reproduced three failing payload tests and, after the
+payload increment passed, a separate failing tagged-value test. It now exposes
+`textual.encode`/`decode`, `encodePayload`/`decodePayload`, and `decodeAuto`,
+with the same fixed policy, canonicality rule, whole-value framing and legacy
+options as Rust. The policy generator checks both language tables. Focused
+Nix checks passed for both libraries, including independent exact-byte Unicode
+scalar differentials and injected failure at each Zig allocation. The complete
+gate first exposed the benchmark's relocated core missing its new relative
+imports. Staging those declared in-repository sources alongside the instrumented
+copy repaired the closure without bypassing the safety/defect controls. The
+complete Linux gate then passed at 02:16 EST on 2026-11-02. Installed CLI behavior
+and C ABI remain unchanged. The benchmark build phase took 83 seconds including
+compilation; it is not a runtime measurement. CLI integration is next. Two
+existing test-output leaks were observed and queued: the FFI hexlike smoke
+pipeline emits unasserted status, and the Elixir test VM warns about its locale.
 
 ## Decisions that remain deferred or on hold
 

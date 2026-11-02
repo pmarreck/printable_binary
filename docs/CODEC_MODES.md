@@ -2,7 +2,7 @@
 
 Status: the arbitrary-byte textual direction, compact PB fallback, martini
 quoting and default textual tagging are accepted. The Rust library provides the
-first whole-value implementation; other implementations and mixed-region
+first whole-value implementation, followed by the Zig library; other implementations and mixed-region
 framing/streaming remain separate work. Textual v1 preserves ordinary ASCII spaces and ZWJ/ZWNJ, along with
 combining/variation marks, and encodes other whitespace and format controls.
 This document specifies the payload construction and its mathematical inverse
@@ -87,7 +87,7 @@ Thus a preserved scalar must use its literal or quoted spelling, never its
 bytewise spelling; malformed bytes and excluded scalars must use their PB
 spelling. Unnecessary quotes and raw sensitive characters are not canonical.
 
-The whole-buffer Rust implementation checks this rule by re-encoding
+The whole-buffer Rust and Zig implementations check this rule by re-encoding
 the recovered bytes and comparing exact input bytes. A production checker may
 instead validate the same local conditions incrementally. Accepting redundant
 spellings for convenience would widen the language and forfeit the second

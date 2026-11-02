@@ -105,6 +105,19 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_tests.step);
 
+    const textual_example = b.addExecutable(.{
+        .name = "textual-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/cli/textual-zig.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "printable_binary", .module = lib_mod }},
+        }),
+    });
+    b.step("textual-example", "Prepare the textual codec differential adapter").dependOn(&b.addInstallArtifact(textual_example, .{
+        .dest_dir = .{ .override = .{ .custom = "libexec" } },
+    }).step);
+
     // FFI-surface tests (the C ABI wrappers now live in ffi.zig)
     const ffi_test_mod = b.createModule(.{
         .root_source_file = b.path("src/zig/ffi.zig"),

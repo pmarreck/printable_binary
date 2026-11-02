@@ -103,3 +103,4 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 
 - [x] [Optional stream tagging › Implement approved arbitrary-byte `textual` encoding with co…] CJK-only or broader preservation? Answer: general visible Unicode outside the PB alphabet, including other languages and emoji; reserved PB glyphs and controls still encode normally (done 2026-11-01 12:39 EST).
 - [x] [Optional stream tagging › Evaluate a Latin-friendly high-byte alphabet retaining rough…] Which Latin-passthrough tradeoff takes priority? Answer: investigate Latin-looking symbols, accept larger UTF-8 output, and qualify font/terminal width; the exact alphabet remains unselected (done 2026-11-01 12:36 EST).
+- [x] [Optional stream tagging › Specify optional `ρΒ_`/`ρΒ1_` v1 tagging with rese…] Which encoding mode gets the leading-tag guard? Answer: tagged-output mode only; ordinary raw CLI encoding and the raw library remain unconditional (done 2026-11-01 12:39 EST).

@@ -371,10 +371,29 @@ relax textual canonicality. Propagate `textual::DecodeError` when reading
 untrusted stored values. Library encoders always treat their arguments as raw
 bytes, including literal tag examples; they do not recursively interpret them.
 
-This first textual implementation is the Rust library, not a new mode in the
-installed Zig or Rust raw-codec CLI. Whole-value tags are supported; mixed-region
+Textual is currently a library API, not a new mode in the installed Zig or Rust
+raw-codec CLI. Whole-value tags are supported; mixed-region
 excerpt parsing and bounded-memory streaming remain separate integration work.
 See [the format and inverse argument](docs/CODEC_MODES.md).
+
+### As a Zig Library
+
+The importable `printable_binary` module exposes the same textual v1 wire format:
+
+```zig
+const pb = @import("printable_binary");
+const encoded = try pb.textual.encode(allocator, "中文 日本語 한국어\n");
+defer allocator.free(encoded);
+const decoded = try pb.decodeAuto(allocator, encoded, .{});
+defer allocator.free(decoded);
+```
+
+Use `textual.encodePayload`/`decodePayload` for explicitly selected untagged
+payloads and `textual.decode` for a tagged textual value. `decodeAuto` accepts
+tagged textual/bytewise values or legacy bytewise input; its third argument
+contains legacy `DecodeOptions`. The caller owns every returned slice. Errors
+include `InvalidUtf8`, `InvalidEscape`, `NonCanonical`, and framing errors.
+The existing `encode`/`decode` functions and C ABI remain bytewise.
 
 ### JavaScript CLI
 

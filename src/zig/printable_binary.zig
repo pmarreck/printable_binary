@@ -53,6 +53,20 @@ fn buildCharacterMap(comptime text: []const u8) [256][]const u8 {
 }
 
 pub const character_map = buildCharacterMap(@embedFile("character_map.txt"));
+/// Opt-in canonical Unicode-preserving codec; raw bytewise APIs are unchanged.
+pub const textual = @import("textual.zig").Codec(character_map);
+
+/// Read one tagged value, or legacy untagged bytewise data. Legacy options
+/// never relax textual canonicality; produced bytes are not parsed again.
+pub fn decodeAuto(allocator: std.mem.Allocator, input: []const u8, options: DecodeOptions) ![]u8 {
+	if (try textual.frame(input)) |frame| {
+		return switch (frame.kind) {
+			.textual => textual.decodePayload(allocator, frame.payload),
+			.bytewise => decode(allocator, frame.payload, options),
+		};
+	}
+	return decode(allocator, input, options);
+}
 
 // =============================================================================
 // Comptime-optimized encode/decode lookup structures
@@ -1485,4 +1499,130 @@ test "crc32: published vectors (ISO-HDLC)" {
     try std.testing.expectEqual(@as(u32, 0x00000000), crc32(""));
     try std.testing.expectEqual(@as(u32, 0xCBF43926), crc32("123456789"));
     try std.testing.expectEqual(@as(u32, 0xE8B7BE43), crc32("a"));
+}
+
+test "textual: preserve Unicode, spaces, joiners and exact normalization" {
+	const allocator = std.testing.allocator;
+	for ([_][]const u8{ "中文 日本語 한국어 café", "👩\u{200d}🚀 می\u{200c}روم", "e\u{301} \u{fe0f}", "␣" }) |raw| {
+		const encoded = try textual.encodePayload(allocator, raw);
+		defer allocator.free(encoded);
+		try std.testing.expectEqualStrings(raw, encoded);
+		const decoded = try textual.decodePayload(allocator, encoded);
+		defer allocator.free(decoded);
+		try std.testing.expectEqualStrings(raw, decoded);
+	}
+	const encoded = try textual.encodePayload(allocator, "\x00\n\x1b\"\\");
+	defer allocator.free(encoded);
+	try std.testing.expectEqualStrings("·¶⎋ˮ⧷", encoded);
+}
+
+test "textual: reject noncanonical alternatives and invalid quotes" {
+	const allocator = std.testing.allocator;
+	try std.testing.expectError(error.InvalidEscape, textual.decodePayload(allocator, "\u{f000}A"));
+	try std.testing.expectError(error.InvalidEscape, textual.decodePayload(allocator, "\u{f000}␣"));
+	try std.testing.expectError(error.InvalidEscape, textual.decodePayload(allocator, "\u{f000}"));
+	try std.testing.expectError(error.InvalidUtf8, textual.decodePayload(allocator, "\xff"));
+	try std.testing.expectError(error.NonCanonical, textual.decodePayload(allocator, "\n"));
+	const alternate = try encode(allocator, "中", .{});
+	defer allocator.free(alternate);
+	try std.testing.expectError(error.NonCanonical, textual.decodePayload(allocator, alternate));
+}
+
+test "textual: exhaust every one- and two-byte input in both directions" {
+	const allocator = std.testing.allocator;
+	for (0..256) |byte| {
+		const input = [_]u8{@intCast(byte)};
+		const encoded = try textual.encodePayload(allocator, &input);
+		defer allocator.free(encoded);
+		try std.testing.expectEqualStrings(if (byte == 32) " " else character_map[byte], encoded);
+		const decoded = try textual.decodePayload(allocator, encoded);
+		defer allocator.free(decoded);
+		try std.testing.expectEqualSlices(u8, &input, decoded);
+	}
+	for (0..65536) |pair| {
+		const input = [_]u8{ @intCast(pair >> 8), @truncate(pair) };
+		const encoded = try textual.encodePayload(allocator, &input);
+		defer allocator.free(encoded);
+		const decoded = try textual.decodePayload(allocator, encoded);
+		defer allocator.free(decoded);
+		try std.testing.expectEqualSlices(u8, &input, decoded);
+		const canonical = try textual.encodePayload(allocator, decoded);
+		defer allocator.free(canonical);
+		try std.testing.expectEqualStrings(encoded, canonical);
+	}
+}
+
+test "textual: quote every active glyph and visibly encode sensitive scalars" {
+	const allocator = std.testing.allocator;
+	for (character_map, 0..) |glyph, byte| {
+		if (glyph.len < 2 or byte == 32) continue;
+		const quoted = try std.mem.concat(allocator, u8, &.{ textual.marker, glyph });
+		defer allocator.free(quoted);
+		const encoded = try textual.encodePayload(allocator, glyph);
+		defer allocator.free(encoded);
+		try std.testing.expectEqualStrings(quoted, encoded);
+		const decoded = try textual.decodePayload(allocator, quoted);
+		defer allocator.free(decoded);
+		try std.testing.expectEqualStrings(glyph, decoded);
+	}
+	const raw = "\u{80}\u{85}\u{202e}\u{a0}";
+	const expected = try encode(allocator, raw, .{});
+	defer allocator.free(expected);
+	const encoded = try textual.encodePayload(allocator, raw);
+	defer allocator.free(encoded);
+	try std.testing.expectEqualStrings(expected, encoded);
+}
+
+test "textual: tagged values, raw literal tag sources and legacy spaces logs" {
+	const allocator = std.testing.allocator;
+	for ([_][]const u8{ "C:\\中文 日本語\n", "\u{f000}ρΤ1_", "\u{f000}\u{f000}/ρΤ", "" }) |raw| {
+		const encoded = try textual.encode(allocator, raw);
+		defer allocator.free(encoded);
+		try std.testing.expect(std.mem.startsWith(u8, encoded, textual.tag));
+		const decoded = try textual.decode(allocator, encoded);
+		defer allocator.free(decoded);
+		try std.testing.expectEqualStrings(raw, decoded);
+		const automatic = try decodeAuto(allocator, encoded, .{});
+		defer allocator.free(automatic);
+		try std.testing.expectEqualStrings(raw, automatic);
+		const legacy = try encode(allocator, raw, .{ .spaces = true });
+		defer allocator.free(legacy);
+		const recovered = try decodeAuto(allocator, legacy, .{ .spaces = true });
+		defer allocator.free(recovered);
+		try std.testing.expectEqualStrings(raw, recovered);
+	}
+	for ([_][]const u8{ "\u{f000}ρΤ_中文\u{f000}/ρΤ", "\u{f000}ρΤ1_中文" }) |wire| {
+		const decoded = try decodeAuto(allocator, wire, .{});
+		defer allocator.free(decoded);
+		try std.testing.expectEqualStrings("中文", decoded);
+	}
+	try std.testing.expectError(error.MissingTag, textual.decode(allocator, "plain"));
+	const bytewise = try decodeAuto(allocator, "\u{f000}ρΒ_· ␣\u{f000}/ρΒ", .{ .spaces = true });
+	defer allocator.free(bytewise);
+	try std.testing.expectEqualStrings("\x00  ", bytewise);
+	try std.testing.expectError(error.MismatchedTag, textual.decode(allocator, "\u{f000}ρΒ1_"));
+	try std.testing.expectError(error.MismatchedTag, decodeAuto(allocator, "\u{f000}ρΤ1_A\u{f000}/ρΒ", .{}));
+	for ([_][]const u8{ "", "1", "x_", "1x_" }) |suffix| {
+		const wire = try std.mem.concat(allocator, u8, &.{ "\u{f000}ρΤ", suffix });
+		defer allocator.free(wire);
+		try std.testing.expectError(error.MalformedTag, decodeAuto(allocator, wire, .{}));
+	}
+	for ([_][]const u8{ "0_", "01_", "2_", "123456789_" }) |suffix| {
+		const wire = try std.mem.concat(allocator, u8, &.{ "\u{f000}ρΤ", suffix });
+		defer allocator.free(wire);
+		try std.testing.expectError(error.UnsupportedVersion, decodeAuto(allocator, wire, .{}));
+	}
+}
+
+fn exerciseTextualLifecycle(allocator: std.mem.Allocator) !void {
+	const raw = "C:\\中文\n\xff\u{f000}¶";
+	const encoded = try textual.encode(allocator, raw);
+	defer allocator.free(encoded);
+	const decoded = try decodeAuto(allocator, encoded, .{});
+	defer allocator.free(decoded);
+	try std.testing.expectEqualStrings(raw, decoded);
+}
+
+test "textual: free every owned allocation when any allocation fails" {
+	try std.testing.checkAllAllocationFailures(std.testing.allocator, exerciseTextualLifecycle, .{});
 }

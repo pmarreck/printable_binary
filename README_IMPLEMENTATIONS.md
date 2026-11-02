@@ -85,6 +85,13 @@ nix build .#build-zig-mswin-arm64-ReleaseSafe
 
 The canonical full CLI uses the Zig library directly. The installed product includes the CLI, C-compatible library, and headers. Its core uses contiguous mapping storage, literal-prefix SIMD checks, and direct UTF-8 decode tables. Cross-compilation is declared for all five PFs.
 
+The Zig library also exposes `textual.encode`/`decode`, explicitly untagged
+`textual.encodePayload`/`decodePayload`, and tagged-or-legacy `decodeAuto` with
+the same canonical textual v1 format as Rust. A separate test adapter compares
+both libraries against the pinned Unicode oracle over every scalar. Allocation
+failure controls cover the Zig textual ownership path. The installed CLI and
+C ABI remain bytewise until explicit mode integration.
+
 ### C Implementation
 
 The standalone C CLI provides the full file, formatting, mapping, passthrough, and container interface. It has its own `c-out/` products. The `ffi` implementation instead exercises the Zig core through its public C ABI and retains the library and headers alongside the C CLI.

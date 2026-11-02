@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process';
 import { createCodec } from '../benchmark/textual_size/codec.mjs';
 
 const binary = process.argv[2];
-assert(binary, 'prepared Rust example is required');
+const implementation = process.argv[3] ?? 'Rust';
+assert(binary, 'prepared textual example is required');
 const glyphs = readFileSync(new URL('../../character_map.txt', import.meta.url), 'utf8')
 	.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('##'))
 	.map(line => line.split(/\s/)[0]);
@@ -43,4 +44,4 @@ for (const [wire, error] of [
 	assert.equal(result.stdout.length, 0);
 	assert.match(result.stderr.toString('utf8'), new RegExp(error));
 }
-console.log('PASS: Rust textual codec matches the independent Unicode oracle over every Unicode scalar, arbitrary bytes and canonicality controls');
+console.log(`PASS: ${implementation} textual codec matches the independent Unicode oracle over every Unicode scalar, arbitrary bytes and canonicality controls`);

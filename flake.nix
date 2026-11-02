@@ -517,10 +517,12 @@
           test-zig-unit = pkgs.stdenv.mkDerivation {
             name = "test-zig-unit";
             src = ./.;
-            nativeBuildInputs = [ zig ];
+            nativeBuildInputs = [ zig pkgs.nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
+              node utils/generate_textual_policy.mjs --zig --check src/zig/textual_policy.zig
               zig build test-bins -Doptimize=ReleaseSafe
+              zig build textual-example -Doptimize=ReleaseFast
             '';
             doCheck = true;
             checkPhase = ''
@@ -532,6 +534,7 @@
                   exit 1
                 fi
               done
+              node tests/cli/test-rust-textual.mjs ./zig-out/libexec/textual-example Zig
             '';
             installPhase = "mkdir -p $out && cp -R zig-out/libexec $out/ && touch $out/passed";
           };

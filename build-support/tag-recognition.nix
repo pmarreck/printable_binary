@@ -11,6 +11,8 @@ pkgs.stdenvNoCC.mkDerivation {
 		mkdir -p "$HOME" "$XDG_CACHE_HOME" tests/benchmark/tag_probe/fixtures
 		luajit tests/benchmark/tag_probe/generate-fixtures.lua character_map.txt tests/benchmark/tag_probe/fixtures
 		cp src/zig/printable_binary.zig tests/benchmark/tag_probe/core.zig
+		# Preserve the relocated core's relative import closure inside this source.
+		cp src/zig/textual.zig src/zig/textual_policy.zig tests/benchmark/tag_probe/
 		test "$(grep -Fc '@memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);' tests/benchmark/tag_probe/core.zig)" = 1
 		substituteInPlace tests/benchmark/tag_probe/core.zig --replace-fail \
 			'@memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);' \
