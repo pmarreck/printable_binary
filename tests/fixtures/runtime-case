@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Process adapter: record requested work before returning a controlled status.
+set -u
+[[ "$#" == 0 ]] || exit 23
+# Like real fixture preparation, this must use the declared runtime tool.
+cp --version > /dev/null || exit 1
+name="$(basename "$0")" || exit 1
+printf '%s\n' "$name" >> "${RUNTIME_CALLS:?}/$name" || exit 1
+if [[ "$name" == "${RUNTIME_WARN_CASE:-}" ]]; then printf 'controlled warning\n' >&2; fi
+[[ "$name" != "${RUNTIME_FAIL_CASE:-}" ]] || exit 7

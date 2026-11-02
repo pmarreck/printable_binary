@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Complete inventories and worker failures must survive the runtime coordinator.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then exit 1; fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+source "$repo_root/tests/capture.bash"
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+mkdir -p "$scratch/bundle with spaces/cases" || exit 1
+bundle="$scratch/bundle with spaces"
+printf '%s\n' alpha beta gamma > "$bundle/expected"
+for name in alpha beta gamma; do
+	ln -s "$repo_root/tests/fixtures/runtime-case" "$bundle/cases/$name"
+done
+runner="$repo_root/tests/cli/test-prepared-runtime"
+failures=0
+# A developer-shell adapter must not survive into isolated runtime workers.
+cp() { printf 'inherited copy function must not execute\n' >&2; return 23; }
+export -f cp
+for failed_case in '' alpha beta gamma; do
+	export RUNTIME_CALLS="$scratch/calls-${failed_case:-none}"
+	mkdir "$RUNTIME_CALLS" || exit 1
+	out='' err='' rc=0
+	PB_RUNTIME_JOBS=2 RUNTIME_FAIL_CASE="$failed_case" capture bash "$runner" "$bundle"
+	if [[ ( -z "$failed_case" && ( "$rc" != 0 || -n "$err" || "$out" != *'PASS:'* ) ) ||
+		( -n "$failed_case" && ( "$rc" != 1 || "$err" != *"$failed_case"* || "$out" == *'PASS:'* ) ) ]] ||
+		! cmp -s <(LC_ALL=C ls "$RUNTIME_CALLS") <(printf '%s\n' alpha beta gamma); then
+		printf 'FAIL: runtime worker status/argument propagation\n' >&2
+		failures=1
+	fi
+	for name in alpha beta gamma; do
+		[[ -f "$RUNTIME_CALLS/$name" ]] && [[ "$(<"$RUNTIME_CALLS/$name")" == "$name" ]] || failures=1
+	done
+done
+for warning_case in alpha beta gamma; do
+	export RUNTIME_CALLS="$scratch/warning-$warning_case"
+	mkdir "$RUNTIME_CALLS" || exit 1
+	out='' err='' rc=0
+	PB_RUNTIME_JOBS=2 RUNTIME_WARN_CASE="$warning_case" capture bash "$runner" "$bundle"
+	if [[ "$rc" == 0 || "$err" != *'unexpected runtime diagnostics'* || "$out" == *'PASS:'* ]]; then
+		printf 'FAIL: runtime warning from %s passed unnoticed\n' "$warning_case" >&2
+		failures=1
+	fi
+	for name in alpha beta gamma; do
+		[[ -f "$RUNTIME_CALLS/$name" ]] && [[ "$(<"$RUNTIME_CALLS/$name")" == "$name" ]] || failures=1
+	done
+done
+for defect in missing extra duplicate traversal; do
+	export RUNTIME_CALLS="$scratch/calls-$defect"
+	mkdir "$RUNTIME_CALLS" || exit 1
+	printf '%s\n' alpha beta gamma > "$bundle/expected"
+	case "$defect" in
+		missing) mv "$bundle/cases/beta" "$bundle/beta.saved" ;;
+		extra) ln -s "$repo_root/tests/fixtures/runtime-case" "$bundle/cases/extra" ;;
+		duplicate) printf '%s\n' alpha alpha gamma > "$bundle/expected" ;;
+		traversal) printf '%s\n' alpha ../beta gamma > "$bundle/expected" ;;
+	esac
+	out='' err='' rc=0
+	capture bash "$runner" "$bundle"
+	if [[ "$rc" == 0 || -n "$out" || "$err" != *'inventory'* || -n "$(ls "$RUNTIME_CALLS")" ]]; then
+		printf 'FAIL: runtime inventory accepted %s\n' "$defect" >&2
+		failures=1
+	fi
+	case "$defect" in
+		missing) mv "$bundle/beta.saved" "$bundle/cases/beta" ;;
+		extra) unlink "$bundle/cases/extra" ;;
+	esac
+done
+unset -f cp
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: complete runtime inventories and worker failure propagation\n'

@@ -8,6 +8,11 @@
 
 import PrintableBinary from '../../js/printable_binary.js';
 
+// Record the real warning adapter instead of leaking expected diagnostics.
+const originalWarn = console.warn;
+const warnings = [];
+console.warn = (...args) => warnings.push(args);
+
 // Test utilities
 let testCount = 0;
 let passCount = 0;
@@ -406,6 +411,11 @@ console.log('\n--- Container transport-resistance (whitespace) Tests ---');
   catch(_e){ threw=true; }
   assert(threw, "transport: genuine (non-whitespace) corruption still rejected");
 }
+
+console.warn = originalWarn;
+const ambiguityWarning = 'Warning: literal spaces in container data were assumed to be ignorable formatting because the space glyph ␣ was also present; stripping them';
+assertEquals(warnings, [[ambiguityWarning], [ambiguityWarning], [ambiguityWarning]],
+  'exact container ambiguity diagnostics are captured without unrelated warnings');
 
 console.log('Test Summary:');
 console.log(`Total tests: ${testCount}`);

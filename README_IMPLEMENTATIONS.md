@@ -179,6 +179,23 @@ including Python, Node and binary-inspection tools; language builds stay in Nix
 derivations. The complete suite remains
 `./test`; this native trio is only a subset.
 
+On Linux, the required `test-prepared-runtime` check replays 26 runtime groups
+from immutable Nix artifacts, including all nine installed host codecs and
+their applicable CLI, library, container and build/publication checks. Each
+group receives a private writable fixture tree and the declared runtime tools.
+The coordinator runs at most eight groups, preserves output order, rejects
+incomplete inventories, unexpected stderr and any worker failure, and clears
+inherited shell functions before creating its own callbacks. Source fixture
+preparation and runtime startup count as execution, not compilation.
+
+`packages.<system>.preparedRuntime` retains the exact Linux runtime bundle.
+Adding a required Nix check without an explicit runtime recipe fails evaluation.
+The complete entrypoint remains `./test`; cached results are not fresh runtime
+measurements. Roc's 61 compiler-driven unit cases remain a required mixed
+prerequisite and are explicitly excluded from execution-only timing. No
+whole-project execution-budget pass follows from that exception while its
+policy remains unresolved.
+
 Layout, container and differential checks consume the exact retained native
 artifacts through declared Nix dependencies. The Zig result also retains its
 static FFI archive; the FFI check links its C adapter once with the existing

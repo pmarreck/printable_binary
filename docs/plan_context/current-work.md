@@ -978,6 +978,78 @@ The recorder counts one outer runtime group, not 61 unit cases. This is a subset
 observation with busy-host setup exposed, not a full-suite budget or speedup
 claim. Complete Linux validation and all-system evaluation are separate gates.
 
+## Combined prepared runtime inventory
+
+A required Linux `test-prepared-runtime` check now reaches the same 26 explicit
+runtime groups through `./test`. The complete CI inventory contains 28 targets,
+including that check and the canonical package. Its immutable bundle references
+exact prepared products, fixtures and declared runtime tools. Eight bounded
+outer groups preserve declaration-order logs; each real case has a private
+fixture tree. Native safety-enabled units, independent scalar/mapping oracles,
+both Rust source/package inventories, all nine installed host codecs, all five
+cross-built Zig headers, installed profiles and publication regressions remain.
+Original Cargo target projections are retained independently of the exporter.
+The compiler-driven Roc unit phase is still required during preparation; it is
+not represented as fresh execution in the runtime bundle's scope record.
+
+The coordinator's process adapter records exact case effects before returning
+controlled failures. Every selected worker failure must propagate while all
+other cases still run once. Missing, extra, duplicate and traversal inventories
+must fail before any work starts. Three controlled warning cases failed against
+the old coordinator and now require rejection too. Real combined execution
+exposed the APE loader's missing `gzip` runtime dependency, which is declared
+instead of supplied by an incidental development PATH. The JavaScript suite
+retains its original 64 assertions and adds exact capture of its three expected
+container ambiguity warnings, keeping runtime stderr clean.
+
+The first confined-host observations, jobs
+`pb-runtime-26-20261102-0805-cores1` and
+`pb-runtime-26-20261102-0805-cores12`, are recorded as ERROR with incomplete
+inventories. An inherited shell `cp` function referenced the replaced HOME,
+so fixture preparation failed before codec execution. Their short durations
+are not performance passes. A new injected-function control reproduced this
+failure in Nix before the coordinator was changed. It now removes inherited
+functions before defining its own callbacks; deliberate adapters created later
+inside a case remain available. The focused control passes.
+
+The subsequent sanitized pair (`pb-runtime-26-sanitized-20261102-0815-cores1`
+and `pb-runtime-26-sanitized-20261102-0815-cores12`) reached the real cases but
+finished ERROR: the tag-probe safety test timed tiny fixture work with a real
+clock and rejected a nonpositive interval on this host. Neither its
+52.84-second serial nor 24.96-second concurrent duration is a valid baseline.
+The probe now accepts a clock adapter: its safety test records four scripted
+reads and verifies CPU/wall order and elapsed values; the optimized producer
+still uses the real clocks. Zero/backwards intervals still fail, and all real
+optimized sample and mutant controls remain. The focused Nix check passes.
+
+Diagnostic `pb-runtime-26-old-artifact-attribution-20261102-0823` re-executed
+the previous immutable bundle with one outer group at a time, twelve allowed
+CPUs and eight shared CLI workers. Its 19/26 record is explicitly INCOMPLETE:
+the Elixir VM consumed the manifest loop's remaining stdin. The real
+coordinator reads its entire inventory into an array before launching workers,
+so that diagnostic error does not omit cases in the required suite. Of the
+recorded groups, build/product/profile checks took 19.84 seconds, the Zig
+unit/differential group 6.12, Node CLI 4.30, scheduler/control checks 3.48 and
+Rust 2.50. These include per-group confinement startup and are diagnostic
+attribution, not a new full-suite baseline or speedup claim. The few-seconds
+goal remains open; optimize those costs without dropping cases after shipping
+the correct combined runner.
+
+The clock-injected candidate passes the complete Linux gate and all-system
+evaluation. Fresh confined job
+`pb-runtime-26-clock-injected-20261102-0833-cores12` then passed all 26 runtime
+groups with no skips or failures. Execution took 24.787 seconds, admission and
+launch 0.134 seconds, Nix environment setup 4.791 seconds and recorder
+begin-to-finish total 29.948 seconds. All fixture staging, runtime startup,
+unit safety checks and independent oracles remain inside execution. The host
+had no Rust compiler processes and load averages 23.29/22.44/23.61 before the
+run. It used twelve allowed CPUs, eight outer groups and eight shared CLI
+workers; these counts are not interchangeable. Its unchanged source identity is
+`d5cb1897696e98130f393b6ead05c0d30d3d38fc3d52d1015087d9f08a6575b5`.
+This establishes correctness of the retained runtime scope, not the requested
+five-second budget, a historical speedup or fresh Roc-unit execution. The next
+increment targets the measured build/profile and Zig unit costs.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

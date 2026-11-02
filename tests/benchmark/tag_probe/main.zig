@@ -14,6 +14,12 @@ fn clock(cpu: bool) !u64 {
 	return result;
 }
 
+const SystemClock = struct {
+	fn read(_: @This(), cpu: bool) !u64 {
+		return clock(cpu);
+	}
+};
+
 fn elapsed(start: u64, end: u64) !u64 {
 	if (end <= start) return error.InvalidClockInterval;
 	return end - start;
@@ -22,14 +28,14 @@ fn elapsed(start: u64, end: u64) !u64 {
 const Sample = struct { cpu_ns: u64, wall_ns: u64 };
 const Samples = struct { cpu_ns: [sample_count]u64 = undefined, wall_ns: [sample_count]u64 = undefined };
 
-fn run(comptime instrumented: bool, allocator: std.mem.Allocator, input: []const u8, fixture: fixtures.Case, repetitions: usize) !Sample {
+fn run(comptime instrumented: bool, allocator: std.mem.Allocator, input: []const u8, fixture: fixtures.Case, repetitions: usize, clock_reader: anytype) !Sample {
 	probe.candidates = 0;
-	const cpu_start = try clock(true);
-	const wall_start = try clock(false);
+	const cpu_start = try clock_reader.read(true);
+	const wall_start = try clock_reader.read(false);
 	const output = if (instrumented) try observed.decode(allocator, input, .{}) else try baseline.decode(allocator, input, .{});
 	defer allocator.free(output);
-	const wall_end = try clock(false);
-	const cpu_end = try clock(true);
+	const wall_end = try clock_reader.read(false);
+	const cpu_end = try clock_reader.read(true);
 	std.mem.doNotOptimizeAway(output);
 	const count = try std.fmt.parseInt(usize, std.mem.trim(u8, fixture.count, "\n"), 10);
 	try oracle.verify(input, output, fixture.expected, repetitions, probe.candidates, if (instrumented) count * repetitions else 0);
@@ -60,8 +66,8 @@ pub fn main(init: std.process.Init) !void {
 	const input = try repeat(allocator, fixture.input, repetitions);
 	defer allocator.free(input);
 	for (0..warmup_count) |_| {
-		_ = try run(false, allocator, input, fixture, repetitions);
-		_ = try run(true, allocator, input, fixture, repetitions);
+		_ = try run(false, allocator, input, fixture, repetitions, SystemClock{});
+		_ = try run(true, allocator, input, fixture, repetitions, SystemClock{});
 	}
 	var original: Samples = .{};
 	var candidate: Samples = .{};
@@ -69,11 +75,11 @@ pub fn main(init: std.process.Init) !void {
 		var a: Sample = undefined;
 		var b: Sample = undefined;
 		if (index % 2 == 0) {
-			a = try run(false, allocator, input, fixture, repetitions);
-			b = try run(true, allocator, input, fixture, repetitions);
+			a = try run(false, allocator, input, fixture, repetitions, SystemClock{});
+			b = try run(true, allocator, input, fixture, repetitions, SystemClock{});
 		} else {
-			b = try run(true, allocator, input, fixture, repetitions);
-			a = try run(false, allocator, input, fixture, repetitions);
+			b = try run(true, allocator, input, fixture, repetitions, SystemClock{});
+			a = try run(false, allocator, input, fixture, repetitions, SystemClock{});
 		}
 		original.cpu_ns[index] = a.cpu_ns;
 		original.wall_ns[index] = a.wall_ns;
@@ -109,11 +115,25 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test "all generated fixture outputs and candidate counts survive repetition" {
+	const FixtureClock = struct {
+		calls: [4]bool = undefined,
+		index: usize = 0,
+		fn read(self: *@This(), cpu: bool) !u64 {
+			self.calls[self.index] = cpu;
+			self.index += 1;
+			return self.index;
+		}
+	};
 	for (fixtures.cases) |fixture| {
 		const input = try repeat(std.testing.allocator, fixture.input, 3);
 		defer std.testing.allocator.free(input);
-		_ = try run(false, std.testing.allocator, input, fixture, 3);
-		_ = try run(true, std.testing.allocator, input, fixture, 3);
+		inline for (.{ false, true }) |instrumented| {
+			var fixture_clock: FixtureClock = .{};
+			const sample = try run(instrumented, std.testing.allocator, input, fixture, 3, &fixture_clock);
+			try std.testing.expectEqual(@as(usize, 4), fixture_clock.index);
+			try std.testing.expectEqualSlices(bool, &.{ true, false, false, true }, &fixture_clock.calls);
+			try std.testing.expectEqual(Sample{ .cpu_ns = 3, .wall_ns = 1 }, sample);
+		}
 	}
 }
 

@@ -330,6 +330,11 @@
           source = packageSource;
           rawProduct = printableBinaryZig;
         };
+        preparedRuntime = import ./build-support/prepared-runtime.nix {
+          inherit pkgs rustToolchain;
+          checks = self.checks.${system};
+          source = ./.;
+        };
         allPackages = buildProducts // {
           inherit printableBinaryNative printableBinaryWasm printableBinaryZig tagRecognition;
           textualSizeStudy = pkgs.writeShellScriptBin "printable-binary-textual-size-study" ''
@@ -342,7 +347,7 @@
               path = buildProducts."${row.package}-ReleaseFast";
             }) (builtins.filter (row: row.platform == platform) matrixRows));
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          inherit printableBinaryApe printableBinaryRoc;
+          inherit printableBinaryApe printableBinaryRoc preparedRuntime;
         };
       in
       {
@@ -479,6 +484,7 @@
             buildPhase = ''
               bash tests/unit/test-cli-group-runner
               bash tests/unit/test-cli-case-inventory
+              bash tests/unit/test-runtime-runner
               patchShebangs tests/fixtures/fail-first-codec-call bin/printable-binary-luajit
               bash tests/integration/test-shared-suite-failure "$PWD/bin/printable-binary-luajit"
             '';
@@ -585,6 +591,10 @@
             name = "test-cli-layout";
             src = runtimeSource;
             nativeBuildInputs = with pkgs; [ luajit ];
+            passthru = {
+              canonicalReference = "${printableBinaryZig}/bin/printable-binary";
+              canonicalLegacyAlias = "${printableBinaryZig}/bin/printable-binary-zig";
+            };
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-luajit
@@ -762,6 +772,10 @@
               install -m755 rust/target/release/printable-binary-rs "$out/bin/printable-binary-rs"
               install -m755 rust/target/release/examples/textual "$out/libexec/textual-example"
               install -m755 ${self.checks.${system}.test-zig}/bin/printable-binary "$out/libexec/printable-binary-reference"
+              for role in source package; do
+                if [ "$role" = source ]; then metadata=rust-test-metadata.json; else metadata=packaged-test-metadata.json; fi
+                jq '{packages: [.packages[] | {name, targets: [.targets[] | {name, kind, test}]}]}' "$metadata" > "$out/share/original-$role-targets.json"
+              done
               touch "$out/passed"
             '';
             doInstallCheck = true;
@@ -884,6 +898,13 @@
             installPhase = "mkdir -p $out && touch $out/passed";
           };
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          test-prepared-runtime = pkgs.runCommand "test-prepared-runtime" {
+            nativeBuildInputs = [ pkgs.bash pkgs.coreutils ];
+          } ''
+            bash ${preparedRuntime}/source/tests/cli/test-prepared-runtime ${preparedRuntime}
+            mkdir -p "$out"
+            touch "$out/passed"
+          '';
           # Roc's currently patched native platform is Linux-only.
           test-roc = pkgs.stdenvNoCC.mkDerivation {
             name = "test-roc";
@@ -924,19 +945,19 @@
             nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit python3 xxd hexdump ];
             buildPhase = ''
               patchShebangs tests/fixtures
-              bash ./tests/test_build_all
-              test -x ${printableBinaryApe}/bin/printable-binary-ape.com
+              bash ./tests/test_build_all || exit 1
+              test -x ${printableBinaryApe}/bin/printable-binary-ape.com || exit 1
               bash ./tests/integration/test-built-products ${allPackages.allImplementations} ${pkgs.linkFarm "printable-binary-zig-cross-products" (map (pf: {
                 name = pf;
                 path = buildProducts."build-zig-${pf}-ReleaseFast";
               }) [ "linux-amd64" "linux-arm64" "macos-arm64" "mswin-amd64" "mswin-arm64" ])} ${pkgs.linkFarm "printable-binary-canonical-products" (map (row: {
                 name = row.implementation;
                 path = canonicalPackage buildProducts."${row.package}-ReleaseFast" row;
-              }) (builtins.filter (row: row.platform == platform) matrixRows))}
+              }) (builtins.filter (row: row.platform == platform) matrixRows))} || exit 1
               bash ./tests/integration/test-built-profiles ${pkgs.linkFarm "printable-binary-host-profiles" (pkgs.lib.concatMap (profile: map (row: {
                 name = "${profile}/${row.implementation}";
                 path = buildProducts."${row.package}-${profile}";
-              }) (builtins.filter (row: row.platform == platform) matrixRows)) [ "ReleaseSafe" "Debug" ])}
+              }) (builtins.filter (row: row.platform == platform) matrixRows)) [ "ReleaseSafe" "Debug" ])} || exit 1
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

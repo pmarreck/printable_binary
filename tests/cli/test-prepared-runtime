@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Execute every declared runtime case with bounded concurrency and no compiler.
+set -u
+# Developer-shell functions can shadow declared tools after HOME is isolated.
+# Clear only inherited functions, before defining this runner's own callbacks.
+while IFS= builtin read -r inherited_function; do
+	builtin unset -f -- "$inherited_function" || exit 1
+done < <(builtin compgen -A function)
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run prepared runtime checks through ./test or run-isolated\n' >&2
+	exit 1
+fi
+if [[ "$#" != 1 ]]; then
+	printf 'Usage: test-prepared-runtime ARTIFACT_ROOT\n' >&2
+	exit 2
+fi
+bundle="$(cd "$1" && pwd -P)" || exit 1
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+source "$repo_root/tests/cli/group-runner.bash"
+jobs=${PB_RUNTIME_JOBS:-8}
+[[ "$jobs" =~ ^[1-8]$ ]] || { printf 'FAIL: invalid runtime worker limit\n' >&2; exit 2; }
+declare -a cases=()
+declare -A seen=()
+while IFS= read -r name || [[ -n "$name" ]]; do
+	if [[ ! "$name" =~ ^[a-z][a-z0-9_]*$ || -n "${seen[$name]+present}" ]]; then
+		printf 'FAIL: invalid or duplicate runtime inventory entry\n' >&2
+		exit 1
+	fi
+	seen[$name]=1
+	cases+=("$name")
+done < "$bundle/expected"
+if [[ "${#cases[@]}" == 0 ]] ||
+	! cmp -s <(printf '%s\n' "${cases[@]}" | LC_ALL=C sort) <(LC_ALL=C ls -A "$bundle/cases"); then
+	printf 'FAIL: runtime inventory must cover every case exactly once\n' >&2
+	exit 1
+fi
+for name in "${cases[@]}"; do
+	[[ -f "$bundle/cases/$name" && -x "$bundle/cases/$name" ]] || {
+		printf 'FAIL: runtime inventory has a missing executable\n' >&2; exit 1;
+	}
+done
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+runtime_case() {
+	local status
+	bash "$bundle/cases/$1" 2> "$scratch/$1.stderr"
+	status=$?
+	if [[ -s "$scratch/$1.stderr" ]]; then
+		printf 'FAIL: unexpected runtime diagnostics from %s\n' "$1" >&2
+		cat "$scratch/$1.stderr" >&2
+		status=1
+	fi
+	if [[ "$status" != 0 ]]; then printf 'FAIL: runtime case %s exited %s\n' "$1" "$status" >&2; fi
+	return "$status"
+}
+pb_run_test_groups "$jobs" "$scratch" runtime_case "${cases[@]}" || exit 1
+printf 'PASS: all %s prepared runtime groups executed\n' "${#cases[@]}"
+if [[ -f "$bundle/scope" ]]; then cat "$bundle/scope" || exit 1; fi

@@ -4,6 +4,7 @@ pkgs.stdenvNoCC.mkDerivation {
 	version = "1";
 	src = source;
 	strictDeps = true;
+	passthru.rawReference = "${rawProduct}/bin/printable-binary";
 	nativeBuildInputs = [ zig pkgs.luajit pkgs.jq ];
 	buildPhase = ''
 		runHook preBuild
