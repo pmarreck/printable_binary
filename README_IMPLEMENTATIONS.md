@@ -188,6 +188,13 @@ these producer references and the absence of repeated Zig compiler inputs in
 consumers. Required assertions, safety-enabled unit tests and portable-runtime
 checks remain in the complete gate.
 
+The Elixir check retains its compiled application, ExUnit and doctest modules.
+It retires the compilation tree before running all seven cases and independent
+Zig differentials over all byte values and seeded binary input. The canonical
+map fixture is embedded during test compilation, not read from a stale build
+path. Fresh execution includes fixture generation and VM startup; two Erlang
+schedulers and two asynchronous cases bound its runtime concurrency.
+
 The Linux module-symbol check retains its consumer and FFI archives and analyzes
 them without compiling again. It requires the consumer fixture's own export,
 rejects symbol-tool failures and any diagnostics, and checks the C-ABI namespace

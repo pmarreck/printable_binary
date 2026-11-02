@@ -3,6 +3,10 @@ defmodule PrintableBinaryTest do
   import PrintableBinary
   doctest PrintableBinary
 
+	@canonical_map_path Path.expand("../../character_map.txt", __DIR__)
+	@external_resource @canonical_map_path
+	@canonical_map_source File.read!(@canonical_map_path)
+
 	test "test runtime uses UTF-8 native file names" do
 		assert :file.native_name_encoding() == :utf8
 	end
@@ -26,8 +30,7 @@ defmodule PrintableBinaryTest do
   test "decode/1 round-trips all 256 single-byte glyphs" do
     # Build the inverse (byte -> glyph) from the same source, then decode each glyph.
     byte_to_glyph =
-      Path.expand("../../character_map.txt", __DIR__)
-      |> File.read!()
+      @canonical_map_source
       |> String.split("\n")
       |> Enum.map(&String.trim_trailing(&1, "\r"))
       |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "##")))

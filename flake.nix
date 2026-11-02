@@ -357,7 +357,7 @@
         devShells.tests = pkgs.mkShell {
           packages = with pkgs; [
             bash coreutils diffutils gawk gnugrep gnused jq python3
-            xxd hexdump luajit nodejs_24 binutils
+            xxd hexdump luajit nodejs_24 binutils elixir
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.bubblewrap pkgs.util-linux ];
         };
         devShells.default = pkgs.mkShell {
@@ -785,24 +785,31 @@
               export MIX_HOME=$TMPDIR/mix
               export HEX_HOME=$TMPDIR/hex
               export ELIXIR_ERL_OPTIONS="+fnu"
-              ( cd elixir && mix test --no-deps-check --seed 0 )
-              for i in $(seq 0 255); do printf "\\$(printf '%03o' "$i")"; done > allbytes
-              luajit utils/prng --seed 42 --bytes 8192 > rand.bin
-              ( cd utils && luajit prng --seed 42 --bytes 8192 ) > rand-again.bin
-              cmp rand.bin rand-again.bin
-              test "$(wc -c < rand.bin)" = 8192
-              PRINTABLE_BINARY_MUTE_STATS=1 ${self.checks.${system}.test-zig}/bin/printable-binary < allbytes > z_all.out
-              PRINTABLE_BINARY_MUTE_STATS=1 ${self.checks.${system}.test-zig}/bin/printable-binary < rand.bin  > z_rand.out
-              ( cd elixir && mix run --no-start -e '
-                  for {enc, orig} <- [{"../z_all.out", "../allbytes"}, {"../z_rand.out", "../rand.bin"}] do
-                    got = PrintableBinary.decode(File.read!(enc))
-                    exp = File.read!(orig)
-                    if got != exp, do: raise "Elixir decode(Zig encode) mismatch for #{enc}"
-                  end
-                  IO.puts("Elixir decode(Zig encode) == original for all-256 + 8KiB seeded input")
-              ' )
+              # A fixed private staging path keeps BEAM metadata reproducible.
+              test ! -e elixir-compilation-source
+              mkdir elixir-compilation-source
+              cp -R elixir elixir-compilation-source/elixir
+              cp character_map.txt elixir-compilation-source/character_map.txt
+              cp tests/integration/elixir-prepared-runner.ex elixir-compilation-source/elixir/prepared_runner.ex
+              staged_project="$PWD/elixir-compilation-source/elixir"
+              (cd "$staged_project" && MIX_ENV=test mix compile --no-deps-check)
+              app_ebin="$staged_project/_build/test/lib/printable_binary/ebin"
+              elixir -pa "$app_ebin" tests/integration/prepare-elixir-tests.exs "$staged_project" "$PWD/elixir-test-beams"
+              mkdir elixir-app-beams
+              cp -R "$app_ebin/." elixir-app-beams/
+              # Retire the staging tree before tests: no runtime source lookup.
+              mv elixir-compilation-source "$TMPDIR/retired-elixir-compilation-source"
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              mkdir -p "$out/lib"
+              cp -R elixir-app-beams "$out/lib/elixir-app"
+              cp -R elixir-test-beams "$out/lib/elixir-tests"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              bash tests/cli/test-elixir-prepared "$out" ${self.checks.${system}.test-zig}/bin/printable-binary
+            '';
           };
 
           # Dogfood the C FFI boundary: build the C FFI CLI against the Zig static

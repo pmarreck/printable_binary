@@ -925,6 +925,39 @@ identity `b2627d13fa777b68693a8342e1598e05ba3b70c4418997698432e88f41e0ccb7`.
 These are subset budget passes under the existing resource envelope, not a
 complete-project latency pass, comparative speedup or baseline-epoch approval.
 
+## Retained Elixir test modules
+
+The Elixir check now compiles the application and original ExUnit/doctest
+module inside its Nix build phase, retains their BEAM files, and runs them
+after fixup. A fixed private compilation tree is retired before execution.
+The first check failed because an original test read the canonical map from
+that retired source path. Embedding the same fixture during test compilation
+fixes the dependency without removing its assertions. Runtime counts require
+all seven original cases with zero failures, skips or exclusions. Two seeded
+Zig differentials and the root/utility-directory PRNG agreement remain required.
+The complete Linux gate and all-three-system evaluation pass; evaluation is
+not execution on foreign platforms.
+
+Fresh jobs `pb-elixir-prepared-20261102-0541-cores1` and
+`pb-elixir-prepared-20261102-0541-cores12` measured execution at 0.421 and
+0.362 seconds. Admission/launch took 0.160 and 0.116 seconds, Nix environment
+setup 6.607 and 0.859 seconds, and recorder begin-to-finish totals 7.404 and
+1.463 seconds. Setup is not hidden in the execution result. The host had
+21 Rust compiler processes and load averages 39.80/43.10/32.42 before the pair.
+Both records retain source identity
+`75c69be35357d3298807cd384f2a65d68c86ee8d52a74c055703f4f9aa661792`.
+The execution includes fixture generation, process startup and read-only-host
+confinement, with private writable state. No project source compilation occurs
+in that span. These are nine-case subset observations, not a full-suite budget
+pass or comparative speedup. The VM uses two schedulers and ExUnit permits two
+async cases; CPU allowances of one/twelve are not worker counts.
+
+The pinned Roc compiler's `roc test` publishes no executable and caches verdicts.
+Reusing those verdicts would not be fresh unit execution. The owner has a queued
+choice between keeping its unit phase explicitly mixed and a separate compiler
+test-artifact-export task. Retaining the production Roc CLI and its runtime
+checks can proceed independently; no compiler extension is authorized yet.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

@@ -2,7 +2,8 @@
 let
 	uses = consumer: producer:
 		builtins.elem checks.${producer}.drvPath
-			(builtins.attrNames (builtins.getContext (checks.${consumer}.buildPhase + checks.${consumer}.installPhase)));
+			(builtins.attrNames (builtins.getContext (checks.${consumer}.buildPhase + checks.${consumer}.installPhase
+				+ (checks.${consumer}.installCheckPhase or ""))));
 	zigConsumers = [ "test-cli-layout" "test-container-zig" "test-container-cross" "test-rust" "test-elixir" ]
 		++ (if checks ? test-roc then [ "test-roc" ] else []);
 in
