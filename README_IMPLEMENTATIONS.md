@@ -89,8 +89,11 @@ The Zig library also exposes `textual.encode`/`decode`, explicitly untagged
 `textual.encodePayload`/`decodePayload`, and tagged-or-legacy `decodeAuto` with
 the same canonical textual v1 format as Rust. A separate test adapter compares
 both libraries against the pinned Unicode oracle over every scalar. Allocation
-failure controls cover the Zig textual ownership path. The installed CLI and
-C ABI remain bytewise until explicit mode integration.
+failure controls cover the Zig textual ownership path. The CLI exposes explicit
+`--textual`, `--untagged`, `--raw-input` and `--decode-auto` selection; plain
+encoding/`-d` and the C ABI remain bytewise. Tagged-output ingress guards do not
+apply to raw library calls. Mixing textual with formatting/container/preservation
+features is rejected rather than weakening canonicality.
 
 ### C Implementation
 

@@ -11,8 +11,10 @@
 const std = @import("std");
 const pb = @import("printable_binary");
 const identity = @import("platform_identity.zig");
+const cli_textual = @import("cli_textual.zig");
 
 const Options = struct {
+    codec: cli_textual.Options = .{},
     decode_mode: bool = false,
     passthrough_mode: bool = false,
     spaces_mode: bool = false,
@@ -254,6 +256,15 @@ fn parseArgs(allocator: std.mem.Allocator, args: []const []const u8) !Options {
                 opts.about_mode = true;
             } else if (std.mem.eql(u8, name, "decode")) {
                 opts.decode_mode = true;
+            } else if (std.mem.eql(u8, name, "textual")) {
+                opts.codec.textual = true;
+            } else if (std.mem.eql(u8, name, "decode-auto")) {
+                opts.codec.auto_decode = true;
+                opts.decode_mode = true;
+            } else if (std.mem.eql(u8, name, "untagged")) {
+                opts.codec.untagged = true;
+            } else if (std.mem.eql(u8, name, "raw-input")) {
+                opts.codec.raw_input = true;
             } else if (std.mem.eql(u8, name, "passthrough")) {
                 opts.passthrough_mode = true;
             } else if (std.mem.eql(u8, name, "spaces")) {
@@ -387,6 +398,13 @@ fn printUsage(io: std.Io) void {
         \\  -p, --passthrough  Pass input to stdout unchanged, send encoded data to stderr
         \\
         \\Encoding modes:
+        \\  --textual          Preserve readable Unicode; emit a textual v1 tag by default.
+        \\                     With -d, strictly decode one tagged textual value.
+        \\  --untagged         Use an explicit untagged textual payload (requires --textual).
+        \\  --raw-input        Encode literal leading tags (requires textual encoding).
+        \\  --decode-auto      Decode tagged textual/bytewise or legacy bytewise input.
+        \\                     Plain -d remains bytewise. Textual preserves spaces/joiners;
+        \\                     formatting, containers and extra preservation are incompatible.
         \\  -X, --hexlike      Hexlike mode: passthrough ASCII stays as-is, all other bytes
         \\                     shown as uppercase hex runs prefixed by Οχ (Greek Omicron+Chi,
         \\                     NOT ASCII 0x — beware when copying hex for other purposes).
@@ -591,6 +609,21 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
+    cli_textual.validate(opts.codec, opts.decode_mode) catch |err| {
+        switch (err) {
+            error.TextualModeRequired => writeStats("Error: --untagged/--raw-input requires --textual\n", .{}),
+            error.RawInputEncodeOnly => writeStats("Error: --raw-input requires textual encoding, not decoding\n", .{}),
+            else => writeStats("Error: incompatible codec modes ({s})\n", .{@errorName(err)}),
+        }
+        std.process.exit(1);
+    };
+    if (opts.codec.active() and (opts.container or opts.hexlike or opts.format_mode or opts.passthrough_mode or
+        opts.tabs_mode or opts.crlf_mode or opts.preserve_chars != null or (opts.codec.textual and opts.strip_whitespace)))
+    {
+        writeStats("Error: incompatible formatting, container or preservation options for textual/tag-aware mode\n", .{});
+        std.process.exit(1);
+    }
+
     // The Zig build uses a compiled-in map and cannot honor a runtime PRINTABLE_BINARY_MAP
     // file (unlike the C/Lua/Node builds). Say so explicitly instead of silently ignoring it.
     if (g_environ_map) |env| {
@@ -629,6 +662,23 @@ pub fn main(init: std.process.Init) !void {
             .none => {},
         }
         input = raw_input[range.offset .. range.offset + range.length];
+    }
+
+    if (opts.codec.active()) {
+        const output = cli_textual.convert(allocator, input, opts.codec, opts.decode_mode, .{
+            .spaces = opts.spaces_mode,
+            .strip_whitespace = opts.strip_whitespace,
+        }) catch |err| {
+            if (err == error.AlreadyTaggedInput) {
+                writeStats("Error: input starts with a reserved tag; use --raw-input to encode literal source bytes\n", .{});
+            } else writeStats("Codec error: {s}\n", .{@errorName(err)});
+            std.process.exit(1);
+        };
+        defer allocator.free(output);
+        writeStats("Processed {d} input bytes to {d} output bytes\n", .{ input.len, output.len });
+        try writeOutput(io, output, false);
+        writeInputThroughput(io, raw_input.len, throughput_started_at);
+        return;
     }
 
     if (opts.container) {

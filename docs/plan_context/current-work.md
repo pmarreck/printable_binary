@@ -638,6 +638,26 @@ compilation; it is not a runtime measurement. CLI integration is next. Two
 existing test-output leaks were observed and queued: the FFI hexlike smoke
 pipeline emits unasserted status, and the Elixir test VM warns about its locale.
 
+The Zig library increment was published as
+`964e7298475715983479bfa55ba66dcb4d26fd76`; the fetched remote matched it and all
+27 exact-commit Mechatron Prime CI targets passed in 40 seconds, finishing
+2026-11-02T07:19:38Z. CLI integration keeps default encoding and plain `-d`
+bytewise, avoiding a change to existing raw pipelines. Explicit `--textual`
+selects tagged textual encoding/decoding; `--untagged` selects its payload API,
+`--raw-input` overrides only the tagged encoder's leading-tag guard, and
+`--decode-auto` selects tagged-or-legacy decoding. These flag spellings are an
+implementation choice for the accepted mode/tag policy. Textual mode does not
+use bytewise formatting, container, passthrough, or arbitrary preservation
+options; `--spaces` is redundant and permitted. Auto decoding applies spaces
+and stripping options only to bytewise input, never to textual canonicality.
+Input ranges remain raw input-byte ranges, not scalar/glyph/column coordinates.
+The first real CLI regression failed on the missing textual option; the new
+mode-policy option sets are exhaustively classified in pure tests. The complete
+local Linux gate passed on 2026-11-02 at 02:24 EST, retaining the shared raw CLI
+contracts, scalar differentials, safety/defect checks and all five cross-target
+headers. The first explicit CLI version is ready to ship. Mixed excerpts, bytewise tagged-output emission and
+bounded-memory streaming are not included in this increment.
+
 ## Decisions that remain deferred or on hold
 
 - Container metadata injection is specified in [the approved design](../plans/2026-07-21-container-metadata-injection-design.md), but remains a deferred feature rather than the active milestone.

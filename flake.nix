@@ -526,7 +526,7 @@
             '';
             doCheck = true;
             checkPhase = ''
-              for suite in test-core test-ffi test-platform-identity; do
+              for suite in test-core test-ffi test-platform-identity test-cli-textual; do
                 if ./zig-out/libexec/$suite > unit.log 2>&1; then
                   echo "PASS: $suite"
                 else
@@ -542,11 +542,12 @@
           test-zig = pkgs.stdenv.mkDerivation {
             name = "test-zig";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ zig python3 xxd hexdump ];
+            nativeBuildInputs = with pkgs; [ zig python3 xxd hexdump nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
               zig build -Doptimize=ReleaseFast
               IMPLEMENTATION_TO_TEST=./zig-out/bin/printable-binary bash ./tests/cli/test-suite-output bash ./tests/test
+              node tests/cli/test-zig-textual.mjs ./zig-out/bin/printable-binary
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };

@@ -127,6 +127,38 @@ not alter the encoded representation. A decoder/checker likewise needs pending
 UTF-8, quote and canonicality state. Whole-message allocation in the prototype
 does not establish production streaming behavior or throughput.
 
+## Coordinate, buffer and integration audit
+
+Byte counts, Unicode scalars, grapheme clusters and terminal columns are different
+units. The Rust and Zig textual paths do not call bytewise formatting or infer a
+column width from a scalar. The CLI integration enforces that separation.
+
+| Surface | Bytewise | Textual v1 |
+| --- | --- | --- |
+| Input offsets/ranges | Source bytes | Source bytes, possibly cutting a UTF-8 scalar |
+| Output scalar count | One scalar per source byte | Variable; quotes and Unicode preservation change counts |
+| Display columns | Depends on the selected glyphs and font | Variable: CJK, combining marks, joiners and emoji need grapheme/font-aware layout |
+| Encoded buffer bound | Current table: at most three bytes per source byte | At most three bytes per source byte, plus nine for the canonical tag |
+| Formatting/preservation flags | Existing bytewise policy | No bytewise formatting, container or extra preservation flags; ordinary spaces are fixed policy |
+| Identification | Canonical payload uses the 256-glyph alphabet | Use a tag or explicit external mode; alphabet containment is insufficient |
+
+Rust uses standard UTF-8 chunks and scalar iteration; Zig validates complete
+scalars before preserving them and validates the complete encoded input before
+token decoding. Four-byte scalars, overlong encodings, surrogate spellings,
+out-of-range values and truncated input are covered by native and independent
+oracle checks. Neither path splits a scalar with a two-byte/UTF-16 code-unit
+loop. JavaScript currently supplies the independent oracle, not a production
+textual mode; other language/runtime ports must audit their own iteration and
+buffer assumptions before exposure.
+
+Current textual encoders allocate whole-message output; the strict decoders
+also allocate recovered bytes and a canonical re-encoding. Zig checks capacity
+multiplication and tests cleanup under every induced allocation failure. The
+bound is allocation evidence, not a throughput or constant-memory claim. Counts
+and CLI statistics remain UTF-8/input byte counts, never display-width claims.
+Slicing input before encoding preserves arbitrary selected bytes exactly;
+slicing encoded input can produce a missing tag or invalid/noncanonical payload.
+
 ## Mode tags and framing boundary
 
 The intended explicit-v1 openers are `ρΒ1_` for bytewise and `ρΤ1_` for

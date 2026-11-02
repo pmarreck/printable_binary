@@ -279,6 +279,38 @@ printf 'Hi\x00\xff!' | printable-binary -X
 printf 'Hi\x00\xff!' | printable-binary -X | printable-binary -X -d | xxd
 ```
 
+### Textual Mode (Zig CLI)
+
+Use `--textual` for readable multilingual text embedded in arbitrary bytes:
+
+```bash
+printf '中文 日本語 한국어\n' | printable-binary --textual
+# Output: ρΤ1_中文 日本語 한국어¶
+printable-binary --textual input.bin | printable-binary --decode-auto > restored.bin
+```
+
+Textual v1 preserves ordinary spaces, eligible Unicode, joiners and combining
+marks, while visibly encoding controls and syntax-sensitive characters.
+Malformed UTF-8 bytes use compact PB glyphs; literal reserved glyphs and U+F000
+are quoted. No normalization or lossy repair occurs. Canonical decoding rejects
+alternate bytewise spellings of preserved Unicode.
+
+Output is tagged by default. `--textual -d` requires one textual value;
+`--decode-auto` reads tagged textual/bytewise values or legacy untagged bytewise
+input. Plain encoding and `-d` keep their existing bytewise behavior. Use
+`--textual --untagged` (with `-d` when decoding) only when the mode is known
+out-of-band. Tagged textual encoding rejects a leading reserved tag; use
+`--raw-input` to encode such literal source bytes. Library encoders remain
+unconditional. `--no-double-encode-check` does not bypass the tag guard.
+
+Textual cannot be combined with formatting, containers, passthrough, tab/newline
+preservation or arbitrary `--preserve` options. `--spaces` is redundant and
+permitted. `--decode-auto` applies legacy whitespace options only to bytewise
+values. Ranges and statistics count input bytes, not characters or display
+columns. CJK/emoji can span columns and combining marks can occupy none.
+This is whole-value decoding, not mixed excerpt parsing or bounded-memory
+streaming. The [format contract](docs/CODEC_MODES.md) specifies the guarantees.
+
 ### As a Lua Library
 
 ```lua
@@ -371,8 +403,8 @@ relax textual canonicality. Propagate `textual::DecodeError` when reading
 untrusted stored values. Library encoders always treat their arguments as raw
 bytes, including literal tag examples; they do not recursively interpret them.
 
-Textual is currently a library API, not a new mode in the installed Zig or Rust
-raw-codec CLI. Whole-value tags are supported; mixed-region
+Textual is available in the Rust and Zig libraries and the Zig CLI; the Rust
+stdin CLI remains bytewise. Whole-value tags are supported; mixed-region
 excerpt parsing and bounded-memory streaming remain separate integration work.
 See [the format and inverse argument](docs/CODEC_MODES.md).
 

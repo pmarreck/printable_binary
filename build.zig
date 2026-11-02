@@ -144,10 +144,19 @@ pub fn build(b: *std.Build) void {
     }) });
     test_step.dependOn(&b.addRunArtifact(identity_tests).step);
 
+    // The imported library's tests already run in test-core.
+    const cli_textual_tests = b.addTest(.{ .name = "test-cli-textual", .filters = &.{"CLI textual:"}, .root_module = b.createModule(.{
+        .root_source_file = b.path("src/zig/cli_textual.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "printable_binary", .module = lib_mod }},
+    }) });
+    test_step.dependOn(&b.addRunArtifact(cli_textual_tests).step);
+
     // Prepare exactly the same tests without executing them; Nix retains these
     // artifacts so fresh execution can be measured independently of compilation.
     const test_bins = b.step("test-bins", "Prepare unit-test executables without running them");
-    for ([_]*std.Build.Step.Compile{ lib_tests, ffi_tests, identity_tests }) |artifact| {
+    for ([_]*std.Build.Step.Compile{ lib_tests, ffi_tests, identity_tests, cli_textual_tests }) |artifact| {
         test_bins.dependOn(&b.addInstallArtifact(artifact, .{
             .dest_dir = .{ .override = .{ .custom = "libexec" } },
         }).step);

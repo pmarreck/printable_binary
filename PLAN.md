@@ -12,19 +12,19 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 ## Optional stream tagging
 
 - [x] Compare bytewise versus provisional textual sizes? Answer: compact PB fallback measured 1.79× on random input versus bytewise 1.85× and explicit escapes 3.49×; half-CJK measured 1.43× versus 1.95×, while glyph-heavy text can grow; 45 fixtures recover exactly (done 2026-11-01 13:49 EST; context: docs/TEXTUAL_SIZE_STUDY.md).
-- [ ] Implement approved arbitrary-byte `textual` encoding with compact PB fallback alongside unchanged `bytewise`, preserving ordinary spaces and ZWJ/ZWNJ, martini quoting and canonical validation (context: docs/CODEC_MODES.md).
+- [x] Implement arbitrary-byte textual v1 in Rust/Zig libraries and the Zig CLI, retaining bytewise defaults, compact fallback, spaces/joiners, quoting and canonical validation; complete local gates pass (done 2026-11-02 02:24 EST; context: docs/CODEC_MODES.md).
 	- [x] Port the accepted textual payload and tagged whole-value contract to the Zig library; cross-language scalar differentials, allocation-failure controls and the complete local gate pass (done 2026-11-02 02:16 EST; context: docs/plan_context/current-work.md).
 	- [x] Separate project or mode? Answer: proceed with bytewise/textual modes in this project and establish bijectivity for both; a new repository is not needed for this increment (done 2026-11-01 13:22 EST; context: docs/plan_context/current-work.md).
 	- [x] Must textual input be valid UTF-8 if controls remain supported? Answer: yes; all Unicode controls have valid UTF-8 encodings, malformed byte sequences are rejected, and arbitrary bytes remain supported by bytewise mode (done 2026-11-01 13:25 EST; context: docs/plan_context/current-work.md).
 	- [x] Which textual input contract follows the size study? Answer: accept arbitrary bytes with compact PB fallback for malformed bytes, strict canonical decoding and martini quoting; this supersedes valid-UTF-8-only input (done 2026-11-01 13:52 EST; context: docs/TEXTUAL_SIZE_STUDY.md).
 	- [x] Define textual payload martini quoting, unique token parsing and conditional two-sided inverse arguments over explicit domains; strict Rust/Zig implementations are independently tested, not machine-proved (done 2026-11-02 02:16 EST; context: docs/CODEC_MODES.md).
-	- [ ] Integrate explicit CLI bytewise/textual and tag-aware decoding choices using the tested library dispatch; never infer intended mode from untagged glyph content (context: docs/plan_context/current-work.md).
-	- [ ] Reconcile textual payload quoting with single-pass mixed-region framing and test parser transitions before adding excerpt decoding.
+	- [x] Integrate explicit CLI textual and tagged-or-legacy decoding using the tested dispatch; default raw operations stay unchanged and untagged textual requires explicit selection (done 2026-11-02 02:24 EST; context: docs/plan_context/current-work.md).
 	- [x] Should textual output be tagged by default? Answer: yes; keep bytewise output untagged by default, with explicit modes also supporting untagged payloads (done 2026-11-01 13:24 EST; context: docs/plan_context/current-work.md).
 	- [x] Does accidental valid UTF-8 break byte/glyph alignment? Answer: yes in the proposed readable mode, not raw mode; losslessness can remain, but byte offsets, glyph counts, column widths, and alphabet-only detection need a separate contract (done 2026-11-01 12:42 EST).
-	- [ ] Audit byte/glyph/column assumptions, buffer sizing, UTF-16 code-unit loops, formatting, detection, and framing before adding the explicitly opt-in Unicode profile.
+	- [x] Audit active Rust/Zig textual paths for byte/scalar/column units, capacity, scalar iteration, formatting, detection and whole-value framing; unported runtimes remain bytewise (done 2026-11-02 02:24 EST; context: docs/CODEC_MODES.md).
 - [ ] Evaluate a Latin-friendly high-byte alphabet retaining rough alphabetic progression, UTF-8 byte economy, and terminal readability; compatibility breaks are permitted, but select the replacement repertoire explicitly (context: docs/plan_context/current-work.md).
 - [ ] Specify optional `ρΒ_`/`ρΒ1_` v1 tagging with reserved-prefix errors, standard martini quoting, a leading-tag encoder guard/raw-input override, and single-pass excerpts before implementation (context: docs/plan_context/current-work.md).
+	- [ ] Reconcile textual payload quoting with single-pass mixed-region framing and test parser transitions before adding excerpt decoding.
 
 ## Deferred features
 
