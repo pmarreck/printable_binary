@@ -3,6 +3,10 @@ defmodule PrintableBinaryTest do
   import PrintableBinary
   doctest PrintableBinary
 
+	test "test runtime uses UTF-8 native file names" do
+		assert :file.native_name_encoding() == :utf8
+	end
+
   test "~PB decodes passthrough ASCII to itself" do
     assert ~PB"AB" == "AB"
   end

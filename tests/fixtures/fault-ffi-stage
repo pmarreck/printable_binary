@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Preserve genuine codec data while injecting one adapter-stage defect.
+set -u
+hex=false
+decode=false
+for argument in "$@"; do
+	case "$argument" in -X) hex=true ;; -d) decode=true ;; esac
+done
+stage=encode
+if "$decode"; then stage=decode; fi
+if "$hex"; then stage="hex-$stage"; fi
+"${REAL_FFI_CLI:?}" "$@"
+status=$?
+if [[ "$stage" == "${FFI_DEFECT_STAGE:-}" ]]; then
+	case "${FFI_DEFECT_KIND:-exit}" in
+		exit) exit 7 ;;
+		diagnostic) printf 'UNEXPECTED SMOKE DIAGNOSTIC\n' >&2 ;;
+	esac
+fi
+exit "$status"

@@ -24,6 +24,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 	- [x] Audit active Rust/Zig textual paths for byte/scalar/column units, capacity, scalar iteration, formatting, detection and whole-value framing; unported runtimes remain bytewise (done 2026-11-02 02:24 EST; context: docs/CODEC_MODES.md).
 - [ ] Evaluate a Latin-friendly high-byte alphabet retaining rough alphabetic progression, UTF-8 byte economy, and terminal readability; compatibility breaks are permitted, but select the replacement repertoire explicitly (context: docs/plan_context/current-work.md).
 - [ ] Specify optional `ρΒ_`/`ρΒ1_` v1 tagging with reserved-prefix errors, standard martini quoting, a leading-tag encoder guard/raw-input override, and single-pass excerpts before implementation (context: docs/plan_context/current-work.md).
+	- [ ] Should mixed-excerpt decoding reject openers inside an active frame and closers outside any frame, or allow implicit switches/literal stray closers? Owner decision pending; EOF still permits an omitted final closer.
 	- [ ] Reconcile textual payload quoting with single-pass mixed-region framing and test parser transitions before adding excerpt decoding.
 
 ## Deferred features
@@ -39,7 +40,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 ## Final verification and shipping
 
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
-	- [ ] Capture and assert FFI smoke diagnostics and fix the Elixir test locale so successful complete-suite runs do not leak expected stderr.
+	- [x] Capture/assert all FFI smoke diagnostics with eight defect controls, enforce the Elixir VM's UTF-8 filename mode and seeded fixtures; complete local gate passes and fresh FFI execution takes 0.40–0.46 seconds (done 2026-11-02 02:42 EST; context: docs/plan_context/current-work.md).
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 	- [x] Retain precompiled tag-probe safety/mutant artifacts and re-execute the unchanged contracts in 0.20 seconds; all 26 Linux checks pass (done 2026-11-01 13:25 EST; context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.

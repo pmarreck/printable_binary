@@ -744,19 +744,23 @@
           # suite, then the MFIC cross-impl guard: the Zig CLI is the INDEPENDENT
           # encoder oracle (Elixir did not write it), so Elixir decode/1 must
           # reproduce the original bytes for all 256 single bytes AND an 8 KiB
-          # random multi-byte stream (exercises 2/3-byte glyph boundaries).
+          # seeded multi-byte stream (exercises 2/3-byte glyph boundaries).
           test-elixir = pkgs.stdenv.mkDerivation {
             name = "test-elixir";
             src = ./.;
-            nativeBuildInputs = with pkgs; [ elixir zig ];
+            nativeBuildInputs = with pkgs; [ elixir zig luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
               export MIX_HOME=$TMPDIR/mix
               export HEX_HOME=$TMPDIR/hex
-              ( cd elixir && mix test --no-deps-check )
+              export ELIXIR_ERL_OPTIONS="+fnu"
+              ( cd elixir && mix test --no-deps-check --seed 0 )
               zig build
               for i in $(seq 0 255); do printf "\\$(printf '%03o' "$i")"; done > allbytes
-              head -c 8192 /dev/urandom > rand.bin
+              luajit utils/prng --seed 42 --bytes 8192 > rand.bin
+              ( cd utils && luajit prng --seed 42 --bytes 8192 ) > rand-again.bin
+              cmp rand.bin rand-again.bin
+              test "$(wc -c < rand.bin)" = 8192
               PRINTABLE_BINARY_MUTE_STATS=1 ./zig-out/bin/printable-binary < allbytes > z_all.out
               PRINTABLE_BINARY_MUTE_STATS=1 ./zig-out/bin/printable-binary < rand.bin  > z_rand.out
               ( cd elixir && mix run --no-start -e '
@@ -765,7 +769,7 @@
                     exp = File.read!(orig)
                     if got != exp, do: raise "Elixir decode(Zig encode) mismatch for #{enc}"
                   end
-                  IO.puts("Elixir decode(Zig encode) == original for all-256 + 8KiB random")
+                  IO.puts("Elixir decode(Zig encode) == original for all-256 + 8KiB seeded input")
               ' )
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
@@ -781,25 +785,19 @@
               export HOME=$TMPDIR
               zig build
               clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c zig-out/lib/libprintable_binary.a
-              head -c 4096 /dev/urandom > in.bin
-              ./pb-ffi in.bin > encoded.bin 2> encode.stats
-              grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' encode.stats || {
-                echo "FFI encode did not emit input throughput" >&2
-                cat encode.stats >&2
-                exit 1
-              }
-              ./pb-ffi -d encoded.bin > out.bin 2> decode.stats
-              grep -Eq 'Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)' decode.stats || {
-                echo "FFI decode did not emit input throughput" >&2
-                cat decode.stats >&2
-                exit 1
-              }
-              cmp in.bin out.bin || { echo "FFI CLI encode/decode roundtrip failed" >&2; exit 1; }
-              ./pb-ffi -X in.bin | ./pb-ffi -X -d > outx.bin
-              cmp in.bin outx.bin || { echo "FFI CLI hexlike roundtrip failed" >&2; exit 1; }
-              echo "FFI CLI smoke test passed (encode/decode + hexlike through the C ABI)"
+              LC_ALL=C awk 'BEGIN { for (i=0; i<4096; i++) printf "%c", i%256 }' > in.bin
+              patchShebangs tests/fixtures/fault-ffi-stage
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            doCheck = true;
+            checkPhase = ''
+              bash tests/unit/test-ffi-smoke-driver ./pb-ffi in.bin
+            '';
+            installPhase = ''
+              mkdir -p $out/libexec
+              cp pb-ffi $out/libexec/test-ffi-cli
+              cp in.bin $out/libexec/ffi-smoke-input
+              touch $out/passed
+            '';
           };
 
           # Fixed-work ownership checks replace two serial wall-clock windows.

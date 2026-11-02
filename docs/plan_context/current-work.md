@@ -658,6 +658,51 @@ contracts, scalar differentials, safety/defect checks and all five cross-target
 headers. The first explicit CLI version is ready to ship. Mixed excerpts, bytewise tagged-output emission and
 bounded-memory streaming are not included in this increment.
 
+The CLI increment is committed as `39ffadcba1c806ba930a7dd9dbbccff999202dbf`.
+Its full local gate passed before commit. The real Nix-backed canonical build
+published the verified native Zig host product, separate from all tests; the
+PATH command now exposes textual mode, and a CJK round trip through that exact
+command succeeded. The pushed remote matched the revision; all 27 exact-commit
+Mechatron Prime CI targets passed in 45 seconds, finishing 2026-11-02T07:31:19Z.
+For mixed excerpts, one consequential delimiter transition remains explicitly
+queued for the owner: reject a new opener while a frame is active and reject a
+closer in literal mode, or permit implicit frame switches and literal stray
+closers. Recommend rejecting misplaced delimiters without nesting; an optional
+final closer still permits EOF to terminate the active frame. Do not implement
+that unresolved transition while proceeding with independent test cleanup.
+
+Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
+stage defects after extracting the existing shell workflow without errexit.
+The old hexlike pipeline could hide an encoder failure behind a successful
+decoder. The replacement checks all four stage exit codes explicitly, captures
+and validates exact size/rate transcripts, compares restored bytes, and rejects
+eight deliberately injected exits/diagnostics. Both the real adapter and the
+no-fault injection adapter must pass first. Inputs are deterministic all-byte
+data; tests run only in disposable/Nix-owned outputs. FFI compilation and check
+execution now have separate phases, and the prepared binary/input are retained
+for fresh runtime measurement rather than forcing another compilation.
+
+A new Elixir runtime assertion failed with native filename encoding `:latin1`.
+The pinned VM's `+fnu` option fixes that underlying assumption instead of hiding
+its warning. Unit order and the 8 KiB cross-language fixture are seeded. Reusing
+the existing PRNG exposed its invalid Lua module path; resolving its bundled
+hash module relative to the script now works from both repository root and
+utility directory, producing identical fixtures. Focused FFI/Elixir Nix checks
+pass. The complete Linux gate passed on 2026-11-02 before the fresh measurements
+below; no full-suite fresh execution latency claim follows from build results.
+
+Fresh runs `pb-ffi-smoke-20261102-0241-cores1` and
+`pb-ffi-smoke-20261102-0241-cores12` execute all ten FFI smoke/control cases using
+the exact prepared artifact, private tmpfs outputs and a read-only host view.
+The shared latency recorder measured execution at 0.397 and 0.459 seconds,
+with begin-to-finish totals of 0.477 and 0.531 seconds. No compilation occurred
+inside those spans. `taskset` constrained CPUs to `0` and `0-11`; the records'
+concurrency labels denote those CPU allowances, not twelve parallel workers.
+The harness remains serial. Both runs retain identical before/after source
+identity `b2627d13fa777b68693a8342e1598e05ba3b70c4418997698432e88f41e0ccb7`.
+These are subset budget passes under the existing resource envelope, not a
+complete-project latency pass, comparative speedup or baseline-epoch approval.
+
 ## Decisions that remain deferred or on hold
 
 - Container metadata injection is specified in [the approved design](../plans/2026-07-21-container-metadata-injection-design.md), but remains a deferred feature rather than the active milestone.

@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
-local xxhash = require '../lib/xxhash32'
+local script_dir = arg[0]:match("^(.*)/[^/]+$") or "."
+local xxhash = dofile(script_dir .. "/../lib/xxhash32.lua")
 local bit = require('bit')
 
 -- Command line argument parsing

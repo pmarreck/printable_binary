@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Successful codec bytes cannot excuse stage failures or unexpected diagnostics.
+set -u
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
+source "$repo_root/tests/capture.bash"
+REAL_FFI_CLI="$(realpath "${1:?prepared FFI CLI required}")" || exit 1
+export REAL_FFI_CLI
+input="$(realpath "${2:?prepared input required}")" || exit 1
+failures=0
+capture bash "$repo_root/tests/cli/test-ffi-smoke" "$REAL_FFI_CLI" "$input"
+if [[ "$rc" != 0 || -n "$err" || "$out" != 'PASS: FFI CLI smoke round trips' ]]; then
+	printf 'FAIL: real FFI smoke must pass with clean, asserted diagnostics\n' >&2
+	failures=$((failures + 1))
+fi
+FFI_DEFECT_STAGE= capture bash "$repo_root/tests/cli/test-ffi-smoke" "$repo_root/tests/fixtures/fault-ffi-stage" "$input"
+if [[ "$rc" != 0 || -n "$err" || "$out" != 'PASS: FFI CLI smoke round trips' ]]; then
+	printf 'FAIL: no-fault FFI adapter must pass before its defect controls count\n' >&2
+	failures=$((failures + 1))
+fi
+for stage in encode decode hex-encode hex-decode; do
+	for kind in exit diagnostic; do
+		FFI_DEFECT_STAGE="$stage" FFI_DEFECT_KIND="$kind" capture bash "$repo_root/tests/cli/test-ffi-smoke" "$repo_root/tests/fixtures/fault-ffi-stage" "$input"
+		expected="FAIL: $stage invalid diagnostics"
+		if [[ "$kind" == exit ]]; then expected="FAIL: $stage target exited 7"; fi
+		if [[ "$rc" == 0 || "$err" != "$expected" || -n "$out" ]]; then
+			printf 'FAIL: FFI smoke accepted %s defect in %s\n' "$kind" "$stage" >&2
+			failures=$((failures + 1))
+		fi
+	done
+done
+[[ "$failures" == 0 ]] || exit 1
+printf 'PASS: all FFI smoke stage exits and diagnostics are enforced\n'

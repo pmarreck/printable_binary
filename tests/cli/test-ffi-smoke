@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Exercise the real C CLI/Zig ABI adapter with private outputs.
+set -u
+[[ -n "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]] || exit 1
+binary="$(realpath "${1:?prepared FFI CLI required}")" || exit 1
+input="$(realpath "${2:?prepared input required}")" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+export PRINTABLE_BINARY_MUTE_STATS=0
+rate='^Input throughput: [0-9]+[.][0-9]{2} MB read in [0-9]+[.][0-9]{3} s \([0-9]+[.][0-9]{2} MB/s\)$'
+run_stage() {
+	local stage="$1" source="$2" output="$3"
+	shift 3
+	"$binary" "$@" > "$output" 2> "$scratch/$stage.stats"
+	local status=$?
+	if [[ "$status" != 0 ]]; then
+		printf 'FAIL: %s target exited %s\n' "$stage" "$status" >&2
+		return 1
+	fi
+	local input_bytes output_bytes
+	input_bytes="$(wc -c < "$source")" || return 1
+	output_bytes="$(wc -c < "$output")" || return 1
+	local lines=()
+	mapfile -t lines < "$scratch/$stage.stats"
+	case "$stage" in
+		decode|hex-decode)
+			if [[ "${#lines[@]}" == 3 && "${lines[0]}" == "Decoding mode: Input size is $input_bytes bytes" &&
+				"${lines[1]}" == "Decoded result size: $output_bytes bytes" && "${lines[2]}" =~ $rate ]]; then return 0; fi
+			;;
+		*)
+			if [[ "${#lines[@]}" == 2 && "${lines[0]}" == "Encoded $input_bytes bytes of input to $output_bytes bytes" &&
+				"${lines[1]}" =~ $rate ]]; then return 0; fi
+			;;
+	esac
+	printf 'FAIL: %s invalid diagnostics\n' "$stage" >&2
+	return 1
+}
+run_stage encode "$input" "$scratch/encoded" "$input" || exit 1
+run_stage decode "$scratch/encoded" "$scratch/decoded" -d "$scratch/encoded" || exit 1
+cmp "$input" "$scratch/decoded" || exit 1
+run_stage hex-encode "$input" "$scratch/hex-encoded" -X "$input" || exit 1
+run_stage hex-decode "$scratch/hex-encoded" "$scratch/hex-decoded" -X -d "$scratch/hex-encoded" || exit 1
+cmp "$input" "$scratch/hex-decoded" || exit 1
+printf 'PASS: FFI CLI smoke round trips\n'
