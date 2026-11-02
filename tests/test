@@ -517,14 +517,6 @@ group_character_maps() {
 
 echo -e "\n${YELLOW}Running character maps tests...${NC}"
 
-# Create a test binary with all 256 possible byte values
-TEST_FILE=$(mktemp)
-ENCODED_FILE=$(mktemp)
-DECODED_FILE=$(mktemp)
-
-# Cleanup for these files
-trap 'cleanup; rm -f "$TEST_FILE" "$ENCODED_FILE" "$DECODED_FILE"' EXIT
-
 # Create file with all 256 byte values
 write_all_bytes "$TEST_FILE" || exit 1
 
@@ -545,6 +537,7 @@ else
     cmp -l "$TEST_FILE" "$DECODED_FILE" | head
     exit 1
 fi
+}
 
 # Function to test specific byte values
 function test_byte() {
@@ -582,6 +575,7 @@ function test_byte() {
   fi
 }
 
+group_character_maps_individual_1() {
 echo -e "\n${BLUE}Testing important character mappings individually:${NC}"
 # Test important control characters
 test_byte 0 "NUL"
@@ -598,6 +592,9 @@ test_byte 35 "HASH" "♯"  # Expect U+266F MUSIC SHARP SIGN
 test_byte 36 "DOLLAR" "Ꞩ"  # Expect U+A7A8 LATIN CAPITAL LETTER S WITH OBLIQUE STROKE
 test_byte 37 "PERCENT" "‰"  # Expect U+2030 PER MILLE SIGN
 test_byte 38 "AMPERSAND" "⅋"  # Expect U+214B TURNED AMPERSAND
+}
+
+group_character_maps_individual_2() {
 test_byte 39 "SINGLE QUOTE" "ʼ"  # Expect U+02BC MODIFIER LETTER APOSTROPHE
 test_byte 40 "LEFT PAREN" "❨"  # Expect U+2768 MEDIUM LEFT PARENTHESIS ORNAMENT
 test_byte 41 "RIGHT PAREN" "❩"  # Expect U+2769 MEDIUM RIGHT PARENTHESIS ORNAMENT
@@ -612,6 +609,9 @@ test_byte 63 "QUESTION" "Ɂ"  # Expect U+0241 LATIN CAPITAL LETTER GLOTTAL STOP
 test_byte 64 "AT" "@"  # Expect ASCII COMMERCIAL AT
 test_byte 91 "LEFT BRACKET" "⟦"  # Expect U+27E6 MATHEMATICAL LEFT WHITE SQUARE BRACKET
 test_byte 92 "BACKSLASH" "⧷"  # Expect U+29F7 REVERSE SOLIDUS WITH HORIZONTAL STROKE
+}
+
+group_character_maps_individual_3() {
 test_byte 93 "RIGHT BRACKET" "⟧"  # Expect U+27E7 MATHEMATICAL RIGHT WHITE SQUARE BRACKET
 test_byte 96 "BACKTICK" "ˋ"  # Expect U+02CB MODIFIER LETTER GRAVE ACCENT
 test_byte 123 "LEFT BRACE" "❴"  # Expect U+2774 MEDIUM LEFT CURLY BRACKET ORNAMENT
@@ -1642,6 +1642,8 @@ fi
 
 run_group() {
 	prepare_group
+	# Mapping partitions use the same private file roles as the other groups.
+	TEST_FILE=$TMP_BINARY ENCODED_FILE=$TMP_ENCODED DECODED_FILE=$TMP_DECODED
 	"group_$1"
 }
 
@@ -1661,7 +1663,8 @@ trap 'rm -rf -- "$SUITE_SCRATCH"' EXIT
 echo -e "${BLUE}=== PrintableBinary Test Suite ===${NC}"
 echo -e "${YELLOW}Testing implementation: $SCRIPT${NC}"
 pb_run_test_groups "$jobs" "$SUITE_SCRATCH" run_group \
-	basic mapping_outputs character_maps passthrough decode preservation_detection ranges hexlike
+	basic mapping_outputs character_maps character_maps_individual_1 character_maps_individual_2 \
+	character_maps_individual_3 passthrough decode preservation_detection ranges hexlike
 status=$?
 [[ "$status" == 0 ]] || exit "$status"
 # Print summary

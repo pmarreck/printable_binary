@@ -134,12 +134,34 @@ overlap=0
 failures=0
 scope_selections="$scratch/scope-selections"
 scope_publications="$scratch/scope-publications"
+scope_builds="$scratch/scope-builds"
+scope_verifications="$scratch/scope-verifications"
 scope_canonical_selected=''
-declare -A expected_variants=()
-while IFS='|' read -r impl pf variant _rest; do
+declare -A expected_variants=() expected_builders=() expected_checks=() requested_checks=() requested_packages=()
+while IFS='|' read -r impl pf variant target builder package entry format; do
 	case "$impl" in ''|'#'*) continue ;; esac
 	expected_variants["$impl|$pf"]=$variant
+	case "$builder" in host|linux) builder=x86_64-linux ;; esac
+	expected_builders["$package-ReleaseFast"]=$builder
+	expected_checks["$package-ReleaseFast"]="$impl|$pf|$variant|$target|ReleaseFast|$entry|$format|nix"
 done < "$repo_root/build-support/implementations"
+# These policy cases record ports rather than manufacturing executable fixtures.
+# The real fixture-building adapter and verification-failure cases remain above.
+pb_nix_build() {
+	[[ "$#" == 4 ]] || return 23
+	local source=$1 builder=$2 package=$3 product=$4
+	[[ "$source" == /prepared/source && "$builder" == "${expected_builders[$package]:-missing}" &&
+		"$product" == "$project/.nix-out/"*/ReleaseFast/*/product ]] || return 23
+	printf '%s\n' "$package" >> "$scope_builds" || return 1
+	requested_checks[$product]=${expected_checks[$package]}
+	requested_packages[$product]=$package
+	mkdir "$product"
+}
+pb_verify_product() {
+	[[ "$#" == 9 && -d "$1" &&
+		"$2|$3|$4|$5|$6|$7|$8|$9" == "${requested_checks[$1]:-missing}" ]] || return 23
+	printf '%s\n' "${requested_packages[$1]}" >> "$scope_verifications"
+}
 pb_select_product() {
 	[[ "$#" == 6 ]] || return 23
 	local root=$1 impl=$2 pf=$3 variant=$4 profile=$5 product=$6 key="$2|$3"
@@ -158,41 +180,48 @@ pb_publish() {
 check_scope_ports() {
 	local expected actual
 	local -a publications=()
-	expected="$(jq -r .package "$calls" | LC_ALL=C sort)" || return 1
+	expected="$(LC_ALL=C sort "$scope_builds")" || return 1
 	actual="$(LC_ALL=C sort "$scope_selections")" || return 1
 	check 'every built product has exactly one matching selection request' test "$actual" = "$expected"
+	check 'every built product has exactly one metadata-matching verification' test "$(LC_ALL=C sort "$scope_verifications")" = "$expected"
 	mapfile -d '' -t publications < "$scope_publications"
 	check 'only the canonical host command is published exactly once' test "${#publications[@]}" = 6
 }
 for flags in '--all-impls' '--all-implementations' '--all-impls --all-implementations'; do
 	printf '' > "$calls"
+	printf '' > "$scope_builds"
+	printf '' > "$scope_verifications"
 	printf '' > "$scope_selections"
 	printf '' > "$scope_publications"
 	read -r -a arguments <<< "$flags"
 	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
 	check 'all-implementation scope succeeds' test "$rc" = 0
-	check 'all-implementation scope is a complete, duplicate-free host set' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = $'build-ape-linux-amd64-ReleaseFast\nbuild-c-linux-amd64-ReleaseFast\nbuild-ffi-linux-amd64-ReleaseFast\nbuild-luajit-linux-amd64-ReleaseFast\nbuild-node-linux-amd64-ReleaseFast\nbuild-roc-linux-amd64-ReleaseFast\nbuild-rust-linux-amd64-ReleaseFast\nbuild-wasm-linux-amd64-ReleaseFast\nbuild-zig-linux-amd64-ReleaseFast'
+	check 'all-implementation scope is a complete, duplicate-free host set' test "$(LC_ALL=C sort "$scope_builds")" = $'build-ape-linux-amd64-ReleaseFast\nbuild-c-linux-amd64-ReleaseFast\nbuild-ffi-linux-amd64-ReleaseFast\nbuild-luajit-linux-amd64-ReleaseFast\nbuild-node-linux-amd64-ReleaseFast\nbuild-roc-linux-amd64-ReleaseFast\nbuild-rust-linux-amd64-ReleaseFast\nbuild-wasm-linux-amd64-ReleaseFast\nbuild-zig-linux-amd64-ReleaseFast'
 	check_scope_ports || failures=$((failures + 1))
 done
 for flags in '--all-plats' '--all-platforms --all-plats'; do
 	printf '' > "$calls"
+	printf '' > "$scope_builds"
+	printf '' > "$scope_verifications"
 	printf '' > "$scope_selections"
 	printf '' > "$scope_publications"
 	read -r -a arguments <<< "$flags"
 	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
 	check 'all-platform scope succeeds' test "$rc" = 0
-	check 'all-platform scope is the declared canonical target set' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = $'build-zig-linux-amd64-ReleaseFast\nbuild-zig-linux-arm64-ReleaseFast\nbuild-zig-macos-arm64-ReleaseFast\nbuild-zig-mswin-amd64-ReleaseFast\nbuild-zig-mswin-arm64-ReleaseFast'
+	check 'all-platform scope is the declared canonical target set' test "$(LC_ALL=C sort "$scope_builds")" = $'build-zig-linux-amd64-ReleaseFast\nbuild-zig-linux-arm64-ReleaseFast\nbuild-zig-macos-arm64-ReleaseFast\nbuild-zig-mswin-amd64-ReleaseFast\nbuild-zig-mswin-arm64-ReleaseFast'
 	check_scope_ports || failures=$((failures + 1))
 done
 for flags in '--all' '--all-plats --all-impls' '--all-implementations --all-platforms'; do
 	printf '' > "$calls"
+	printf '' > "$scope_builds"
+	printf '' > "$scope_verifications"
 	printf '' > "$scope_selections"
 	printf '' > "$scope_publications"
 	read -r -a arguments <<< "$flags"
 	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
 	check 'both scopes succeed' test "$rc" = 0
-	check 'both scopes cover exactly the 30 declared combinations' test "$(wc -l < "$calls")" = 30
-	check 'both scopes match the complete independent package set without duplicates' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = "$(LC_ALL=C sort "$repo_root/tests/fixtures/all-build-packages.txt")"
+	check 'both scopes cover exactly the 30 declared combinations' test "$(wc -l < "$scope_builds")" = 30
+	check 'both scopes match the complete independent package set without duplicates' test "$(LC_ALL=C sort "$scope_builds")" = "$(LC_ALL=C sort "$repo_root/tests/fixtures/all-build-packages.txt")"
 	check_scope_ports || failures=$((failures + 1))
 done
 exit "$failures"
