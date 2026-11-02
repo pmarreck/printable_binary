@@ -566,6 +566,53 @@ Literal UTF-8 already has an alphabet-preserving representation. Literal `¶` co
 
 The selected tag itself intentionally contains characters outside the raw alphabet. Alphabet-only recognition therefore applies to raw payload, not an entire tagged or mixed stream. Any supported framing needs an explicit framing-aware recognizer that validates its grammar and checks the appropriate PB regions. Do not broaden the raw alphabet to include tags or quote characters merely to make the existing heuristic accept a new format. Framing remains unimplemented and its grammar remains open.
 
+## Textual consumer handoff
+
+A CJK/logging consumer requested notification after a usable textual codec is
+published and its exact commit passes CI. The size-study prototype alone does
+not satisfy that condition. Read-only integration inspection found the consumer
+uses this project's Rust crate with spaces-preserving encode/decode options.
+Prioritize a usable Rust library increment, retain that integration case in its
+tests, and include the exact revision, API examples and canonicality rules in
+the eventual durable-inbox handoff. Do not change the consumer repository or
+claim delivery/acknowledgment before the requested condition is met.
+
+The experiment increment `d8963ca8a91bf661d18ae4feb3f4669a2718413d` is now
+published, origin/yolo was independently verified, and exact-commit Mechatron
+Prime CI passed all 27 targets in 37 seconds. This is not yet a working Rust
+textual API, so no ready-for-adoption message has been sent. The payload grammar
+and conditional inverse argument are drafted in
+[the codec-mode contract](../CODEC_MODES.md); production implementation proof
+and framing integration remain separate work.
+
+The remaining policy defaults were accepted on 2026-11-02: preserve ordinary
+ASCII spaces and ZWJ/ZWNJ, along with combining and variation marks. Other
+Unicode 16.0 Cc/Cf/White_Space scalars are byte-encoded. The production policy
+is frozen in the Rust crate and independently checked against the pinned Node
+Unicode property database; the older size experiment retains its original
+conservative defaults for reproducibility.
+
+The first Rust implementation now provides tagged `textual::encode`/`decode`,
+explicit untagged payload functions, typed canonicality errors, and
+`decode_auto_with_options` for new tagged values alongside legacy
+spaces-preserving logs. Raw functions and installed CLI behavior are unchanged.
+Whole-value tags accept omitted/exact v1 and an optional matching final closer;
+mixed excerpts, bounded-memory streaming and other language ports remain open.
+The source/tag inputs to library encoding are always raw, not recursively parsed.
+
+TDD first established seven failing Rust textual tests. The implementation then
+passed exhaustive one-/two-byte round trips, all Unicode scalars, literal-marker
+and replacement-glyph quoting, malformed-byte controls, canonical rejection,
+and legacy-log migration. An independent Node differential compares exact
+encoded bytes and recovery for every Unicode scalar and arbitrary-byte cases.
+The extracted Cargo package builds/tests offline without repository-parent
+dependencies. The complete `./test --option substitute false` gate passed on
+2026-11-02, including all required Linux checks; non-host platforms were not
+executed by that command. Compilation/setup are not claimed as test execution:
+the Rust check's build phase took 42 seconds, while its seven new native tests
+took 0.05 seconds. The complete-suite fresh execution budget is still open.
+Next: commit, push, verify exact-commit CI and deliver the consumer handoff.
+
 ## Decisions that remain deferred or on hold
 
 - Container metadata injection is specified in [the approved design](../plans/2026-07-21-container-metadata-injection-design.md), but remains a deferred feature rather than the active milestone.

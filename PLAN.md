@@ -4,22 +4,24 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Codec and Rust consumer requests
 
+- [ ] Deliver a working textual codec to the requesting CJK/logging consumer through its durable inbox only after publication and exact-commit CI; include the revision and integration examples, not the prototype alone (context: docs/plan_context/current-work.md).
+	- [ ] Implement and publish the Rust textual library first, retaining legacy-log decoding; the canonical Zig implementation must not delay the requesting Rust consumer.
+	- [x] Implement the Rust payload and whole-value tagged APIs with legacy-log reading, frozen Unicode policy and independent exhaustive-scalar checks; the complete local Nix test gate passes (done 2026-11-02 02:02 EST; context: docs/plan_context/current-work.md).
+	- [x] Preserve ordinary spaces and ZWJ/ZWNJ in textual v1? Answer: yes; retain combining/variation marks too, and visibly encode other whitespace and format controls (done 2026-11-02 01:41 EST; context: docs/CODEC_MODES.md).
 
 ## Optional stream tagging
 
 - [x] Compare bytewise versus provisional textual sizes? Answer: compact PB fallback measured 1.79× on random input versus bytewise 1.85× and explicit escapes 3.49×; half-CJK measured 1.43× versus 1.95×, while glyph-heavy text can grow; 45 fixtures recover exactly (done 2026-11-01 13:49 EST; context: docs/TEXTUAL_SIZE_STUDY.md).
-- [ ] Implement approved arbitrary-byte `textual` encoding with compact PB fallback alongside unchanged `bytewise`, martini quoting and canonical validation; settle Unicode-control policy before public integration (context: docs/plan_context/current-work.md).
+- [ ] Implement approved arbitrary-byte `textual` encoding with compact PB fallback alongside unchanged `bytewise`, preserving ordinary spaces and ZWJ/ZWNJ, martini quoting and canonical validation (context: docs/CODEC_MODES.md).
 	- [x] Separate project or mode? Answer: proceed with bytewise/textual modes in this project and establish bijectivity for both; a new repository is not needed for this increment (done 2026-11-01 13:22 EST; context: docs/plan_context/current-work.md).
 	- [x] Must textual input be valid UTF-8 if controls remain supported? Answer: yes; all Unicode controls have valid UTF-8 encodings, malformed byte sequences are rejected, and arbitrary bytes remain supported by bytewise mode (done 2026-11-01 13:25 EST; context: docs/plan_context/current-work.md).
 	- [x] Which textual input contract follows the size study? Answer: accept arbitrary bytes with compact PB fallback for malformed bytes, strict canonical decoding and martini quoting; this supersedes valid-UTF-8-only input (done 2026-11-01 13:52 EST; context: docs/TEXTUAL_SIZE_STUDY.md).
 	- [ ] Define textual martini quoting for replacement glyphs and the marker itself, reconcile framing dispatch, and prove unique parsing/two-sided inverses over explicit domains before implementation (context: docs/plan_context/current-work.md).
 	- [ ] Add bytewise/textual dispatch using `ρΒ1_`/`ρΤ1_` tags or explicit out-of-band mode selection; do not guess from untagged content (context: docs/plan_context/current-work.md).
 	- [x] Should textual output be tagged by default? Answer: yes; keep bytewise output untagged by default, with explicit modes also supporting untagged payloads (done 2026-11-01 13:24 EST; context: docs/plan_context/current-work.md).
-	- [x] CJK-only or broader preservation? Answer: general visible Unicode outside the PB alphabet, including other languages and emoji; reserved PB glyphs and controls still encode normally (done 2026-11-01 12:39 EST).
 	- [x] Does accidental valid UTF-8 break byte/glyph alignment? Answer: yes in the proposed readable mode, not raw mode; losslessness can remain, but byte offsets, glyph counts, column widths, and alphabet-only detection need a separate contract (done 2026-11-01 12:42 EST).
 	- [ ] Audit byte/glyph/column assumptions, buffer sizing, UTF-16 code-unit loops, formatting, detection, and framing before adding the explicitly opt-in Unicode profile.
 - [ ] Evaluate a Latin-friendly high-byte alphabet retaining rough alphabetic progression, UTF-8 byte economy, and terminal readability; compatibility breaks are permitted, but select the replacement repertoire explicitly (context: docs/plan_context/current-work.md).
-	- [x] Which Latin-passthrough tradeoff takes priority? Answer: investigate Latin-looking symbols, accept larger UTF-8 output, and qualify font/terminal width; the exact alphabet remains unselected (done 2026-11-01 12:36 EST).
 - [ ] Specify optional `ρΒ_`/`ρΒ1_` v1 tagging with reserved-prefix errors, standard martini quoting, a leading-tag encoder guard/raw-input override, and single-pass excerpts before implementation (context: docs/plan_context/current-work.md).
 	- [x] Which encoding mode gets the leading-tag guard? Answer: tagged-output mode only; ordinary raw CLI encoding and the raw library remain unconditional (done 2026-11-01 12:39 EST).
 

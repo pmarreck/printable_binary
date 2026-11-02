@@ -701,14 +701,17 @@
           test-rust = pkgs.stdenv.mkDerivation {
             name = "test-rust";
             src = ./.;
-            nativeBuildInputs = [ rustToolchain zig pkgs.jq ];
+            nativeBuildInputs = [ rustToolchain zig pkgs.jq pkgs.nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
               export CARGO_HOME=$TMPDIR/cargo
               bash tests/unit/test-rust-map-sync
+              node utils/generate_textual_policy.mjs --check rust/src/textual_policy.rs
               bash tests/integration/test-rust-package
               cargo test --release --offline --manifest-path rust/Cargo.toml
               cargo build --release --offline --manifest-path rust/Cargo.toml
+              cargo build --release --offline --manifest-path rust/Cargo.toml --example textual
+              node tests/cli/test-rust-textual.mjs ./rust/target/release/examples/textual
               bash tests/cli/test-rust-malformed-utf8 ./rust/target/release/printable-binary-rs
               zig build
               bash tests/cli/test-rust-spaces ./rust/target/release/printable-binary-rs ./zig-out/bin/printable-binary

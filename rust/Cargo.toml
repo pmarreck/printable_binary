@@ -2,7 +2,7 @@
 name = "printable_binary"
 version = "0.1.0"
 edition = "2021"
-description = "PrintableBinary raw codec (Rust) — byte<->printable-UTF-8, for a GUI<->core transport"
+description = "PrintableBinary bytewise and canonical Unicode-preserving textual codecs"
 license = "MIT"
 
 [lib]

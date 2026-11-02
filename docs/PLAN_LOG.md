@@ -98,3 +98,8 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first. BDFN me
 - [x] [Final verification and shipping] Deliver the published self-contained Rust crate revision and spaces-option API to the requesting consumer through its durable inbox; acknowledgment is not yet established (done 2026-11-01 11:45 EST; commit f806bca).
 - [x] [Codec and Rust consumer requests] Restore Roc hexlike/formatting parity exposed by the complete case inventory; all shared cases and independent all-byte comparisons now pass (done 2026-11-01 12:30 EST; context: docs/plan_context/current-work.md).
 - [x] [Final verification and shipping › Measure complete-suite execution separately from compilation…] Run isolated shared-CLI groups with bounded concurrency and all assertions; fresh Node execution fell from 10.76 to 4.55 seconds and all 26 Linux checks pass (done 2026-11-01 12:30 EST; context: docs/plan_context/current-work.md).
+
+## Retired 2026-11-02
+
+- [x] [Optional stream tagging › Implement approved arbitrary-byte `textual` encoding with co…] CJK-only or broader preservation? Answer: general visible Unicode outside the PB alphabet, including other languages and emoji; reserved PB glyphs and controls still encode normally (done 2026-11-01 12:39 EST).
+- [x] [Optional stream tagging › Evaluate a Latin-friendly high-byte alphabet retaining rough…] Which Latin-passthrough tradeoff takes priority? Answer: investigate Latin-looking symbols, accept larger UTF-8 output, and qualify font/terminal width; the exact alphabet remains unselected (done 2026-11-01 12:36 EST).

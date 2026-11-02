@@ -15,7 +15,9 @@ export function scalarAt(input, offset) {
 	return { length, text: Buffer.from(input.subarray(offset, offset + length)).toString('utf8') };
 }
 
-export function createCodec(glyphs) {
+export function createCodec(sourceGlyphs, { spaces = false, preserveJoiners = false } = {}) {
+	const glyphs = sourceGlyphs.slice();
+	if (spaces) glyphs[32] = ' ';
 	const marker = '\uF000';
 	if (glyphs.length !== 256 || new Set(glyphs).size !== 256 || glyphs.includes(marker) ||
 		glyphs.some(glyph => !glyph.isWellFormed() || Array.from(glyph).length !== 1)) {
@@ -59,7 +61,7 @@ export function createCodec(glyphs) {
 				stats.ascii_output_bytes += sizes[input[offset]];
 			} else {
 				stats.multibyte_utf8_bytes += length;
-				if (sensitive.test(text)) {
+				if (sensitive.test(text) && !(preserveJoiners && (text === '\u200C' || text === '\u200D'))) {
 					for (const byte of input.subarray(offset, offset + length)) {
 						parts.push(glyphs[byte]);
 						stats.unicode_mapped_output_bytes += sizes[byte];

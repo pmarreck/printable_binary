@@ -348,6 +348,34 @@ The Rust CLI does not yet implement the full formatting/container/mapping-report
 surface. Use a full CLI when those features are needed; use the Rust crate when
 embedding the raw codec or moving bytes across a Rust↔Zig boundary.
 
+The Rust library also provides the Unicode-preserving **textual v1** codec:
+
+```rust
+let raw = "中文 日本語 한국어 👩‍🚀\n".as_bytes();
+let encoded = printable_binary::textual::encode(raw); // includes ρΤ1_
+assert_eq!(printable_binary::decode_auto(&encoded).unwrap(), raw);
+```
+
+Textual mode accepts arbitrary bytes, preserves ordinary ASCII spaces and
+eligible Unicode (including ZWJ/ZWNJ and combining/variation marks), and visibly
+encodes other controls, format characters and whitespace. Malformed UTF-8 bytes
+use the existing PB glyphs. Literal replacement glyphs and U+F000 are quoted;
+decoding rejects noncanonical alternate spellings rather than silently repairing
+them. The Unicode policy is frozen at version 16.0 for reproducibility.
+
+`textual::encode_payload` and `textual::decode_payload` handle explicitly selected
+untagged payloads. `textual::decode` reads one tagged textual value;
+`decode_auto`/`decode_auto_with_options` also recognize tagged bytewise values
+and retain legacy untagged bytewise decoding. Legacy whitespace options do not
+relax textual canonicality. Propagate `textual::DecodeError` when reading
+untrusted stored values. Library encoders always treat their arguments as raw
+bytes, including literal tag examples; they do not recursively interpret them.
+
+This first textual implementation is the Rust library, not a new mode in the
+installed Zig or Rust raw-codec CLI. Whole-value tags are supported; mixed-region
+excerpt parsing and bounded-memory streaming remain separate integration work.
+See [the format and inverse argument](docs/CODEC_MODES.md).
+
 ### JavaScript CLI
 
 For command-line parity with the LuaJIT/C tools, use the Node-based wrapper:

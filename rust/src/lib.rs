@@ -1,9 +1,32 @@
-//! PrintableBinary — Rust implementation of the raw byte<->printable-UTF-8 codec.
+//! PrintableBinary — bytewise and canonical Unicode-preserving textual codecs.
 //!
-//! Produces byte-identical output to the Zig/C/Lua/JS implementations (same
+//! The bytewise functions produce byte-identical output to Zig/C/Lua/JS (same
 //! `character_map.txt`). Built for a Rust-GUI <-> Zig-core transport: the
 //! `*_into` variants reuse a caller-owned buffer for zero per-message allocation.
+//! The separate [`textual`] module preserves readable Unicode in arbitrary bytes
+//! and [`decode_auto`] supports new tagged values alongside legacy bytewise logs.
 include!(concat!(env!("OUT_DIR"), "/map.rs"));
+
+/// Canonical Unicode-preserving encoding of arbitrary bytes.
+pub mod textual;
+mod textual_policy;
+
+/// Decode a tagged value, or a legacy untagged bytewise value.
+pub fn decode_auto(input: &[u8]) -> Result<Vec<u8>, textual::DecodeError> {
+	decode_auto_with_options(input, DecodeOptions::default())
+}
+
+/// Legacy options apply only to bytewise values, not canonical textual data.
+pub fn decode_auto_with_options(
+	input: &[u8],
+	options: DecodeOptions,
+) -> Result<Vec<u8>, textual::DecodeError> {
+	match textual::frame(input)? {
+		Some((textual::Kind::Textual, _, _)) => textual::decode(input),
+		Some((textual::Kind::Bytewise, payload, _)) => Ok(decode_with_options(payload, options)),
+		None => Ok(decode_with_options(input, options)),
+	}
+}
 
 /// Encoding choices; defaults retain the canonical raw mapping.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

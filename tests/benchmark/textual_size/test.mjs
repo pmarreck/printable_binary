@@ -120,3 +120,11 @@ for (const failure of [{ ...success, status: 7 }, { ...success, stdout: Buffer.f
 	assert.throws(() => verifyReference('prepared reference', referenceCase, codec, () => failure));
 }
 console.log('PASS: independent reference arguments, exact bytes, unsuccessful exit and unexpected diagnostics');
+
+const v1 = createCodec(glyphs, { spaces: true, preserveJoiners: true });
+for (const text of ['ordinary spaces', '👩\u200D🚀 می\u200Cروم', '␣ e\u0301 \uFE0F']) {
+	assert.equal(v1.encode(Buffer.from(text)).payload, text);
+	assert.deepEqual(v1.decode(text), Buffer.from(text));
+}
+assert.throws(() => v1.decode(marker + '␣'), /escape/);
+console.log('PASS: production-v1 oracle preserves ordinary spaces, joiners and inactive space glyphs');
