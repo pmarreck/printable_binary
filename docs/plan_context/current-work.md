@@ -1250,6 +1250,74 @@ default unchanged. The next isolated target is dummy artifact creation in the
 scope/alias controller tests, with all real filesystem-adapter and installed
 product checks retained independently.
 
+The controller scope cases now record package requests directly and create only
+private empty result directories, instead of copying executable fixtures and
+launching a JSON encoder per request. They validate the frozen source, resolved
+builder, namespace and every verification metadata field against declared rows;
+each build must have exactly one matching verification and selection. The
+independent nine/five/thirty-package sets remain unchanged. Original real
+fixture-building, executable, locking, publication, race, failure-retention and
+installed-header checks remain outside this isolated scope block. The genuine
+Nix build/product/profile check passes. This refactors test adapters only, not
+the controller or its production validation.
+
+The scope-port increment passes the full gate and all-system evaluation. Fresh
+`pb-runtime-26-scope-ports-20261102-1054-cores12` passed 26/26 in 7.077 seconds,
+still OVER_BUDGET; admission took 0.132 seconds, environment setup 6.647 and
+total 14.045 seconds. Source identity stayed
+`cef5f588b05ab0a82030306f0921da1af176c603bcf832140fd48541b442b546`.
+Shared-host variability remains visible, not a claimed speedup.
+
+Diagnostic `pb-node-group-attribution-20261102-1058` captured Bash trace
+timestamps outside normal stderr while the exact original Node CLI inventory
+still passed. Its character-mapping group spanned 4.851 seconds; all other
+groups were below 1.861 seconds. Those are tracing diagnostics, not ordinary
+benchmark samples. The bottleneck ran 42 individual encode/decode pairs
+serially in one worker. The unchanged calls now form three adjacent ordered
+groups of fourteen, using private prepared file roles; the all-256-byte vector
+remains its own required group. The source count and original ordered Node/Lua
+CLI inventories pass. There are eleven logical CLI groups but still at most
+eight workers, not an increased concurrency allowance or reduced adapter
+coverage. Full cross-implementation verification and measurement follow.
+
+The balanced mapping/recording-port unit passes the complete Linux gate and
+all-system evaluation and is committed as
+`1a3a3dfdf16daad26e8bc384db1389e571c6b2f4`. Both fresh complete runtime cases
+passed 26/26 groups with no skips or failures, using unchanged source identity
+`6cff0696646cfa03c6f863ec2fd975de4d17a808e43c006e7ff7e437e08da3f3`:
+
+| Case | Execution | Admission | Environment setup | Total |
+| --- | ---: | ---: | ---: | ---: |
+| `pb-runtime-26-balanced-mapping-20261102-1108-cores12` | 8.006 s | 0.547 s | 16.907 s | 27.988 s |
+| `pb-runtime-26-balanced-mapping-20261102-1115-cores1` | 45.522 s | 0.118 s | 1.583 s | 47.457 s |
+
+The twelve-CPU case used eight outer/inner workers; the single-CPU case used
+one of each. Runtime startup, source fixture copying and every real invocation
+stay inside execution. Both are over the five-second budget, and neither
+includes fresh execution of the separate mixed Roc unit prerequisite. These
+are pilot observations, not an approved baseline epoch or universal speedup.
+
+Within-job old/new/new/old comparisons support retaining the changes. Job
+`pb-node-balanced-abba-20261102-1118` passed the unchanged complete Node shared
+CLI inventory at 3.970, 1.681, 1.742 and 3.862 seconds. Job
+`pb-controller-recording-abba-20261102-1121` passed all controller assertions
+at 3.455, 2.651, 2.597 and 3.479 seconds. Both used twelve allowed CPUs, immutable
+prepared source fixtures, unchanged checkout identity and no compilation.
+The latter additionally checks exactly one metadata-matching verification per
+requested product; original real filesystem-adapter coverage remains intact.
+
+System-wide I/O pressure snapshots showed roughly 26–43% full-stall averages,
+while one inspection showed negligible CPU/memory pressure. These system-wide
+readings do not identify which test or external job caused delay. `/tmp` was
+verified as tmpfs; the qualified isolation runner also gives tests a private
+tmpfs, so no temporary-storage or resource-limit workaround was introduced.
+Permission was requested to coordinate a brief quiet timing window by deferring
+new admissions without canceling existing jobs. No such scheduling change has
+been made. Five-second qualification remains open: after permission/resource
+availability, use the exact prepared artifact and unchanged limits for one
+complete retry, preserving the first over-budget record. Do not keep retrying
+until a convenient result appears, waive the budget or remove CLI cases.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and
