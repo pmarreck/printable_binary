@@ -132,6 +132,15 @@ The complete Rust check independently compares every Unicode scalar with the
 pinned Node oracle and verifies arbitrary-byte and canonicality cases. This does
 not change the raw stdin CLI or claim mixed-region/streaming support.
 
+The `test-rust` Nix result retains native unit/integration test executables,
+the raw CLI, the textual example adapter and an independent Zig reference.
+Its source-local paths are removed from the retained target inventory. An
+installed-artifact check compares every native target with Cargo metadata,
+rejects missing/duplicate targets, and executes the retained tests after fixup.
+Existing package, native, documentation and CLI checks remain in the complete
+test entry point. Retention enables fresh runtime measurement; it does not by
+itself establish the complete-suite execution budget.
+
 ### LuaJIT and JavaScript / Node
 
 LuaJIT remains explicitly named `printable-binary-luajit`. It is useful as a modifiable reference, but its string allocation limits differ from Zig's native buffers. The current Zig CLI still buffers the complete input and result; streaming standard-handle I/O does not imply bounded-memory conversion. The JavaScript module powers the browser UI and Node CLI. Their source-distributed scripts remain in generic `bin/`; Nix products pin the interpreters and required resources.

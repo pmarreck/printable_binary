@@ -128,6 +128,7 @@ annotate=[
 	tests/integration/test-native-c-graph = Verify Make profile/prefix behavior and Nix command delegation
 	tests/integration/test-output-ignore = Classify generated output and portable source paths using Git ignore rules
 	tests/integration/test-rust-package = Build and test the packaged crate without repository-parent files
+	tests/integration/test-rust-prepared.mjs = Check retained native Rust target sets against Cargo metadata and execute every prepared test
 	tests/integration/test-shared-suite-failure = Prove correct stdout cannot hide a failed encoder exit status
 	tests/module_consumer.zig = Test fixture: minimal downstream importer of the printable_binary Zig module (mirrors how difz/blip consume it) for the FFI-symbol-leak test
 	tests/nix/build-matrix-contract.nix = Validate exact Nix package/profile sets and canonical command selection

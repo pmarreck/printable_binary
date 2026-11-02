@@ -687,6 +687,34 @@ on 2026-11-02 before committing these documentation changes. Next unblocked
 execution-budget work is retaining exact Rust artifacts without replacing or
 dropping any current native/package/CLI checks.
 
+The header documentation fix shipped as
+`27a92c3c4e6db4975d4a7c47e1ece9c626e59e2d`; the fetched remote matched and all 27
+exact-commit Mechatron Prime CI targets passed in 46 seconds, finishing
+2026-11-02T08:17:16Z. Rust artifact retention first failed on the missing native
+manifest, while all existing Rust checks still passed. The export now retains
+all five native Cargo test targets, the raw Rust CLI, textual adapter and Zig
+reference, plus a path-free projection of Cargo's target metadata. The installed
+check validates the complete target set and re-executes the tests after fixup;
+omitted and duplicate target controls fail. All old package/native/doc/CLI checks
+remain unchanged. Focused retention checks and the complete local gate pass.
+
+Fresh, confined execution of the five retained native executables (15 native
+test functions) passed without compilation. External latency jobs
+`pb-rust-native-20261102-0336-cores1` and `-cores12` recorded 0.168484201 and
+0.157163876 seconds of execution, with 0.659583953/0.481253228 seconds of
+resource-admission/shell setup and 0.947919948/0.752272412 seconds from recorder
+begin to finish. Both source identities remained
+`01a5ea459ee95691ca6621242d13715910405d63e082e28f9b41ef2ad4938e04`.
+The CPU allowances were one and twelve CPUs, not twelve suite workers. These
+are native-only observations, not a complete-suite result or comparative
+speedup claim. Initial launcher attempts ran no measured tests: the latency
+recorder's pending state follows `TMPDIR`, which the resource-admission wrapper
+changes. The corrected invocation preserves that wrapper's task scratch for
+the workload while explicitly using the original recorder scratch only for
+recorder processes. Those failed/incomplete observations remain in history.
+Packaged-crate/runtime and other-language preparation still need completion
+before claiming a fresh complete-suite budget pass.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful

@@ -716,6 +716,7 @@
               cargo test --release --offline --manifest-path rust/Cargo.toml
               cargo build --release --offline --manifest-path rust/Cargo.toml
               cargo build --release --offline --manifest-path rust/Cargo.toml --example textual
+              cargo metadata --locked --offline --no-deps --format-version 1 --manifest-path rust/Cargo.toml > rust-test-metadata.json
               node tests/cli/test-rust-textual.mjs ./rust/target/release/examples/textual
               bash tests/cli/test-rust-malformed-utf8 ./rust/target/release/printable-binary-rs
               zig build
@@ -738,7 +739,31 @@
               cmp allbytes rt.out || { echo "FAIL: Rust decode(Zig encode) != original" >&2; exit 1; }
               echo "Rust <-> Zig byte-identical across all 256 bytes"
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              cargo test --release --offline --no-run --message-format=json --manifest-path rust/Cargo.toml > native-test-artifacts.json
+              mkdir -p "$out/libexec/rust-tests" "$out/share" "$out/bin"
+              jq -r 'select(.reason == "compiler-artifact" and .profile.test == true and .executable != null)
+                | [.executable, .target.kind[0], .target.name] | @tsv' native-test-artifacts.json > native-test-files.tsv
+              while IFS=$'\t' read -r executable kind target_name; do
+                target_file="$out/libexec/rust-tests/$kind-$target_name"
+                test ! -e "$target_file"
+                install -m755 "$executable" "$target_file"
+              done < native-test-files.tsv
+              jq -s '{schema:"printable-binary/rust-native-tests-v1", profile:"release", native_tests:
+                [.[] | select(.reason == "compiler-artifact" and .profile.test == true and .executable != null)
+                | {name:.target.name, kind:.target.kind[0], file:("libexec/rust-tests/" + .target.kind[0] + "-" + .target.name)}]}' \
+                native-test-artifacts.json > "$out/share/rust-native-tests.json"
+              jq '{packages:[.packages[] | select(.name == "printable_binary")
+                | {name, targets:[.targets[] | {name, kind, test}]}]}' rust-test-metadata.json > "$out/share/rust-test-targets.json"
+              install -m755 rust/target/release/printable-binary-rs "$out/bin/printable-binary-rs"
+              install -m755 rust/target/release/examples/textual "$out/libexec/textual-example"
+              install -m755 zig-out/bin/printable-binary "$out/libexec/printable-binary-reference"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              node tests/integration/test-rust-prepared.mjs "$out" rust-test-metadata.json
+            '';
           };
 
           # ~PB compile-time sigil (Elixir). Runs the crate's own unit + doctest
