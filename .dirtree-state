@@ -101,6 +101,7 @@ annotate=[
 	tests/cli/test-raw-literal-tags = Raw UTF-8 tag examples round-trip through alphabet-only encoded output
 	tests/cli/test-retained-rust = Execute retained source/package Rust suites with explicit independent metadata and accumulated failures
 	tests/cli/test-roc-codec-parity = Compare Roc hexlike and formatted bytes with the independent Zig CLI
+	tests/cli/test-roc-prepared = Run retained Roc CLI/container/parity/muting checks separately from compiler-driven unit tests
 	tests/cli/test-rust-malformed-utf8 = Reproduce and guard malformed or truncated Rust UTF-8 decoding
 	tests/cli/test-rust-spaces = Compare Rust spaces and whitespace options against the independent Zig CLI
 	tests/cli/test-rust-textual.mjs = Compare prepared Rust/Zig codecs with the independent Unicode oracle and error controls

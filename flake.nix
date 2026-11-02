@@ -906,14 +906,16 @@
               roc test --jobs="$NIX_BUILD_CORES" roc/TestCliOutput.roc
               bash tests/test_roc_map_sync
               roc build --jobs="$NIX_BUILD_CORES" --no-cache --opt=speed roc/main.roc --output=printable-binary-roc
-              bash tests/test_roc ./printable-binary-roc ${self.checks.${system}.test-zig}/bin/printable-binary
-              bash tests/cli/test-roc-codec-parity ./printable-binary-roc ${self.checks.${system}.test-zig}/bin/printable-binary
-              for muted in 1 true yes; do
-                printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" ./printable-binary-roc > /dev/null 2> muted.stderr
-                test ! -s muted.stderr
-              done
             '';
-            installPhase = "mkdir -p $out && touch $out/passed";
+            installPhase = ''
+              install -Dm755 printable-binary-roc "$out/bin/printable-binary-roc"
+              install -Dm755 ${self.checks.${system}.test-zig}/bin/printable-binary "$out/libexec/printable-binary-reference"
+              touch "$out/passed"
+            '';
+            doInstallCheck = true;
+            installCheckPhase = ''
+              bash tests/cli/test-roc-prepared "$out"
+            '';
           };
 
           test-build-all = pkgs.stdenvNoCC.mkDerivation {

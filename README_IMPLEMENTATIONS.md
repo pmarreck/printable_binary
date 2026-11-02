@@ -195,6 +195,12 @@ map fixture is embedded during test compilation, not read from a stale build
 path. Fresh execution includes fixture generation and VM startup; two Erlang
 schedulers and two asynchronous cases bound its runtime concurrency.
 
+The Roc result likewise retains its CLI and independent Zig reference for
+fresh shared CLI/container, formatting-parity and muting checks. Its 61 unit
+cases still run through the pinned compiler's `roc test`: that compiler does
+not export a test executable. Those checks remain required, but their mixed
+compilation/execution phase and cached verdicts are not runtime-only evidence.
+
 The Linux module-symbol check retains its consumer and FFI archives and analyzes
 them without compiling again. It requires the consumer fixture's own export,
 rejects symbol-tool failures and any diagnostics, and checks the C-ABI namespace

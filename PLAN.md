@@ -28,10 +28,10 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 ## Final verification and shipping
 
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
-	- [x] Capture/assert all FFI smoke diagnostics with eight defect controls, enforce the Elixir VM's UTF-8 filename mode and seeded fixtures; complete local gate passes and fresh FFI execution takes 0.40–0.46 seconds (done 2026-11-02 02:42 EST; context: docs/plan_context/current-work.md).
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 		- [x] Retain compiled Elixir app/test modules and run all seven ExUnit/doctest cases plus two seeded Zig differentials without project compilation; full gate/all-system evaluation pass and fresh execution takes 0.36–0.42 seconds (done 2026-11-02 05:39 EST; context: docs/plan_context/current-work.md).
 		- [ ] Should Roc unit checks remain explicitly mixed compile/test timing, or should test-artifact export be a separate compiler task? Its pinned compiler caches verdicts and publishes no test executable; owner decision pending.
+		- [x] Retain the exact Roc CLI/reference and re-execute all CLI/container/parity/muting contracts independently of all 61 required compiler-driven unit cases; fresh CLI execution takes 1.16–2.05 seconds (done 2026-11-02 05:44 EST; context: docs/plan_context/current-work.md).
 		- [ ] Integrate the remaining prepared runtime cases into one bounded concurrent complete runner through ./test, with compilation/setup/admission measured separately and no coverage omissions.
 		- [x] Reuse exact declared C/Zig/FFI artifacts across layout, container and differential checks; dependency-context regression, full Linux gate and all-three-system evaluation pass (done 2026-11-02 04:40 EST; context: docs/plan_context/current-work.md).
 		- [x] Retain module/FFI archives and reject malformed inputs, missing fixture work and tool faults; full Linux gate/all-system evaluation pass and fresh verification takes 0.69–0.80 seconds (done 2026-11-02 05:10 EST; context: docs/plan_context/current-work.md).

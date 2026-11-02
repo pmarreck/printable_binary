@@ -958,6 +958,26 @@ choice between keeping its unit phase explicitly mixed and a separate compiler
 test-artifact-export task. Retaining the production Roc CLI and its runtime
 checks can proceed independently; no compiler extension is authorized yet.
 
+The Roc CLI/reference retention increment first failed against the previous
+check output, which contained no executable. The installed result now executes
+the complete existing shared CLI/container contract, independent Zig hexlike
+and formatting differentials over all 256 bytes, and all three muting spellings.
+Muting must also retain the expected output and return zero, not merely leave
+stderr empty. The seven original compiler-driven unit modules remain required
+(8/16/8/4/3/17/5 cases); none were replaced by cached verdicts or dropped.
+
+Fresh jobs `pb-roc-cli-prepared-20261102-0547-cores1` and
+`pb-roc-cli-prepared-20261102-0547-cores12` measured runtime-only execution at
+2.051 and 1.155 seconds, using one/eight shared CLI groups respectively.
+Admission/launch took 0.234/0.143 seconds, Nix environment setup 16.512/0.937
+seconds and recorder begin-to-finish totals 19.349/2.400 seconds. The host had
+ten Rust compiler processes and load averages 25.94/33.86/31.05 before the pair.
+Both retain source identity
+`1768acbc119baf4aa5291fd326c23b24ae22d1195e4464099e68afe395c6975a`.
+The recorder counts one outer runtime group, not 61 unit cases. This is a subset
+observation with busy-host setup exposed, not a full-suite budget or speedup
+claim. Complete Linux validation and all-system evaluation are separate gates.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

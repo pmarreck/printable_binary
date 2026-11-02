@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Runtime-only Roc checks; unit execution remains a separately reported phase.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run retained Roc checks through ./test or run-isolated\n' >&2
+	exit 1
+fi
+if [[ "$#" != 1 ]]; then
+	printf 'Usage: test-roc-prepared ARTIFACT_ROOT\n' >&2
+	exit 2
+fi
+artifact_root=$1
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+roc_cli="$artifact_root/bin/printable-binary-roc"
+reference_cli="$artifact_root/libexec/printable-binary-reference"
+for cli in "$roc_cli" "$reference_cli"; do
+	if [[ ! -f "$cli" || ! -x "$cli" || -L "$cli" ]]; then
+		printf 'FAIL: missing regular retained Roc/reference executable\n' >&2
+		exit 1
+	fi
+done
+bash "$repo_root/tests/test_roc" "$roc_cli" "$reference_cli" || exit 1
+bash "$repo_root/tests/cli/test-roc-codec-parity" "$roc_cli" "$reference_cli" || exit 1
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+for muted in 1 true yes; do
+	printf x | PRINTABLE_BINARY_MUTE_STATS="$muted" "$roc_cli" > "$scratch/stdout" 2> "$scratch/stderr"
+	if [[ "$?" != 0 || "$(<"$scratch/stdout")" != x || -s "$scratch/stderr" ]]; then
+		printf 'FAIL: retained Roc muting must preserve work without diagnostics\n' >&2
+		exit 1
+	fi
+done
+printf 'PASS: retained Roc CLI, container, parity and muting contracts\n'
