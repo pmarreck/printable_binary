@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Reuse exact built products; every independent build-verification phase is required.
+set -u
+while IFS= builtin read -r inherited_function; do
+	builtin unset -f -- "$inherited_function" || exit 1
+done < <(builtin compgen -A function)
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then exit 1; fi
+if [[ "$#" != 4 ]]; then
+	printf 'Usage: test-build-prepared HOST_PRODUCTS CROSS_PRODUCTS CANONICAL_PRODUCTS PROFILE_PRODUCTS\n' >&2
+	exit 2
+fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+host_products=$1 cross_products=$2 canonical_products=$3 profile_products=$4
+source "$repo_root/tests/cli/group-runner.bash"
+if [[ -v PB_TEST_JOBS ]]; then
+	jobs=$PB_TEST_JOBS
+else
+	jobs=${NIX_BUILD_CORES:-8}
+	[[ "$jobs" =~ ^[0-9]+$ ]] || exit 2
+	if [[ "${#jobs}" -gt 1 || "$jobs" == 0 || "$jobs" == 9 ]]; then jobs=8; fi
+fi
+scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$scratch"' EXIT
+run_phase() {
+	local phase_root
+	phase_root="$(mktemp -d "$scratch/$1.XXXXXXXX")" || return 1
+	export HOME="$phase_root/home" TMPDIR="$phase_root/tmp"
+	export XDG_CONFIG_HOME="$phase_root/config" XDG_DATA_HOME="$phase_root/data"
+	export XDG_STATE_HOME="$phase_root/state" XDG_CACHE_HOME="$phase_root/cache"
+	export XDG_RUNTIME_DIR="$phase_root/runtime"
+	mkdir -p "$HOME" "$TMPDIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" \
+		"$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" || return 1
+	case "$1" in
+		regressions) "$BASH" "$repo_root/tests/test_build_all" ;;
+		products) "$BASH" "$repo_root/tests/integration/test-built-products" "$host_products" "$cross_products" "$canonical_products" ;;
+		profiles) "$BASH" "$repo_root/tests/integration/test-built-profiles" "$profile_products" ;;
+		*) return 2 ;;
+	esac
+}
+pb_run_test_groups "$jobs" "$scratch" run_phase regressions products profiles

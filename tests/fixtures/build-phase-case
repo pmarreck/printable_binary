@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Process adapter for the three prepared-build verification phases.
+set -u
+name="$(basename "$0")" || exit 1
+case "$name:$#" in test_build_all:0|test-built-products:3|test-built-profiles:1) ;; *) exit 23 ;; esac
+if [[ "$#" == 0 ]]; then
+	: > "${BUILD_PHASE_CALLS:?}/$name"
+else
+	printf '%s\0' "$@" > "${BUILD_PHASE_CALLS:?}/$name" || exit 1
+fi
+if [[ "$name" == "${BUILD_PHASE_FAIL:-}" ]]; then
+	printf 'controlled %s failure\n' "$name" >&2
+	exit 7
+fi

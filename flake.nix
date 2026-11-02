@@ -482,9 +482,12 @@
             src = runtimeSource;
             nativeBuildInputs = with pkgs; [ bash coreutils gawk luajit python3 xxd hexdump ];
             buildPhase = ''
+              patchShebangs tests/fixtures/build-suite-case
               bash tests/unit/test-cli-group-runner
               bash tests/unit/test-cli-case-inventory
               bash tests/unit/test-runtime-runner
+              bash tests/unit/test-build-suite-driver
+              bash tests/unit/test-build-prepared-driver
               patchShebangs tests/fixtures/fail-first-codec-call bin/printable-binary-luajit
               bash tests/integration/test-shared-suite-failure "$PWD/bin/printable-binary-luajit"
             '';
@@ -945,16 +948,14 @@
             nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit python3 xxd hexdump ];
             buildPhase = ''
               patchShebangs tests/fixtures
-              bash ./tests/test_build_all || exit 1
               test -x ${printableBinaryApe}/bin/printable-binary-ape.com || exit 1
-              bash ./tests/integration/test-built-products ${allPackages.allImplementations} ${pkgs.linkFarm "printable-binary-zig-cross-products" (map (pf: {
+              bash ./tests/cli/test-build-prepared ${allPackages.allImplementations} ${pkgs.linkFarm "printable-binary-zig-cross-products" (map (pf: {
                 name = pf;
                 path = buildProducts."build-zig-${pf}-ReleaseFast";
               }) [ "linux-amd64" "linux-arm64" "macos-arm64" "mswin-amd64" "mswin-arm64" ])} ${pkgs.linkFarm "printable-binary-canonical-products" (map (row: {
                 name = row.implementation;
                 path = canonicalPackage buildProducts."${row.package}-ReleaseFast" row;
-              }) (builtins.filter (row: row.platform == platform) matrixRows))} || exit 1
-              bash ./tests/integration/test-built-profiles ${pkgs.linkFarm "printable-binary-host-profiles" (pkgs.lib.concatMap (profile: map (row: {
+              }) (builtins.filter (row: row.platform == platform) matrixRows))} ${pkgs.linkFarm "printable-binary-host-profiles" (pkgs.lib.concatMap (profile: map (row: {
                 name = "${profile}/${row.implementation}";
                 path = buildProducts."${row.package}-${profile}";
               }) (builtins.filter (row: row.platform == platform) matrixRows)) [ "ReleaseSafe" "Debug" ])} || exit 1

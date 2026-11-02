@@ -21,6 +21,8 @@ let
 			bash tests/unit/test-cli-group-runner || exit 1
 			bash tests/unit/test-cli-case-inventory || exit 1
 			bash tests/unit/test-runtime-runner || exit 1
+			bash tests/unit/test-build-suite-driver || exit 1
+			bash tests/unit/test-build-prepared-driver || exit 1
 			bash tests/integration/test-shared-suite-failure "$PWD/bin/printable-binary-luajit" || exit 1
 		'';
 		test-docs-benchmark-contract = ''

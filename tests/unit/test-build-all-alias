@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# The compatibility entrypoint delegates its full host scope and arguments.
+set -u
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then exit 1; fi
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || exit 1
+test_root="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$test_root"' EXIT
+cp "$repo_root/build-all" "$test_root/build-all" || exit 1
+cp "$repo_root/tests/fixtures/record-build-command" "$test_root/build" || exit 1
+chmod +x "$test_root/build-all" "$test_root/build" || exit 1
+export TEST_COMMAND_LOG="$test_root/arguments"
+if bash "$test_root/build-all" --debug && cmp -s "$TEST_COMMAND_LOG" <(printf '%s\0' --all-impls --debug); then
+	printf 'PASS: build-all delegates to the complete host implementation scope and preserves flags\n'
+	exit 0
+fi
+printf 'FAIL: build-all did not preserve its scope and arguments\n' >&2
+exit 1

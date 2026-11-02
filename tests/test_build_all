@@ -1,32 +1,48 @@
 #!/usr/bin/env bash
-# Build configuration and the one-way build-all alias contract.
-
+# Independent build regressions share a bounded scheduler, never mutable state.
 set -u
-
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-bash "$repo_root/tests/unit/test-build-config" || exit "$?"
-bash "$repo_root/tests/unit/test-test-entrypoint" || exit "$?"
-bash "$repo_root/tests/unit/test-source-availability" || exit "$?"
-bash "$repo_root/tests/unit/test-raw-alphabet" || exit "$?"
-bash "$repo_root/tests/unit/test-benchmark-entrypoint" || exit "$?"
-bash "$repo_root/tests/unit/test-build-matrix" || exit "$?"
-bash "$repo_root/tests/integration/test-build-publication" || exit "$?"
-bash "$repo_root/tests/integration/test-build-driver" || exit "$?"
-bash "$repo_root/tests/integration/test-native-c-graph" || exit "$?"
-bash "$repo_root/tests/integration/test-output-ignore" || exit "$?"
-bash "$repo_root/tests/integration/test-benchmark-products" || exit "$?"
-test_root="$(mktemp -d)" || exit 1
-trap 'rm -rf "$test_root"' EXIT
-
-cp "$repo_root/build-all" "$test_root/build-all" || exit 1
-cp "$repo_root/tests/fixtures/record-build-command" "$test_root/build" || exit 1
-chmod +x "$test_root/build-all" "$test_root/build" || exit 1
-export TEST_COMMAND_LOG="$test_root/arguments"
-
-if bash "$test_root/build-all" --debug && cmp -s "$TEST_COMMAND_LOG" <(printf '%s\0' --all-impls --debug); then
-	printf 'PASS: build-all delegates to the complete host implementation scope and preserves flags\n'
-	exit 0
+while IFS= builtin read -r inherited_function; do
+	builtin unset -f -- "$inherited_function" || exit 1
+done < <(builtin compgen -A function)
+if [[ -z "${NIX_BUILD_TOP:-}${TEST_WORKSPACE:-}" ]]; then
+	printf 'FAIL: run build regressions through ./test or run-isolated\n' >&2
+	exit 1
 fi
-
-printf 'FAIL: build-all did not preserve its scope and arguments\n' >&2
-exit 1
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || exit 1
+source "$repo_root/tests/cli/group-runner.bash"
+if [[ -v PB_TEST_JOBS ]]; then
+	jobs=$PB_TEST_JOBS
+else
+	jobs=${NIX_BUILD_CORES:-8}
+	[[ "$jobs" =~ ^[0-9]+$ ]] || exit 2
+	if [[ "${#jobs}" -gt 1 || "$jobs" == 0 || "$jobs" == 9 ]]; then jobs=8; fi
+fi
+programs=(
+	unit/test-build-config unit/test-test-entrypoint unit/test-source-availability
+	unit/test-raw-alphabet unit/test-benchmark-entrypoint unit/test-build-matrix
+	integration/test-build-publication integration/test-build-driver
+	integration/test-native-c-graph integration/test-output-ignore
+	integration/test-benchmark-products unit/test-build-all-alias
+)
+groups=()
+declare -A program_by_group=()
+for program in "${programs[@]}"; do
+	name=${program##*/}
+	name=${name//-/_}
+	groups+=("$name")
+	program_by_group[$name]=$program
+done
+suite_scratch="$(mktemp -d)" || exit 1
+trap 'rm -rf -- "$suite_scratch"' EXIT
+run_build_regression() {
+	local group_root
+	group_root="$(mktemp -d "$suite_scratch/$1.XXXXXXXX")" || return 1
+	export HOME="$group_root/home" TMPDIR="$group_root/tmp"
+	export XDG_CONFIG_HOME="$group_root/config" XDG_DATA_HOME="$group_root/data"
+	export XDG_STATE_HOME="$group_root/state" XDG_CACHE_HOME="$group_root/cache"
+	export XDG_RUNTIME_DIR="$group_root/runtime"
+	mkdir -p "$HOME" "$TMPDIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" \
+		"$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" || return 1
+	"$BASH" "$repo_root/tests/${program_by_group[$1]}"
+}
+pb_run_test_groups "$jobs" "$suite_scratch" run_build_regression "${groups[@]}"

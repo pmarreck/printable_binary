@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Record a private build-test request before returning a controlled failure.
+set -u
+name="$(basename "$0")" || exit 1
+case "$name" in
+	build)
+		[[ "$#" == 2 ]] || exit 23
+		printf '%s\0' "$@" > "${TEST_COMMAND_LOG:?}" || exit 1
+		name=legacy_alias ;;
+	test-build-all-alias) [[ "$#" == 0 ]] || exit 23; name=legacy_alias ;;
+	*) [[ "$#" == 0 ]] || exit 23 ;;
+esac
+printf '%s\n' "$name" >> "${BUILD_SUITE_CALLS:?}/$name" || exit 1
+if [[ "$name" == "${BUILD_SUITE_FAIL:-}" ]]; then
+	printf 'controlled %s failure\n' "$name" >&2
+	exit 7
+fi

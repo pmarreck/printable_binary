@@ -8,7 +8,7 @@ case "$profile" in Debug|ReleaseSafe|ReleaseFast) ;; *) exit 2 ;; esac
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
-for byte in $(seq 0 255); do printf "\\$(printf '%03o' "$byte")"; done > "$scratch/raw"
+LC_ALL=C awk 'BEGIN { for (byte=0; byte<256; byte++) printf "%c", byte }' > "$scratch/raw" || exit 1
 LC_ALL=C awk 'NF && $0 !~ /^##/ { printf "%s", $1 }' "$repo_root/character_map.txt" > "$scratch/encoded"
 if [[ "$profile" == Debug ]]; then
 	printf '\033[33mDEBUG BUILD!\033[0m\n' > "$scratch/expected-stderr"

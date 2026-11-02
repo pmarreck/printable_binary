@@ -127,27 +127,78 @@ check 'the original build finishes during a competing attempt' test "$rc" = 0
 check 'a second build cannot acquire an active publication lock' test "$(<"$scratch/overlap.status")" != 0
 overlap=0
 
+# Scope aliases exercise controller policy through recording selection/publication
+# ports. Real switching, locking, failures and filesystem adapters stay above and
+# in test-build-publication/test-built-products; do not replay them for every alias.
+(
+failures=0
+scope_selections="$scratch/scope-selections"
+scope_publications="$scratch/scope-publications"
+scope_canonical_selected=''
+declare -A expected_variants=()
+while IFS='|' read -r impl pf variant _rest; do
+	case "$impl" in ''|'#'*) continue ;; esac
+	expected_variants["$impl|$pf"]=$variant
+done < "$repo_root/build-support/implementations"
+pb_select_product() {
+	[[ "$#" == 6 ]] || return 23
+	local root=$1 impl=$2 pf=$3 variant=$4 profile=$5 product=$6 key="$2|$3"
+	[[ "$root" == "$project" && "$profile" == ReleaseFast &&
+		"$variant" == "${expected_variants[$key]:-missing}" &&
+		"$product" == ".nix-out/$pf/$profile/$impl."*/product && -d "$root/$product" ]] || return 23
+	printf 'build-%s-%s-%s\n' "$impl" "$pf" "$profile" >> "$scope_selections" || return 1
+	if [[ "$impl" == zig && "$pf" == linux-amd64 ]]; then scope_canonical_selected=$product; fi
+}
+pb_publish() {
+	[[ "$#" == 6 && "$1" == "$project" && "$2" == linux-amd64 &&
+		"$3" == linux-amd64 && "$4" == zig && -n "$scope_canonical_selected" &&
+		"$5" == "$scope_canonical_selected" && "$6" == printable-binary ]] || return 23
+	printf '%s\0' "$@" >> "$scope_publications"
+}
+check_scope_ports() {
+	local expected actual
+	local -a publications=()
+	expected="$(jq -r .package "$calls" | LC_ALL=C sort)" || return 1
+	actual="$(LC_ALL=C sort "$scope_selections")" || return 1
+	check 'every built product has exactly one matching selection request' test "$actual" = "$expected"
+	mapfile -d '' -t publications < "$scope_publications"
+	check 'only the canonical host command is published exactly once' test "${#publications[@]}" = 6
+}
 for flags in '--all-impls' '--all-implementations' '--all-impls --all-implementations'; do
 	printf '' > "$calls"
+	printf '' > "$scope_selections"
+	printf '' > "$scope_publications"
 	read -r -a arguments <<< "$flags"
 	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
 	check 'all-implementation scope succeeds' test "$rc" = 0
 	check 'all-implementation scope is a complete, duplicate-free host set' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = $'build-ape-linux-amd64-ReleaseFast\nbuild-c-linux-amd64-ReleaseFast\nbuild-ffi-linux-amd64-ReleaseFast\nbuild-luajit-linux-amd64-ReleaseFast\nbuild-node-linux-amd64-ReleaseFast\nbuild-roc-linux-amd64-ReleaseFast\nbuild-rust-linux-amd64-ReleaseFast\nbuild-wasm-linux-amd64-ReleaseFast\nbuild-zig-linux-amd64-ReleaseFast'
+	check_scope_ports || failures=$((failures + 1))
 done
 for flags in '--all-plats' '--all-platforms --all-plats'; do
 	printf '' > "$calls"
+	printf '' > "$scope_selections"
+	printf '' > "$scope_publications"
 	read -r -a arguments <<< "$flags"
 	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
 	check 'all-platform scope succeeds' test "$rc" = 0
 	check 'all-platform scope is the declared canonical target set' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = $'build-zig-linux-amd64-ReleaseFast\nbuild-zig-linux-arm64-ReleaseFast\nbuild-zig-macos-arm64-ReleaseFast\nbuild-zig-mswin-amd64-ReleaseFast\nbuild-zig-mswin-arm64-ReleaseFast'
+	check_scope_ports || failures=$((failures + 1))
 done
 for flags in '--all' '--all-plats --all-impls' '--all-implementations --all-platforms'; do
 	printf '' > "$calls"
+	printf '' > "$scope_selections"
+	printf '' > "$scope_publications"
 	read -r -a arguments <<< "$flags"
 	capture pb_build_main "$project" linux-amd64 "${arguments[@]}"
 	check 'both scopes succeed' test "$rc" = 0
 	check 'both scopes cover exactly the 30 declared combinations' test "$(wc -l < "$calls")" = 30
+	check 'both scopes match the complete independent package set without duplicates' test "$(jq -r .package "$calls" | LC_ALL=C sort)" = "$(LC_ALL=C sort "$repo_root/tests/fixtures/all-build-packages.txt")"
+	check_scope_ports || failures=$((failures + 1))
 done
+exit "$failures"
+)
+scope_status=$?
+if [[ "$scope_status" != 0 ]]; then failures=$((failures + 1)); fi
 
 for flag in --impl= --platform= --profile=unknown --backend=unknown; do
 	printf '' > "$calls"

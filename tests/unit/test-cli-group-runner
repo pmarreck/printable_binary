@@ -12,6 +12,33 @@ if [[ ! -f "$repo_root/tests/cli/group-runner.bash" ]]; then
 fi
 source "$repo_root/tests/cli/group-runner.bash"
 
+if [[ "${1:-}" == --rolling ]]; then
+	scratch="${2:?private rolling-pool directory}"
+	mkfifo "$scratch/started" "$scratch/release-alpha" "$scratch/release-beta" || exit 1
+	exec {started}<>"$scratch/started"
+	rolling_group() {
+		printf 'S\n' >> "$scratch/events"
+		printf '%s\n' "$1" >&"$started"
+		case "$1" in alpha|beta) IFS= read -r release < "$scratch/release-$1" || return 1 ;; esac
+		printf 'E\n' >> "$scratch/events"
+	}
+	pb_run_test_groups 2 "$scratch" rolling_group alpha beta gamma delta > "$scratch/stdout" 2> "$scratch/stderr" &
+	pool=$!
+	IFS= read -r -u "$started" first || exit 1
+	IFS= read -r -u "$started" second || exit 1
+	case "$first $second" in 'alpha beta'|'beta alpha') ;; *) exit 1 ;; esac
+	printf 'continue\n' > "$scratch/release-beta"
+	# Gamma must start before alpha is released, not at the next wave boundary.
+	IFS= read -r -u "$started" third || exit 1
+	[[ "$third" == gamma ]] || exit 1
+	printf 'continue\n' > "$scratch/release-alpha"
+	IFS= read -r -u "$started" fourth || exit 1
+	[[ "$fourth" == delta ]] || exit 1
+	wait "$pool" || exit 1
+	awk '$0 == "S" {n++; starts++; if (n > maximum) maximum=n} $0 == "E" {n--; if (n < 0) bad=1} END {exit !(n == 0 && starts == 4 && maximum == 2 && !bad)}' "$scratch/events"
+	exit "$?"
+fi
+
 if [[ "${1:-}" == --barrier ]]; then
 	scratch="${2:?private barrier directory}"
 	mkfifo "$scratch/started" || exit 1
@@ -84,6 +111,11 @@ mkdir "$scratch/barrier" || exit 1
 # worker can finish until the controller observes both starts and releases them.
 if ! timeout 5 bash "${BASH_SOURCE[0]}" --barrier "$scratch/barrier" > "$scratch/stdout" 2> "$scratch/stderr"; then
 	printf 'FAIL: two groups must overlap without exceeding the two-worker limit\n' >&2
+	failures=$((failures + 1))
+fi
+mkdir "$scratch/rolling" || exit 1
+if ! timeout 5 bash "${BASH_SOURCE[0]}" --rolling "$scratch/rolling" > "$scratch/stdout" 2> "$scratch/stderr"; then
+	printf 'FAIL: a free worker slot must start queued work before an older job finishes\n' >&2
 	failures=$((failures + 1))
 fi
 [[ "$failures" == 0 ]] || exit 1

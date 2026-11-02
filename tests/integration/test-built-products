@@ -10,14 +10,38 @@ source "$repo_root/build-support/matrix.bash"
 source "$repo_root/build-support/publication.bash"
 source "$repo_root/build-support/driver.bash"
 source "$repo_root/build-support/benchmark-products.bash"
+source "$repo_root/tests/cli/group-runner.bash"
+if [[ -v PB_TEST_JOBS ]]; then
+	jobs=$PB_TEST_JOBS
+else
+	jobs=${NIX_BUILD_CORES:-8}
+	[[ "$jobs" =~ ^[0-9]+$ ]] || exit 2
+	if [[ "${#jobs}" -gt 1 || "$jobs" == 0 || "$jobs" == 9 ]]; then jobs=8; fi
+fi
 host="$(pb_host_platform "$(uname -s)" "$(uname -m)")" || exit 1
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
-for byte in $(seq 0 255); do printf "\\$(printf '%03o' "$byte")"; done > "$scratch/raw"
+LC_ALL=C awk 'BEGIN { for (byte=0; byte<256; byte++) printf "%c", byte }' > "$scratch/raw" || exit 1
 LC_ALL=C awk 'NF && $0 !~ /^##/ { printf "%s", $1 }' "$repo_root/character_map.txt" > "$scratch/encoded"
 failures=0
 rows="$(pb_build_plan "$repo_root/build-support/implementations" zig "$host" all host)" || exit 1
-while IFS='|' read -r impl pf variant target builder package entry format; do
+fixture_raw="$scratch/raw" fixture_encoded="$scratch/encoded" product_scratch=$scratch
+declare -A host_rows=()
+host_groups=()
+while IFS= read -r row; do
+	IFS='|' read -r impl _rest <<< "$row"
+	host_rows[$impl]=$row
+	host_groups+=("$impl")
+done <<< "$rows"
+check_host_product() {
+	local impl pf variant target builder package entry format product portable_target scratch failures=0
+	IFS='|' read -r impl pf variant target builder package entry format <<< "${host_rows[$1]}"
+	scratch="$(mktemp -d "$product_scratch/$impl.XXXXXXXX")" || return 1
+	export HOME="$scratch/home" TMPDIR="$scratch/tmp"
+	export XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data"
+	export XDG_STATE_HOME="$scratch/state" XDG_CACHE_HOME="$scratch/cache" XDG_RUNTIME_DIR="$scratch/runtime"
+	mkdir -p "$HOME" "$TMPDIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" \
+		"$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" || return 1
 	product="$host_products/$impl"
 	portable_target=''
 	case "$impl" in ape|wasm) portable_target="$target" ;; esac
@@ -54,21 +78,23 @@ while IFS='|' read -r impl pf variant target builder package entry format; do
 	if ! pb_verify_product "$product" "$impl" "$pf" "$variant" "$target" ReleaseFast "$entry" "$format" nix > "$scratch/stdout" 2> "$scratch/stderr"; then
 		printf 'FAIL: real %s product header/metadata: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
 		failures=$((failures + 1))
-		continue
+		return 1
 	fi
-	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$product/bin/$entry" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/encoded"; then
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$product/bin/$entry" < "$fixture_raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$fixture_encoded"; then
 		printf 'FAIL: installed %s encoder differs from the canonical 256-byte mapping\n' "$impl" >&2
 		failures=$((failures + 1))
 	fi
-	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$product/bin/$entry" -d < "$scratch/encoded" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/raw"; then
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$product/bin/$entry" -d < "$fixture_encoded" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$fixture_raw"; then
 		printf 'FAIL: installed %s decoder differs from the canonical 256-byte mapping\n' "$impl" >&2
 		failures=$((failures + 1))
 	fi
-	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$canonical_products/$impl/bin/printable-binary" < "$scratch/raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/encoded"; then
+	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$canonical_products/$impl/bin/printable-binary" < "$fixture_raw" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$fixture_encoded"; then
 		printf 'FAIL: canonical Nix command for %s differs from its installed implementation\n' "$impl" >&2
 		failures=$((failures + 1))
 	fi
-done <<< "$rows"
+	[[ "$failures" == 0 ]]
+}
+pb_run_test_groups "$jobs" "$scratch" check_host_product "${host_groups[@]}" || failures=$((failures + 1))
 if ! bash "$repo_root/tests/integration/test-shared-suite-failure" "$host_products/zig/bin/printable-binary" > "$scratch/stdout" 2> "$scratch/stderr"; then
 	printf 'FAIL: shared-suite exit-status control: %s\n' "$(<"$scratch/stderr")" >&2
 	failures=$((failures + 1))
