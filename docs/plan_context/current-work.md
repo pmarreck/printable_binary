@@ -715,6 +715,25 @@ recorder processes. Those failed/incomplete observations remain in history.
 Packaged-crate/runtime and other-language preparation still need completion
 before claiming a fresh complete-suite budget pass.
 
+Rust artifact retention shipped as
+`9ba1ab407a19d3181a64751da52bf9174d13ec0b`. The fetched remote matched; all 27
+exact-commit Mechatron Prime CI targets passed in 36 seconds, finishing
+2026-11-02T08:36:45Z. Runtime check source filtering is the next feedback-latency
+increment: the unfiltered source failed both the path-set classifier and a real
+store-identity comparison between fixtures differing only in PLAN content.
+The corrected filter excludes seven exact workflow/documentation paths, not
+classes of Markdown or whole directories. It retains selectors, entrypoints,
+Nix expressions/lock, ignore rules, all fixtures and future files. The full
+documentation check keeps its unfiltered source. Focused classifier/identity
+checks pass. Evaluating all 26 actual check derivations before and after a
+context-only edit changed exactly `test-docs-benchmark-contract`; the other 25
+derivations were identical. The complete local gate passed, including the
+unchanged tag-probe safety and real-mutant checks. Its roughly 88-second
+tag-probe build phase remains compilation, not execution. This removes
+avoidable invalidation, not fresh test execution. The next actionable increment
+is retaining exact native CLI/domain-test artifacts for compilation-free
+contract execution; full-suite runtime remains unqualified.
+
 Test-cleanup TDD reproduced the FFI smoke's leaked statistics and accepted
 stage defects after extracting the existing shell workflow without errexit.
 The old hexlike pipeline could hide an encoder failure behind a successful

@@ -77,7 +77,7 @@ nix build .#build-rust-linux-amd64-ReleaseFast
 nix build .#build-zig-mswin-arm64-ReleaseSafe
 ```
 
-`default` follows `CANONICAL_IMPL` and always exposes `bin/printable-binary`. Implementation packages retain their distinct command names. The selector and specifically listed non-runtime workflow files do not enter compiler source closures. Canonization and plan updates therefore avoid unrelated recompilation; checks still see the complete test/documentation source. Source-hash regressions verify that metadata-only changes preserve the filtered source and code changes alter it. Existing `printableBinaryZig`, `printableBinaryNative`, `printableBinaryRoc`, `printableBinaryApe`, and `printableBinaryWasm` attributes select host ReleaseFast products where declared.
+`default` follows `CANONICAL_IMPL` and always exposes `bin/printable-binary`. Implementation packages retain their distinct command names. The selector and specifically listed non-runtime workflow files do not enter compiler source closures. Canonization and plan updates therefore avoid unrelated recompilation. Runtime checks separately exclude seven exact workflow/documentation paths, but retain selectors, entrypoints, Nix inputs, fixtures and future files; the documentation check keeps the full source. Path-set and source-hash regressions verify both filters. A cached check remains evidence of its earlier execution, not a fresh runtime measurement. Existing `printableBinaryZig`, `printableBinaryNative`, `printableBinaryRoc`, `printableBinaryApe`, and `printableBinaryWasm` attributes select host ReleaseFast products where declared.
 
 ## Implementation details
 

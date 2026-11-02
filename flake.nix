@@ -284,6 +284,11 @@
           }
         ) (builtins.filter (line: line != "" && !(pkgs.lib.hasPrefix "#" line))
           (pkgs.lib.splitString "\n" (builtins.readFile ./build-support/implementations)));
+        runtimeSource = pkgs.lib.cleanSourceWith {
+          name = "printable-binary-runtime-source";
+          src = ./.;
+          filter = import ./build-support/runtime-source-filter.nix ./.;
+        };
         packageSource = pkgs.lib.cleanSourceWith {
           name = "printable-binary-source";
           src = ./.;
@@ -457,11 +462,11 @@
           assert (import ./tests/nix/source-identity-contract.nix);
           allPackages;
 
-        checks = {
+        checks = assert (import ./tests/nix/runtime-source-contract.nix); {
           test-tag-recognition = tagRecognition;
           test-cli-groups = pkgs.stdenvNoCC.mkDerivation {
             name = "test-cli-groups";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ bash coreutils gawk luajit python3 xxd hexdump ];
             buildPhase = ''
               bash tests/unit/test-cli-group-runner
@@ -503,7 +508,7 @@
 
           test-c = pkgs.stdenv.mkDerivation {
             name = "test-c";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump ];
             buildPhase = ''
               clang -O2 -Wall -Wextra -I. -o test-c-two-byte-domain tests/unit/test-c-two-byte-domain.c
@@ -517,7 +522,7 @@
 
           test-zig-unit = pkgs.stdenv.mkDerivation {
             name = "test-zig-unit";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = [ zig pkgs.nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -542,7 +547,7 @@
 
           test-zig = pkgs.stdenv.mkDerivation {
             name = "test-zig";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig python3 xxd hexdump nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -558,7 +563,7 @@
           # remains explicitly selectable for comparison and fallback.
           test-cli-layout = pkgs.stdenvNoCC.mkDerivation {
             name = "test-cli-layout";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -575,7 +580,7 @@
 
           test-js = pkgs.stdenv.mkDerivation {
             name = "test-js";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ nodejs_24 python3 xxd hexdump ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -590,7 +595,7 @@
           # full implementation, including the common stderr throughput contract.
           test-lua = pkgs.stdenv.mkDerivation {
             name = "test-lua";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ luajit python3 xxd hexdump ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -605,7 +610,7 @@
           # in so the printable-binary-file.json container is MFIC-guarded in CI.
           test-js-unit = pkgs.stdenv.mkDerivation {
             name = "test-js-unit";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ nodejs_24 allPackages.textualSizeStudy ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -619,7 +624,7 @@
           # by IMPLEMENTATION_TO_TEST; one check per impl as they gain -C/--container.
           test-container-node = pkgs.stdenv.mkDerivation {
             name = "test-container-node";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -632,7 +637,7 @@
           # Container (.pbf.json) for the Zig CLI (issue #1).
           test-container-zig = pkgs.stdenv.mkDerivation {
             name = "test-container-zig";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -645,7 +650,7 @@
           # Cross-impl container differential: Node <-> Zig must agree (issue #1).
           test-container-cross = pkgs.stdenv.mkDerivation {
             name = "test-container-cross";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig clang nodejs_24 luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -664,7 +669,7 @@
           # Container (.pbf.json) for the C FFI CLI — dogfoods the FFI (pb_crc32 etc).
           test-container-ffi = pkgs.stdenv.mkDerivation {
             name = "test-container-ffi";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig clang ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -678,7 +683,7 @@
           # Container (.pbf.json) for the standalone C CLI (issue #1).
           test-container-c = pkgs.stdenv.mkDerivation {
             name = "test-container-c";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ clang ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -691,7 +696,7 @@
           # Container (.pbf.json) for the Lua reference CLI (issue #1).
           test-container-lua = pkgs.stdenv.mkDerivation {
             name = "test-container-lua";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -705,7 +710,7 @@
           # (Rust encode must be byte-identical to Zig over all 256 bytes).
           test-rust = pkgs.stdenv.mkDerivation {
             name = "test-rust";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = [ rustToolchain zig pkgs.jq pkgs.nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -773,7 +778,7 @@
           # seeded multi-byte stream (exercises 2/3-byte glyph boundaries).
           test-elixir = pkgs.stdenv.mkDerivation {
             name = "test-elixir";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ elixir zig luajit ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -805,7 +810,7 @@
           # lib and round-trip through it (encode/decode + hexlike).
           test-ffi-cli = pkgs.stdenv.mkDerivation {
             name = "test-ffi-cli";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig clang ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -831,7 +836,7 @@
           # tests/leak_test and leak_harness.c for extended RSS diagnostics.
           test-leak = pkgs.stdenv.mkDerivation {
             name = "test-leak";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ clang ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -861,7 +866,7 @@
           # character_map.txt must reproduce the committed character_map_embedded.h.
           test-embedded-map-sync = pkgs.stdenv.mkDerivation {
             name = "test-embedded-map-sync";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ luajit ];
             buildPhase = ''
               cp character_map_embedded.h committed.h
@@ -877,7 +882,7 @@
           # Roc's currently patched native platform is Linux-only.
           test-roc = pkgs.stdenvNoCC.mkDerivation {
             name = "test-roc";
-            src = ./.;
+            src = runtimeSource;
             strictDeps = true;
             nativeBuildInputs = with pkgs; [ hexdump jq luajit python3 xxd zig rocCompiler ];
             buildPhase = ''
@@ -909,7 +914,7 @@
 
           test-build-all = pkgs.stdenvNoCC.mkDerivation {
             name = "test-build-all";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit python3 xxd hexdump ];
             buildPhase = ''
               patchShebangs tests/fixtures
@@ -940,7 +945,7 @@
           # leading underscore). See tests/test_module_no_ffi_symbols.
           test-no-ffi-symbols = pkgs.stdenv.mkDerivation {
             name = "test-no-ffi-symbols";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ zig binutils ];
             buildPhase = ''
               export HOME=$TMPDIR
@@ -951,7 +956,7 @@
 
           test-ape = pkgs.stdenvNoCC.mkDerivation {
             name = "test-ape";
-            src = ./.;
+            src = runtimeSource;
             nativeBuildInputs = with pkgs; [ cosmoccBin coreutils python3 xxd hexdump bash ];
             buildPhase = ''
               export PATH=${cosmoccBin}/bin:$PATH
