@@ -1318,6 +1318,50 @@ availability, use the exact prepared artifact and unchanged limits for one
 complete retry, preserving the first over-budget record. Do not keep retrying
 until a convenient result appears, waive the budget or remove CLI cases.
 
+The owner approved coordinating that window on 2026-11-02 at 13:22 EST,
+retaining the no-cancellation constraint. The infrastructure coordination
+request was delivered durably. The infrastructure coordinator resumed and replied
+at 13:33 EST: neither installed CI nor local build admission supports a drain-only,
+automatically expiring pause. The deployed halt action stops active workers rather
+than only deferring new admissions. An empty queue does not make a read-then-halt
+sequence safe against a concurrent claim. No admission policy was changed,
+running work was not interrupted and the single qualification retry remains
+unused. The coordinator also reported an active storage scrub, 16% system-wide
+I/O full pressure and 95% temporary-filesystem utilization; an idle CI queue alone
+would not establish a quiet environment. Guarded temporary cleanup is being
+handled by the infrastructure coordinator, not this project. Next action requires
+separate authority to implement and verify a bounded drain-only admission control,
+then confirmation that storage and temporary-space pressure have cleared. Do not
+substitute halt or treat the coordinator's reply as a measurement window.
+
+At 13:35 EST the owner authorized asking the infrastructure agent to implement
+and verify that automatically expiring, drain-only admission pause. Coordination
+now depends on the infrastructure project's verified deployment and an explicit
+ready/expiry agreement, not further approval for that work. Existing admitted jobs
+must continue, queued jobs must remain intact, and expiration/restoration must not
+depend on the requesting agent remaining alive. The measurement must still use
+the original prepared artifact, exact test inventory and unchanged resource
+limits; the qualification retry remains unused pending readiness.
+
+The infrastructure coordinator acknowledged the authorization at 13:37 EST and
+recorded ownership, next actions and acceptance boundaries in its own plan. Its
+next implementation step is isolated failing race, ownership, expiry and retry
+controls. No deployed command protocol or active hold exists yet. Guarded cleanup
+had reduced temporary-filesystem utilization to 82%, but cleanup and scrub
+completion were not established. This acknowledgment is not readiness: await
+verified deployment evidence and agree on the bounded window before executing.
+
+After a power interruption, the existing conversation resumed at 20:01 EST.
+Repository inspection found the same pushed commit and only the two pending
+planning/context edits; the original prepared runtime artifact was still present.
+The recovery note was acknowledged durably, and the superseded power notices
+were handled recoverably. No in-memory process state or previously negotiated
+admission window was assumed to survive. Temporary-filesystem utilization had
+fallen to 1%, but system load was high after restart. A fresh readiness request
+was sent to the infrastructure coordinator before any timing retry; normal idle
+CI admission was not interpreted as an exclusive quiet window. The retry remains
+unused while verified deployment and post-restart load assessment are pending.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

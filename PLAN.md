@@ -22,6 +22,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Final verification and shipping
 
+- [x] Recover the existing session after the power interruption, acknowledge the recovery note, preserve pending edits and revalidate the prepared artifact before resuming coordination (done 2026-11-02 20:04 EST; context: docs/plan_context/current-work.md).
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 		- [ ] Should Roc unit checks remain explicitly mixed compile/test timing, or should test-artifact export be a separate compiler task? Its pinned compiler caches verdicts and publishes no test executable; owner decision pending.
@@ -32,5 +33,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 				- [x] Replace 512 all-byte fixture forks per shared CLI run with a one-process generator checked against literal hex; complete original CLI inventories and full gate pass (done 2026-11-02 10:34 EST; context: docs/plan_context/current-work.md).
 				- [x] Replace controller scope dummy artifacts with exact recording ports; all real adapter tests remain, full gate passes and controlled old/new/new/old execution takes 3.46/2.65/2.60/3.48 seconds (done 2026-11-02 11:26 EST; commit 1a3a3df; context: docs/plan_context/current-work.md).
 				- [x] Split all 42 mapping cases into three ordered groups of fourteen; original CLI inventories and full gate pass, and controlled old/new/new/old Node execution takes 3.97/1.68/1.74/3.86 seconds (done 2026-11-02 11:26 EST; commit 1a3a3df; context: docs/plan_context/current-work.md).
-	- [ ] Await permission to coordinate a quiet timing window without canceling running jobs, then perform one complete qualification retry under unchanged resource limits; five-second execution is not yet qualified (context: docs/plan_context/current-work.md).
+	- [x] May a quiet timing window be coordinated? Answer: Yes, defer new admissions without canceling running jobs; preserve the existing resource limits (approved 2026-11-02 13:22 EST; context: docs/plan_context/current-work.md).
+	- [ ] Coordinate the approved quiet timing window, then perform one complete qualification retry with exact prepared artifacts and unchanged limits; await the infrastructure coordinator's verified admission control and cleared storage pressure before using the retry (context: docs/plan_context/current-work.md).
+		- [x] May the infrastructure agent implement and verify a bounded, automatically expiring drain-only admission pause? Answer: Yes, without interrupting running jobs; existing resource limits remain unchanged (approved 2026-11-02 13:35 EST; context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.
