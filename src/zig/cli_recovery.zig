@@ -27,6 +27,13 @@ pub fn summaryLine(allocator: std.mem.Allocator, value: Stats) ![]u8 {
 		.warnings = value.warnings, .warnings_omitted = value.warnings_omitted }, .{});
 }
 
+pub fn incompleteLine(allocator: std.mem.Allocator, warnings: []const []const u8, omitted: usize) ![]u8 {
+	return std.json.Stringify.valueAlloc(allocator, .{ .type = "summary", .complete = false,
+		.invalid_events = @as(?usize, null), .invalid_bytes = @as(?usize, null),
+		.input_bytes = @as(?usize, null), .output_bytes = @as(?usize, null),
+		.warnings = warnings, .warnings_omitted = omitted }, .{});
+}
+
 pub const Sink = struct {
 	io: std.Io,
 	ndjson: bool,

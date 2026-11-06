@@ -2,7 +2,7 @@
 # Malformed bytes must not alias canonical glyphs through masked table indexes.
 set -u
 binary="${1:?Usage: test-decoder-malformed-utf8 PREPARED_CLI}"
-expected_status=${2:-0}
+expected_status=${2:-1}
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 for input in $'\xe2\x07\xa5' $'\xe2\x87\x25' $'\xc2\x36' $'\x82\xb6' $'\xe2\xb6'; do

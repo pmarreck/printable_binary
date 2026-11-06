@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync, openSync, closeSync } from 'node:fs';
 
 const [binary, implementation = 'codec'] = process.argv.slice(2);
 assert(binary, 'prepared CLI required');
@@ -25,6 +26,7 @@ const check = (input, output, events, args = []) => {
 		assert(actualHex === expectedHex, 'exact offending wire bytes');
 	}
 	assert.equal(summary.type, 'summary');
+	assert.equal(summary.complete, true, 'successful recovery reports complete totals');
 	assert.equal(summary.invalid_events, events.length);
 	assert.equal(summary.invalid_bytes, events.reduce((n, event) => n + event.input_length, 0));
 	assert.equal(summary.input_bytes, input.length);
@@ -52,7 +54,89 @@ if (['Rust', 'Zig'].includes(implementation)) {
 	check(Buffer.from('\uf000A'), Buffer.from('\uf000A'), [error(0, 0, 'ef8080')], ['--textual', '--untagged']);
 	check(Buffer.from('\n"'), Buffer.from('\n"'), [error(0, 0, '0a22')], ['--textual', '--untagged']);
 }
-if (implementation === 'Zig') {
+if (['Zig', 'FFI', 'C', 'Ape', 'WASM', 'Node', 'LuaJIT', 'Roc'].includes(implementation)) {
 	check(Buffer.from([65, 65, 65, 65, 255, 128, 66]), Buffer.from([255, 128, 66]), [error(4, 0, 'ff80')], ['--start', '4']);
+}
+
+// Independent word-matching oracle, not the production UTF-8/table algorithm.
+// Fixed xorshift32 seed makes failures reproducible without external entropy.
+const words = readFileSync(new URL('../../character_map.txt', import.meta.url), 'utf8')
+	.split('\n').filter(line => line.trim() && !line.startsWith('##'))
+	.map(line => Buffer.from(line.trim().split(/\s+/)[0]));
+assert.equal(words.length, 256);
+const reference = (wire, spaces, strip) => {
+	const output = [], events = [];
+	let source = 0, start = null;
+	const close = () => {
+		if (start) events.push(error(start.input, start.output, wire.subarray(start.input, source).toString('hex'), output.length - start.output));
+		start = null;
+	};
+	while (source < wire.length) {
+		const byte = wire[source];
+		const ignored = strip && [32, 9, 13, 10].includes(byte) && !(spaces && byte === 32);
+		const mapped = spaces && byte === 32 ? 32 : words.findIndex(word => wire.subarray(source, source + word.length).equals(word));
+		if (ignored || mapped >= 0) {
+			close();
+			if (ignored) source++;
+			else { output.push(mapped); source += spaces && byte === 32 ? 1 : words[mapped].length; }
+		} else {
+			start ??= { input: source, output: output.length };
+			output.push(byte); source++;
+		}
+	}
+	close();
+	return { output: Buffer.from(output), events };
+};
+let state = 0x7062_7431;
+const next = () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return state >>> 0; };
+const pieces = [];
+for (let i = 0; i < 768; i++) {
+	const value = next();
+	pieces.push(value & 1 ? words[value >>> 8 & 255] : Buffer.from([value & 255, value >>> 16 & 255]));
+}
+pieces.push(Buffer.from('中👩\u200d🚀\uf000'), Buffer.from([0xf4, 0x90, 0x80, 0x80, 0xe0, 0xc2, 0xb6, 0, 32, 255]));
+const wire = Buffer.concat(pieces);
+for (const spaces of [false, true]) for (const strip of [false, true]) {
+	const expected = reference(wire, spaces, strip);
+	check(wire, expected.output, expected.events, [...(spaces ? ['--spaces'] : []), ...(strip ? ['--strip-whitespace'] : [])]);
+}
+
+const fatal = args => {
+	const result = spawnSync(binary, ['--ndjson-stderr', ...args], {
+		input: Buffer.from('A'), maxBuffer: 1024 * 1024,
+		env: { ...process.env, PRINTABLE_BINARY_MUTE_STATS: '1' },
+	});
+	assert.equal(result.status, 1, `${implementation}: fatal command ${JSON.stringify(args)} must fail: ${result.stderr}`);
+	assert.equal(result.stdout.length, 0);
+	const records = result.stderr.toString('utf8').trimEnd().split('\n').map(line => JSON.parse(line));
+	const summary = records.pop();
+	assert.equal(summary.type, 'summary');
+	assert.equal(summary.complete, false);
+	for (const field of ['invalid_events', 'invalid_bytes', 'input_bytes', 'output_bytes']) assert.equal(summary[field], null);
+	assert(records.length > 0);
+	for (const record of records) { assert.equal(record.type, 'error'); assert.equal(record.fatal, true); }
+};
+fatal(['--recovery-test-invalid-option']);
+fatal(['-d', '.']);
+fatal(['-d', '--hexlike']);
+fatal(['--container']);
+fatal(['--passthrough']);
+fatal(['--strict']);
+const human = spawnSync(binary, ['-d'], { input: Buffer.from([255, 128]),
+	env: { ...process.env, PRINTABLE_BINARY_MUTE_STATS: '1' } });
+assert.equal(human.status, 1);
+assert.deepEqual(human.stdout, Buffer.from([255, 128]));
+assert.match(human.stderr.toString('utf8'), /input_offset=0 output_offset=0 input_length=2 output_length=2.*hex=ff80/);
+assert.match(human.stderr.toString('utf8'), /Invalid input: 1 events, 2 bytes/);
+if (process.platform === 'linux') {
+	const full = openSync('/dev/full', 'w');
+	try {
+		for (const stdio of [['pipe', full, 'pipe'], ['pipe', 'pipe', full]]) {
+			const result = spawnSync(binary, ['-d', '--ndjson-stderr'], {
+				input: Buffer.from('A'), stdio, env: { ...process.env, PRINTABLE_BINARY_MUTE_STATS: '1' },
+			});
+			assert.equal(result.status, 1, `${implementation}: failed output or diagnostic sink must be fatal`);
+		}
+	} finally { closeSync(full); }
 }
 console.log(`PASS: ${implementation} recovery events, dual spans, exact hex, NDJSON and saturated exit status`);

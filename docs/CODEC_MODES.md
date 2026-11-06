@@ -198,8 +198,9 @@ codec dispatch, quoting context and ingress guards need integration tests.
 
 ### Recovery versus canonical validation
 
-The Zig and Rust CLIs automatically recover invalid encoded input. This is an
-error-handling policy, not an expansion of either canonical target language.
+All bytewise CLI implementations automatically recover invalid encoded input;
+Zig and Rust additionally implement textual recovery. This is an error-handling
+policy, not an expansion of either canonical target language.
 Strict textual library validators remain available. `--strict` CLI decoding
 uses the same recovery diagnostics but emits no decoded payload when errors
 occur. No recovery path guesses replacement bytes or inserts U+FFFD.
@@ -231,10 +232,13 @@ events. Fatal framing or I/O errors produce an incomplete failure summary,
 not fabricated complete counts. Full hex is streamed in fixed-size chunks;
 events need not be retained. Input/output codec buffering is still whole-value.
 
-The remaining language adapters are not yet reporting-equivalent. Their rollout
-is tracked in PLAN; this section describes the implemented Zig/Rust contract,
-not a claim that every CLI already supports the flags. Opt-in repair suggestions
-remain deferred and never authorize automatic repair.
+The same malformed-wire CLI matrix checks Zig, Rust, C, APE, WASM, the C-FFI
+adapter, Node, LuaJIT and Roc. Elixir exposes decoder/report/strict library
+entry points rather than a CLI; its compile-time sigil explicitly ignores
+wrapping whitespace. This policy exception does not alter the raw decoder's
+default whitespace handling. Structured diagnostics are for raw PB operations,
+not the separate container or hexlike formats. Opt-in repair suggestions remain
+deferred and never authorize automatic repair.
 
 [The size study](TEXTUAL_SIZE_STUDY.md) implements both an explicit malformed-
 byte escape and the selected compact fallback construction, with canonical

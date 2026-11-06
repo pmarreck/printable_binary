@@ -32,6 +32,9 @@
 #include "printable_binary.h"
 #include "container_json.h"
 #include "platform_identity.h"
+#include "cli_diagnostics.h"
+#define fprintf pb_cli_fprintf
+#define perror pb_cli_perror
 
 #ifdef __EMSCRIPTEN__
 // Standalone WASM builds shouldn't depend on host-provided env functions.
@@ -134,6 +137,7 @@ typedef struct {
     bool no_double_encode_check;
     bool hexlike_mode;
     bool container_mode;
+    bool strict;
 } options_t;
 
 static void parse_format_spec(options_t *opts, const char *format_str) {
@@ -276,7 +280,6 @@ static void buffer_prepare_return(buffer_t *buf) {
 }
 
 // Free buffer memory
-#ifndef __EMSCRIPTEN__
 static void buffer_free(buffer_t *buf) {
     if (buf->data && !buf->uses_stack) {
         free(buf->data);
@@ -288,7 +291,6 @@ static void buffer_free(buffer_t *buf) {
     buf->size = 0;
     buf->capacity = 0;
 }
-#endif
 
 // Helper function to create UTF-8 sequence
 static utf8_sequence_t make_utf8(const char *bytes) {
@@ -1009,68 +1011,88 @@ static buffer_t encode_data(const uint8_t *input, size_t input_len, const option
     return output;
 }
 
-// Decode printable UTF-8 back to binary
-static buffer_t decode_data(const uint8_t *input, size_t input_len, bool spaces_mode) {
-    buffer_t output;
-    // Start with reasonable initial size, will grow as needed
-    buffer_init(&output, INITIAL_BUFFER_SIZE);
+/* Exact glyph lookup. Unknown bytes are resynchronized by the caller. */
+static int mapped_byte(const uint8_t *input, size_t len, size_t *width) {
+    size_t count = utf8_sequence_length(input[0]);
+    if (count > len) return -1;
+    *width = count;
+    if (count == 1) return decode_1byte[input[0]];
+    if (count == 2) {
+        if (input[0] < 0xc2 || input[0] > 0xdf || (input[1] & 0xc0) != 0x80) return -1;
+        return decode_2byte[input[0] & 0x1f][input[1] & 0x3f];
+    }
+    uint64_t key = make_key(input, (uint8_t)count);
+    size_t left = 0, right = decode_entry_count;
+    while (left < right) {
+        size_t mid = left + (right - left) / 2;
+        if (decode_entries[mid].key == key) return decode_entries[mid].value;
+        if (decode_entries[mid].key < key) left = mid + 1; else right = mid;
+    }
+    return -1;
+}
 
-    size_t i = 0;
-    while (i < input_len) {
-        if (spaces_mode && input[i] == ' ') {
-            buffer_append_char(&output, ' ');
+typedef struct {
+    buffer_t bytes;
+    size_t invalid_events, invalid_bytes;
+    int error_code;
+} decoded_report_t;
+
+static int close_decode_event(decoded_report_t *report, const uint8_t *input,
+    size_t *start, size_t end, size_t output_start, size_t input_base,
+    pb_decode_event_fn emit, void *context)
+{
+    if (*start == SIZE_MAX) return 0;
+    pb_decode_event_t event = {
+        .input_offset = input_base + *start, .output_offset = output_start,
+        .input_length = end - *start, .output_length = report->bytes.size - output_start,
+        .bytes = input + *start
+    };
+    if (emit && emit(context, &event) != 0) return 2;
+    report->invalid_events++;
+    report->invalid_bytes += event.input_length;
+    *start = SIZE_MAX;
+    return 0;
+}
+
+/* Pure byte policy with a borrowed, fallible event sink. No error list or I/O. */
+static decoded_report_t decode_report_data(const uint8_t *input, size_t len,
+    bool spaces, bool strip, size_t input_base, pb_decode_event_fn emit, void *context)
+{
+    decoded_report_t report = {0};
+    if ((input == NULL && len != 0) || len > SIZE_MAX - input_base) {
+        report.error_code = 1;
+        return report;
+    }
+    buffer_init(&report.bytes, INITIAL_BUFFER_SIZE);
+    size_t start = SIZE_MAX, output_start = 0, i = 0;
+    while (i < len) {
+        uint8_t byte = input[i];
+        bool ignored = strip && (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n') && !(spaces && byte == ' ');
+        size_t width = 1;
+        int mapped = spaces && byte == ' ' ? ' ' : mapped_byte(input + i, len - i, &width);
+        if (ignored || mapped >= 0) {
+            report.error_code = close_decode_event(&report, input, &start, i, output_start, input_base, emit, context);
+            if (report.error_code) break;
+            if (ignored) i++;
+            else { buffer_append_char(&report.bytes, (char)(uint8_t)mapped); i += width; }
+        } else {
+            if (start == SIZE_MAX) { start = i; output_start = report.bytes.size; }
+            buffer_append_char(&report.bytes, (char)byte);
             i++;
-            continue;
-        }
-        uint8_t first_byte = input[i];
-        uint8_t seq_len = utf8_sequence_length(first_byte);
-
-        // Ensure we don't go beyond input
-        if (i + seq_len > input_len) {
-            seq_len = input_len - i;
-        }
-
-        bool matched = false;
-
-        /* O(1) direct lookup for 1- and 2-byte glyphs (the common cases);
-         * 3-byte glyphs fall back to binary search over the ~28 entries. */
-        if (seq_len == 1) {
-            int16_t v = decode_1byte[first_byte];
-            if (v >= 0) { buffer_append_char(&output, (char)(uint8_t)v); i += 1; matched = true; }
-        } else if (seq_len == 2 && first_byte >= 0xc2 && first_byte <= 0xdf &&
-                   (input[i + 1] & 0xc0) == 0x80) {
-            int16_t v = decode_2byte[first_byte & 0x1F][input[i + 1] & 0x3F];
-            if (v >= 0) { buffer_append_char(&output, (char)(uint8_t)v); i += 2; matched = true; }
-        } else if (seq_len == 3) {
-            uint64_t key = make_key(input + i, 3);
-            size_t left = 0, right = decode_entry_count;
-            while (left < right) {
-                size_t mid = left + (right - left) / 2;
-                if (decode_entries[mid].key == key) {
-                    buffer_append_char(&output, decode_entries[mid].value);
-                    i += 3;
-                    matched = true;
-                    break;
-                } else if (decode_entries[mid].key < key) {
-                    left = mid + 1;
-                } else {
-                    right = mid;
-                }
-            }
-        }
-
-        // If we didn't match any character in our map, pass through the UTF-8 character intact
-        if (!matched) {
-            // Pass through the entire UTF-8 character
-            for (uint8_t j = 0; j < seq_len; j++) {
-                buffer_append_char(&output, (char)input[i + j]);
-            }
-            i += seq_len;
         }
     }
+    if (!report.error_code)
+        report.error_code = close_decode_event(&report, input, &start, i, output_start, input_base, emit, context);
+    if (report.error_code) buffer_free(&report.bytes);
+    else buffer_prepare_return(&report.bytes);
+    return report;
+}
 
-    buffer_prepare_return(&output);
-    return output;
+/* Legacy internal byte-only surface shares exactly the recovery byte policy. */
+static buffer_t decode_data(const uint8_t *input, size_t len, bool spaces) {
+    decoded_report_t report = decode_report_data(input, len, spaces, false, 0, NULL, NULL);
+    if (report.error_code) { fprintf(stderr, "Error: decoding failed\n"); exit(1); }
+    return report.bytes;
 }
 
 // Apply formatting to encoded output
@@ -1204,47 +1226,6 @@ static buffer_t read_file(const char *filename) {
     return buf;
 }
 
-// Clean input for decoding (optionally strip whitespace)
-static buffer_t clean_decode_input(const buffer_t *input, bool spaces_mode, bool strip_whitespace) {
-    buffer_t output;
-    // Start with reasonable initial size, will grow as needed
-    buffer_init(&output, INITIAL_BUFFER_SIZE);
-
-    bool warned = false;
-    char prev1 = '\0';
-    char prev2 = '\0';
-
-    for (size_t i = 0; i < input->size; i++) {
-        char c = input->data[i];
-
-        if (spaces_mode && !warned && c == ' ' && prev1 == ' ' && (prev2 == '\n' || prev2 == '\r')) {
-            fprintf(stderr, "Warning: spaces after newline are treated as data in --spaces mode\n");
-            warned = true;
-        }
-
-        // Only strip whitespace if strip_whitespace is enabled
-        if (strip_whitespace) {
-            if (c == '\n' || c == '\r') {
-                // skip
-            } else if (c == '\t') {
-                // skip
-            } else if (c == ' ' && !spaces_mode) {
-                // skip
-            } else {
-                buffer_append_char(&output, c);
-            }
-        } else {
-            // Pass through everything
-            buffer_append_char(&output, c);
-        }
-
-        prev2 = prev1;
-        prev1 = c;
-    }
-
-    buffer_prepare_return(&output);
-    return output;
-}
 
 static const char *resolve_program_name(const char *argv0) {
 #ifdef PRINTABLE_BINARY_HELP_NAME
@@ -1263,6 +1244,8 @@ static void print_usage(const char *program_name) {
     fprintf(stderr, "Usage: %s [options] [file]\n", program_name);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -d, --decode       Decode mode (default is encode mode)\n");
+    fprintf(stderr, "  --strict           Withhold decoded output if input errors occur\n");
+    fprintf(stderr, "  --ndjson-stderr    JSON input errors and final summary (raw PB mode)\n");
     fprintf(stderr, "  -p, --passthrough  Pass input to stdout unchanged, send encoded data to stderr\n");
     fprintf(stderr, "\nEncoding modes:\n");
     fprintf(stderr, "  -X, --hexlike    Hexlike mode: passthrough ASCII stays as-is, all other bytes\n");
@@ -1287,7 +1270,7 @@ static void print_usage(const char *program_name) {
     fprintf(stderr, "\nEncode detection:\n");
     fprintf(stderr, "  --no-double-encode-check   Skip detection of already-encoded input\n");
     fprintf(stderr, "\nDecode options:\n");
-    fprintf(stderr, "  -S, --strip-whitespace     Strip whitespace before decoding (for formatted input)\n");
+    fprintf(stderr, "  -S, --strip-whitespace     Ignore transport whitespace without joining glyph fragments\n");
     fprintf(stderr, "\nFormat and output options:\n");
     fprintf(stderr, "  -f[=NxM], --format[=NxM]   Format output in groups\n");
     fprintf(stderr, "                              Default: 8x10 (groups of 8 chars, 10 groups per line)\n");
@@ -1300,7 +1283,7 @@ static void print_usage(const char *program_name) {
     fprintf(stderr, "If no file is specified, input is read from stdin.\n");
     fprintf(stderr, "Output is written to stdout, unless --passthrough is used.\n\n");
     fprintf(stderr, "PrintableBinary encodes every byte (quotes, backslashes, tabs, CR/LF, etc.) into visible, but clearly related, glyphs.\n");
-    fprintf(stderr, "You can format the encoded text freely—spaces, newlines, indentation—because the decoder ignores real whitespace.\n");
+    fprintf(stderr, "Use --strip-whitespace to ignore ASCII transport whitespace between complete glyphs. Unknown bytes are preserved and reported.\n");
     fprintf(stderr, "With --spaces, literal spaces are treated as data (and we warn on indented lines).\n");
     fprintf(stderr, "Examples: SPACE→␣, TAB→⇥, CR→⏎, LF→↧, single quote→ʼ, double quote→ˮ, backslash→⧷.\n");
     fprintf(stderr, "This avoids shell-escaping surprises while keeping context obvious.\n\n");
@@ -1463,6 +1446,10 @@ static options_t parse_options(int argc, char *argv[]) {
 
             if (long_option_equals(name, name_len, "decode")) {
                 opts.decode_mode = true;
+            } else if (long_option_equals(name, name_len, "strict")) {
+                opts.strict = true;
+            } else if (long_option_equals(name, name_len, "ndjson-stderr")) {
+                /* Enabled before parsing so argument errors are JSON too. */
             } else if (long_option_equals(name, name_len, "passthrough")) {
                 opts.passthrough_mode = true;
             } else if (long_option_equals(name, name_len, "spaces")) {
@@ -1745,7 +1732,8 @@ static void run_leak_loop(long seconds) {
 #endif /* !__EMSCRIPTEN__ */
 
 int main(int argc, char *argv[]) {
-    pb_announce_debug_build();
+    pb_cli_diagnostics_init(argc, argv);
+    if (!pb_cli_diag.ndjson) pb_announce_debug_build();
 #ifndef __EMSCRIPTEN__
     // Leak-test mode (tests/leak_test): long-lived encode/decode loop, then exit.
     for (int ai = 1; ai < argc; ai++) {
@@ -1758,6 +1746,11 @@ int main(int argc, char *argv[]) {
 #endif /* !__EMSCRIPTEN__ */
     // Parse command line options first (needed for help/usage)
     options_t opts = parse_options(argc, argv);
+    if ((pb_cli_diag.ndjson && ((opts.passthrough_mode && !opts.decode_mode) || opts.container_mode || opts.hexlike_mode)) ||
+        (opts.strict && (!opts.decode_mode || opts.container_mode || opts.hexlike_mode))) {
+        fprintf(stderr, "Error: diagnostic/strict options require ordinary PB mode without passthrough\n");
+        return 1;
+    }
     if (opts.about_mode) {
 #if defined(__COSMOPOLITAN__)
         pb_print_about("APE");
@@ -1766,21 +1759,25 @@ int main(int argc, char *argv[]) {
 #else
         pb_print_about("C");
 #endif
+        pb_cli_diag.complete = true;
         return 0;
     }
     const char *program_display_name = resolve_program_name(argv[0]);
-    bool stats_enabled = !env_var_truthy(getenv("PRINTABLE_BINARY_MUTE_STATS"));
+    bool stats_enabled = !pb_cli_diag.ndjson && !env_var_truthy(getenv("PRINTABLE_BINARY_MUTE_STATS"));
 
     // Initialize encoding/decoding tables (after options so argv[0] is available)
     init_tables(argv[0]);
 
     if (opts.help_mode) {
+        pb_cli_diag.help = pb_cli_diag.ndjson;
         print_usage(program_display_name);
+        pb_cli_diag.complete = true;
         return 0;
     }
 
     if (opts.mappings_mode != MAPPINGS_NONE) {
         print_mappings(opts.mappings_mode);
+        pb_cli_diag.complete = true;
         return 0;
     }
 
@@ -1796,6 +1793,7 @@ int main(int argc, char *argv[]) {
     // Read input
     buffer_t input = read_file(opts.input_file);
     size_t input_bytes_read = input.size;
+    size_t input_base = 0, invalid_events = 0, invalid_bytes = 0, output_bytes = 0;
 
     // Apply byte range if specified
     if (opts.has_range_start || opts.has_range_end) {
@@ -1826,6 +1824,7 @@ int main(int argc, char *argv[]) {
                 memmove(input.data, input.data + start, new_size);
             }
             input.size = new_size;
+            input_base = (size_t)start;
         }
     }
 
@@ -1938,21 +1937,28 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Decoded result size: %zu bytes\n", decoded.size);
             }
 
-            fwrite(decoded.data, 1, decoded.size, stdout);
+            output_bytes = fwrite(decoded.data, 1, decoded.size, stdout);
             free(decoded.data);
         } else {
             // Standard PB decode path
-            // Clean input and decode
-            buffer_t cleaned = clean_decode_input(&input, opts.spaces_mode, opts.strip_whitespace);
-            if (stats_enabled) {
-                if (opts.spaces_mode) {
-                    fprintf(stderr, "After whitespace removal (tabs/newlines/CR): %zu bytes\n", cleaned.size);
-                } else {
-                    fprintf(stderr, "After whitespace removal: %zu bytes\n", cleaned.size);
+            if (opts.spaces_mode && opts.strip_whitespace) {
+                for (size_t i = 2; i < input.size; i++) {
+                    if (input.data[i] == ' ' && input.data[i - 1] == ' ' &&
+                        (input.data[i - 2] == '\n' || input.data[i - 2] == '\r')) {
+                        fprintf(stderr, "Warning: spaces after newline are treated as data in --spaces mode\n");
+                        break;
+                    }
                 }
             }
-
-            buffer_t decoded = decode_data((uint8_t*)cleaned.data, cleaned.size, opts.spaces_mode);
+            decoded_report_t report = decode_report_data((uint8_t*)input.data, input.size,
+                opts.spaces_mode, opts.strip_whitespace, input_base, pb_cli_event, stderr);
+            if (report.error_code) {
+                fprintf(stderr, "Error: decode report failed\n");
+                free(input.data);
+                return 1;
+            }
+            buffer_t decoded = report.bytes;
+            invalid_events = report.invalid_events; invalid_bytes = report.invalid_bytes;
             if (stats_enabled) {
                 fprintf(stderr, "Decoded result size: %zu bytes\n", decoded.size);
             }
@@ -1963,9 +1969,8 @@ int main(int argc, char *argv[]) {
             }
 
             // Write decoded data to stdout
-            fwrite(decoded.data, 1, decoded.size, stdout);
+            if (!opts.strict || invalid_events == 0) output_bytes = fwrite(decoded.data, 1, decoded.size, stdout);
 
-            free(cleaned.data);
             free(decoded.data);
         }
     } else {
@@ -1985,7 +1990,7 @@ int main(int argc, char *argv[]) {
             if (opts.passthrough_mode) {
                 fwrite(encoded.data, 1, encoded.size, stderr);
             } else {
-                fwrite(encoded.data, 1, encoded.size, stdout);
+                output_bytes = fwrite(encoded.data, 1, encoded.size, stdout);
             }
 
             free(encoded.data);
@@ -2029,7 +2034,7 @@ int main(int argc, char *argv[]) {
                 fwrite(output->data, 1, output->size, stderr);
             } else {
                 // Send encoded data to stdout
-                fwrite(output->data, 1, output->size, stdout);
+                output_bytes = fwrite(output->data, 1, output->size, stdout);
             }
 
             free(encoded.data);
@@ -2039,10 +2044,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    fflush(stdout);
+    if (fflush(stdout) != 0 || ferror(stdout)) {
+        fprintf(stderr, "Error: writing decoded/encoded output failed\n");
+        free(input.data);
+        return 1;
+    }
     fflush(stderr);
     print_input_throughput(stats_enabled, input_bytes_read, throughput_started_at);
+    int diagnostic_status = pb_cli_summary(invalid_events, invalid_bytes, input_bytes_read, output_bytes, throughput_now_seconds() - throughput_started_at);
     free(input.data);
-    return 0;
+    if (diagnostic_status) return 1;
+    return invalid_events < 255 ? (int)invalid_events : 255;
 }
 #endif /* PRINTABLE_BINARY_NO_MAIN */

@@ -1546,6 +1546,80 @@ and its exact-commit CI result passed all 28 targets. Remaining work is reportin
 parity for C/APE/WASM, the C-FFI adapter, Node, LuaJIT, Roc and Elixir, then the
 final shared matrix and shipping checks. No held feature has been resumed.
 
+### Cross-language recovery integration, 2026-11-06
+
+All nine CLI implementations now share automatic bytewise recovery, exact
+event/invalid-byte totals, dual input/output byte spans, full original hex,
+status saturation at 255, strict output withholding and structured diagnostics.
+Elixir has matching decoder/report/strict library surfaces rather than a CLI;
+its compile-time sigil explicitly opts into wrapping-whitespace stripping.
+Zig and Rust additionally retain textual recovery and separate strict canonical
+validators. No encoded alphabet, persisted textual v1 spelling or deferred
+framing/excerpt policy changed.
+
+The native C kernel is shared by the separately built C, APE and WASM products.
+The Zig C ABI adds a borrowed-span callback and reporting result with explicit
+ownership and callback-failure cleanup. Node now decodes raw byte buffers rather
+than lossy UTF-8 strings, and rejects lone UTF-16 surrogates in string adapters.
+Lua events expose the original string and a separate one-based slice index;
+their public offsets remain zero-based. Roc exposes a bounded pure event cursor.
+No production decoder accumulates all error events or a proportional hex string.
+
+The complete shared CLI matrix now includes an independent exhaustive
+word-matching oracle over a fixed-seed mixed glyph/binary/Unicode wire fixture,
+all four spaces/stripping combinations, one-byte resynchronization, maximal
+events, exact spans/hex, range bases, strict withholding, status 255 and complete
+versus incomplete JSON summaries. Full-hex boundaries include 255, 256, 257 and
+65,539 invalid bytes. Required read/stdout/stderr failure controls complement
+library sink-failure checks. Every installed Debug and ReleaseSafe product also
+has a JSON-purity assertion, in addition to its retained mapping/banner checks.
+
+Independent review reproduced two C/FFI false-success paths: final diagnostic
+summary writes were unchecked, and the inherited FFI reader treated read errors
+as EOF. New required controls failed before both fixes and passed afterward.
+The full gate additionally caught a removed Node Debug packaging anchor, a Roc
+Debug banner contaminating JSON, and encode-side --strict being accepted by
+Roc. Those defects were fixed with their coverage retained. Help/examples now
+state that transport-whitespace skipping requires --strip-whitespace and never
+splices partial glyphs. Structured diagnostics cover raw PB, not containers or
+hexlike operations; unsupported combinations are explicit failures.
+
+The complete local ./test gate passed at 16:53 EST on 2026-11-06: 98 flake
+checks, all 26 prepared runtime groups, installed host safety/debug products,
+all five Zig target headers, existing container/differential controls, 72 Roc
+compiler-driven expectations and 20 declared Elixir cases. Foreign-system
+execution is not claimed. Roc units remain mixed compilation/execution and no
+five-second runtime qualification follows from this run. Repair suggestions,
+container metadata, CRC32 optimization and the unspecified transport remain held.
+The subsequent repeat did not remain green: concurrent prepared runtime exposed
+Node synchronous stderr writes failing after only part of the 300-event case,
+returning status 1 instead of 255. No commit was made from that failed repeat.
+The Node port is being corrected to await backpressure with bounded event/chunk
+state, with a required slow-reader regression. This known issue reopens parity
+qualification; publication and exact-commit CI must follow a new full green gate.
+
+The new deterministic Node regression pauses its stderr reader after a
+first-readable handshake while 32,768 invalid-byte/A pairs exceed pipe buffering.
+The old writer failed before release. The fix shares one iterator between the
+unchanged synchronous report API and a new asynchronous variant; the CLI awaits
+each diagnostic chunk. It keeps at most one active borrowed event/sink promise,
+not a queue of errors or promises. The slow-reader test, asynchronous sink parity,
+serialized admission and failure propagation now pass the targeted pinned Nix
+checks. The complete 98-check gate and all 26 fresh prepared runtime groups
+passed again at 17:05 EST on 2026-11-06, including the paused-reader control.
+The final repeat and exact-commit publication checks follow before shipment.
+
+### Legacy GitHub CI disabled, 2026-11-06
+
+A CI-triage request reiterated the owner's Mechatron-only policy. The legacy
+GitHub Actions workflow named CI (ID 237360640) was independently observed active,
+disabled with the GitHub CLI, and re-read as disabled_manually. The system
+pages-build-deployment workflow (ID 196960300) remains active, and the tracked
+.github/workflows/ci.yml file is unchanged. No historical workflow was deleted.
+An acknowledgment remains pending because the requester's approved durable
+delivery route is unreachable; the inbound note remains pending locally for a
+later retry. This delivery issue does not block the project build or shipment.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

@@ -25,9 +25,9 @@ This implementation allows you to view binary data directly in a terminal (it ev
 - **Visually Distinct Characters**: Each of the 256 possible byte values maps to a unique, visually distinct UTF-8 character
 - **ASCII Passthrough**: Standard printable ASCII characters (32-126) largely remain themselves for immediate recognition
 - **Shell-Safe Encoding**: Special characters that could cause shell issues are encoded with safe Unicode alternatives
-- **Single Character Width**: Each encoded representation renders as a single character wide in a monospace terminal
+- **Bytewise Scalar Mapping**: Bytewise mode emits one Unicode scalar per input byte. Display width depends on fonts; textual mode also preserves wide CJK and combining sequences.
 - **Compactness**: Uses 1–3 byte UTF-8 characters. Data with lots of printable ASCII grows only nominally — roughly **1.2×** — while data dominated by high bytes (128–255) can expand **2–3×** (each such byte becomes a 2–3 byte UTF-8 glyph)
-- **Usability**: Encoded strings are easily copyable, pastable, and printable, and resistant to whitespace incursion (newlines, indentation, line-wrapping) -- the decoder ignores inserted whitespace, so blocks survive reflow and email/chat transports
+- **Usability**: Encoded strings are copyable, pastable and printable. With `--strip-whitespace`, blocks tolerate inserted ASCII whitespace between glyphs; `--spaces` retains literal data spaces.
 - **Formatting**: Customizable output formatting with group size and line width options
 - **Binary Safety**: Preserves all binary data, including NUL bytes, when encoding and decoding
 - **Passthrough Mode**: Simultaneously outputs original binary data to stdout and encoded text to stderr for flexible processing pipelines
@@ -123,16 +123,16 @@ printable-binary --mappings | head
 printable-binary --mappings-json > mapping.json
 ./bin/printable-binary-node.js --mappings-csv > mapping.csv
 
-# Decode data (whitespace is ignored during decoding)
-echo -n "Hello,␣World﹗" | printable-binary -d
+# Decode data; add --strip-whitespace to ignore transport whitespace
+echo -n "Hello٫␣Worldǃ" | printable-binary -d
 # Output: Hello, World!
 
-# Decode formatted data (formatting is ignored)
-cat formatted_encoded.txt | printable-binary -d > original.bin
+# Decode formatted data (ignore whitespace between complete glyphs)
+cat formatted_encoded.txt | printable-binary -d --strip-whitespace > original.bin
 
 # Preserve literal whitespace (spaces, tabs, newlines stay as-is instead of being encoded)
 echo -n "A B  C" | printable-binary --spaces > encoded_with_spaces.txt
-printable-binary -d -S encoded_with_spaces.txt > restored.bin
+printable-binary -d --spaces --strip-whitespace encoded_with_spaces.txt > restored.bin
 
 # Preserve all whitespace (shorthand for -s -t -n)
 printable-binary -w input.bin > with_whitespace.txt
@@ -313,7 +313,11 @@ columns. CJK/emoji can span columns and combining marks can occupy none.
 This is whole-value decoding, not mixed excerpt parsing or bounded-memory
 streaming. The [format contract](docs/CODEC_MODES.md) specifies the guarantees.
 
-### Decode Recovery (Zig and Rust)
+### Decode Recovery
+
+All CLI implementations use automatic bytewise recovery. Zig and Rust also
+provide recovery for textual mode. The Elixir decoder exposes the same
+bytewise policy as a library; its compile-time sigil remains explicitly strict.
 
 Decode preserves malformed wire bytes and resumes one byte at a time until the
 next recognized token. Bytewise also reports valid Unicode outside its alphabet;
@@ -332,8 +336,30 @@ Use `--ndjson-stderr` for streaming JSON error records and a final
 `"type":"summary"` record with separate `invalid_events` and `invalid_bytes`
 totals. Warnings are retained separately in the summary, not counted as errors.
 An incomplete fatal operation has `complete:false`, not a successful summary.
-Repair suggestions are deferred. Other implementation adapters are being aligned
-with this contract; their current behavior is not yet equivalent.
+Repair suggestions are deferred. Structured diagnostics cover raw PB operations,
+not the separate container or hexlike formats. Unsupported flag combinations
+fail explicitly. Recovery's nonzero status is intentional even when useful
+decoded bytes were emitted; handle it when using shell pipelines.
+
+Libraries provide reports without requiring JSON formatting:
+
+| Implementation | Reporting entry point | Event delivery |
+| --- | --- | --- |
+| Zig | `recovery.decodeBytewise`, `decodeTextual`, `decodeAuto` | Fallible sink with borrowed spans |
+| Rust | `recovery::decode_bytewise`, `decode_textual`, `decode_auto` | Fallible callback with borrowed spans |
+| Zig C ABI | `pb_decode_report` | C callback; pointer plus explicit byte length |
+| JavaScript | `decodeReport`, `decodeReportAsync` | Synchronous or awaited callback with borrowed `Uint8Array` spans |
+| LuaJIT | `decode_report` | Callback with original input and one-based `input_start` |
+| Roc | `Codec.decode_report`, `Codec.next_event` | Pure report and incremental event cursor |
+| Elixir | `decode_report/2` | `on_error` callback with binary slices |
+
+Public offsets are always zero-based, including Lua's offsets; its separate
+slice index is one-based. Ordinary byte-returning library helpers discard
+reports for compatibility. Existing strict textual validators remain strict.
+Borrowing is language-specific: Roc returns cursor metadata, and Elixir's VM
+may copy binary slices. No decoder accumulates a list of all error events.
+JavaScript's asynchronous variant awaits one sink at a time so slow consumers
+apply backpressure; its CLI uses that path for pipe-safe diagnostics.
 
 ### As a Lua Library
 
@@ -459,8 +485,8 @@ For command-line parity with the LuaJIT/C tools, use the Node-based wrapper:
 # Encode (auto-detects stdin vs. file)
 ./bin/printable-binary-node.js input.bin > encoded.pbt
 
-# Decode (whitespace is ignored automatically)
-./bin/printable-binary-node.js --decode encoded.pbt > restored.bin
+# Decode (explicitly ignore transport whitespace)
+./bin/printable-binary-node.js --decode --strip-whitespace encoded.pbt > restored.bin
 
 # Apply formatting (e.g., 75 characters per line)
 ./bin/printable-binary-node.js --format 75x1 input.bin > formatted.pbt
@@ -472,7 +498,7 @@ cat input.bin | ./bin/printable-binary-node.js -f=8x10 > encoded.txt
 ./bin/printable-binary-node.js --mappings-json > map.json
 ```
 
-Supported flags: `-d/--decode`, `-f/--format NxM`, `-s/--spaces`, `--mappings*`, `-h/--help`. The CLI shares the exact encode/decode implementation with the browser UI.
+Supported flags include `-d/--decode`, `-f/--format NxM`, `-s/--spaces`, `--strip-whitespace`, `--strict`, `--ndjson-stderr`, `--mappings*`, and `-h/--help`. The CLI shares the byte codec with the browser UI and decodes raw byte buffers without lossy UTF-8 conversion.
 
 ### As an Elixir `~PB` Sigil (compile-time)
 
@@ -496,7 +522,15 @@ blob = ~PB"""
 
 # Runtime helper for dynamic (non-literal) input:
 PrintableBinary.decode(encoded)   # => raw binary
+PrintableBinary.decode_report(encoded, on_error: fn event -> IO.inspect(event); :ok end)
+# => {:ok, raw_binary, %{invalid_events: count, invalid_bytes: count}}
 ```
+
+Runtime recovery preserves malformed bytes and unknown glyphs; `decode_report`
+reports their spans. Whitespace is raw data by default; choose
+`strip_whitespace: true` explicitly when reading formatted transport. Use
+`decode_strict!/2` for strict validation. The sigil explicitly strips wrapping
+whitespace while validating its literal.
 
 Generate the glyphs for any file with the CLI (`printable-binary secret.bin`)
 and paste them between the sigil delimiters. See `elixir/` for the module and

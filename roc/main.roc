@@ -5,7 +5,6 @@ import CliOutput
 import Codec
 import Container
 import Map
-import Hexlike
 import pf.Clock
 import pf.Environment
 import pf.File
@@ -17,7 +16,10 @@ debug_banner = ""
 
 main! : List(Str) => Try({}, [Exit(I32)])
 main! = |args| {
-	write_stderr!(debug_banner.to_utf8())?
+	ndjson = List.contains(args, "--ndjson-stderr")
+	if Bool.not(ndjson) {
+		write_stderr!(debug_banner.to_utf8())?
+	}
 	match CliCore.parse(List.drop_first(args, 1)) {
 		Help => write_stdout!(help_text.to_utf8())
 		About => match Environment.build_identity!({}) {
@@ -27,31 +29,83 @@ main! = |args| {
 		MappingTable => write_stdout!(CliOutput.mapping_table(Map.glyphs, Map.ascii_names))
 		MappingJson => write_stdout!(CliOutput.mapping_json(Map.glyphs, Map.ascii_names))
 		MappingCsv => write_stdout!(CliOutput.mapping_csv(Map.glyphs, Map.ascii_names))
-		ParseError(message) => fail!("Error: ${message}\n")
-		Run(options) => run!(options)
+		ParseError(message) => {
+			if ndjson {
+				write_stderr!(CliOutput.fatal_error(message))?
+				write_stderr!(CliOutput.incomplete_summary({ messages: [], omitted: 0 }))?
+				Err(Exit(1))
+			} else {
+				fail!("Error: ${message}\n")
+			}
+		}
+		Run(options) => match run!(options) {
+			Ok(invalid_events) => if invalid_events == 0 {
+				Ok({})
+			} else {
+				Err(Exit(U64.to_i32_wrap(if invalid_events > 255 255 else invalid_events)))
+			}
+			Err(ReportedExit(code)) => {
+				if options.ndjson_stderr {
+					write_stderr!(CliOutput.incomplete_summary({ messages: [], omitted: 0 }))?
+				}
+				Err(Exit(code))
+			}
+			Err(Exit(code)) => {
+				if options.ndjson_stderr {
+					write_stderr!(CliOutput.fatal_error("input, output or runtime operation failed"))?
+					write_stderr!(CliOutput.incomplete_summary({ messages: [], omitted: 0 }))?
+				}
+				Err(Exit(code))
+			}
+			Err(Failed(code, warnings)) => {
+				if options.ndjson_stderr {
+					write_stderr!(CliOutput.fatal_error("input, output or runtime operation failed"))?
+					write_stderr!(CliOutput.incomplete_summary(warnings))?
+				}
+				Err(Exit(code))
+			}
+		}
 	}
 }
 
-run! : CliCore.Options => Try({}, [Exit(I32)])
+run! : CliCore.Options => Try(U64, [Exit(I32), ReportedExit(I32), Failed(I32, CliCore.Warnings)])
 run! = |options| {
-	if options.container and (options.tabs or options.crlf or List.len(options.preserve) > 0) {
-		fail!("Error: --tabs/--crlf/-w/--preserve are not supported with --container\n")
+	if options.strict and Bool.not(options.decode) {
+		fail_mode!("--strict requires bytewise decode mode", options.ndjson_stderr)
+	} else if (options.container or options.hexlike) and (options.strict or options.ndjson_stderr) {
+		fail_mode!("--strict/--ndjson-stderr are supported only for raw bytewise input", options.ndjson_stderr)
+	} else if options.ndjson_stderr and options.passthrough and Bool.not(options.decode) {
+		fail_mode!("--ndjson-stderr cannot be combined with --passthrough", True)
+	} else if options.container and (options.tabs or options.crlf or List.len(options.preserve) > 0) {
+		fail_mode!("--tabs/--crlf/-w/--preserve are not supported with --container", options.ndjson_stderr)
 	} else {
 		started_at = now_monotonic_nanoseconds!({})?
 		input = read_input!(options.input)?
-		write_range_warning!(CliCore.range_warning(input, options.range_start, options.range_end))?
-		if options.decode and options.spaces and options.strip_whitespace and CliCore.has_indented_spaces_after_newline(input) {
-			write_stderr!("Warning: spaces after newline are preserved by --spaces while --strip-whitespace is active\n".to_utf8())?
-		} else {
-			{}
+		warnings = CliCore.warnings(input, options, Map.glyphs)
+		match run_input!(input, options, warnings, started_at) {
+			Ok(count) => Ok(count)
+			Err(Exit(code)) => Err(Failed(code, warnings))
 		}
-		if options.container {
-			run_container!(input, options)?
-		} else {
-			run_raw!(input, options)?
-		}
-		write_input_throughput!(List.len(input), started_at)
 	}
+}
+
+run_input! : List(U8), CliCore.Options, CliCore.Warnings, U64 => Try(U64, [Exit(I32)])
+run_input! = |input, options, warnings, started_at| {
+	if Bool.not(options.ndjson_stderr) {
+		for message in warnings.messages {
+			write_stderr!("Warning: ${message}\n".to_utf8())?
+		}
+	}
+	invalid_events = if options.container {
+		run_container!(input, options)?
+		0
+	} else {
+		run_raw!(input, options, warnings)?
+	}
+	if Bool.not(options.ndjson_stderr) {
+		write_input_throughput!(List.len(input), started_at)?
+	}
+	Ok(invalid_events)
 }
 
 run_container! : List(U8), CliCore.Options => Try({}, [Exit(I32)])
@@ -76,37 +130,58 @@ run_container! = |input, options| {
 	}
 }
 
-run_raw! : List(U8), CliCore.Options => Try({}, [Exit(I32)])
-run_raw! = |input, options| {
-	if options.decode and options.passthrough {
-		write_stderr!("Warning: --passthrough ignored in decode mode\n".to_utf8())?
+run_raw! : List(U8), CliCore.Options, CliCore.Warnings => Try(U64, [Exit(I32)])
+run_raw! = |input, options, warnings| {
+	ranged = CliCore.range_input(input, options)
+	transformed = if options.decode and Bool.not(options.hexlike) {
+		Codec.decode_report(ranged.bytes, Map.glyphs, options.spaces, options.strip_whitespace)
 	} else {
-		{}
+		{ bytes: CliCore.transform(input, options, Map.glyphs), report: { invalid_events: 0, invalid_bytes: 0 } }
 	}
-	if options.decode and options.hexlike and Bool.not(Hexlike.has_prefix(input)) {
-		write_stderr!("Warning: no hexlike (Οχ) sequences found in input\n".to_utf8())?
-		if Codec.is_likely_double_encoded(input, Map.glyphs) {
-			write_stderr!("Warning: input appears to contain standard printable-binary encoding\n".to_utf8())?
-		} else {
-			{}
-		}
-	} else if options.decode and Bool.not(options.hexlike) and Hexlike.detect(input) {
-		write_stderr!("Warning: input appears to contain hexlike (Οχ) encoding; use --hexlike -d to decode\n".to_utf8())?
-	} else {
-		{}
+	if transformed.report.invalid_events > 0 {
+		write_recovery_events!(ranged.bytes, ranged.input_base, options)?
 	}
-	if Bool.not(options.decode) and Bool.not(options.hexlike) and Bool.not(options.no_double_encode_check) and Codec.is_likely_double_encoded(input, Map.glyphs) {
-		write_stderr!("Warning: input appears to be already encoded; continuing may double-encode it\n".to_utf8())?
-	} else {
-		{}
-	}
-	encoded_or_decoded = CliCore.transform(input, options, Map.glyphs)
+	withheld = options.strict and transformed.report.invalid_events > 0
 	if options.passthrough and Bool.not(options.decode) {
 		write_stdout!(input)?
-		write_stderr!(encoded_or_decoded)
-	} else {
-		write_stdout!(encoded_or_decoded)
+		write_stderr!(transformed.bytes)?
+	} else if Bool.not(withheld) {
+		write_stdout!(transformed.bytes)?
 	}
+	if options.ndjson_stderr {
+		write_stderr!(CliOutput.recovery_summary(transformed.report, List.len(input), if withheld 0 else List.len(transformed.bytes), warnings))?
+	} else if transformed.report.invalid_events > 0 {
+		write_stderr!("Invalid input: ${transformed.report.invalid_events.to_str()} events, ${transformed.report.invalid_bytes.to_str()} bytes\n".to_utf8())?
+	}
+	Ok(transformed.report.invalid_events)
+}
+
+write_recovery_events! : List(U8), U64, CliCore.Options => Try({}, [Exit(I32)])
+write_recovery_events! = |input, base, options| {
+	var $cursor = { input_offset: 0, output_offset: 0 }
+	var $done = False
+	while Bool.not($done) {
+		match Codec.next_event(input, Map.glyphs, options.spaces, options.strip_whitespace, base, $cursor) {
+			Done => { $done = True }
+			Event(event, cursor) => {
+				if options.ndjson_stderr {
+					write_stderr!(CliOutput.recovery_error_prefix(event))?
+				} else {
+					write_stderr!("Error: invalid bytewise input input_offset=${event.input_offset.to_str()} output_offset=${event.output_offset.to_str()} input_length=${event.input_length.to_str()} output_length=${event.output_length.to_str()} hex=".to_utf8())?
+				}
+				var $hex_offset = event.input_offset - base
+				end = $hex_offset + event.input_length
+				while $hex_offset < end {
+					chunk = CliOutput.recovery_hex(input, $hex_offset, end - $hex_offset)
+					write_stderr!(chunk)?
+					$hex_offset = $hex_offset + List.len(chunk) // 2
+				}
+				write_stderr!(if options.ndjson_stderr "\"}\n".to_utf8() else "\n".to_utf8())?
+				$cursor = cursor
+			}
+		}
+	}
+	Ok({})
 }
 
 read_input! : CliCore.InputSource => Try(List(U8), [Exit(I32)])
@@ -155,14 +230,10 @@ write_input_throughput! = |input_bytes, started_at| {
 	}
 }
 
-write_range_warning! : CliCore.RangeWarning => Try({}, [Exit(I32)])
-write_range_warning! = |warning| {
-	match warning {
-		NoRangeWarning => Ok({})
-		RangeEndClamped => write_stderr!("Warning: range end exceeds input size; clamping\n".to_utf8())
-		RangeStartExceedsInput => write_stderr!("Warning: range start exceeds input size\n".to_utf8())
-		EmptyRange => write_stderr!("Warning: empty range\n".to_utf8())
-	}
+fail_mode! : Str, Bool => Try(a, [Exit(I32), ReportedExit(I32)])
+fail_mode! = |message, ndjson| {
+	write_stderr!(if ndjson CliOutput.fatal_error(message) else "Error: ${message}\n".to_utf8())?
+	Err(ReportedExit(1))
 }
 
 basename : CliCore.InputSource -> Str
@@ -203,4 +274,4 @@ fail! = |message| {
 	Err(Exit(1))
 }
 
-help_text = "Usage: printable-binary-roc [OPTIONS] [INPUT]\n\nOptions:\n  -d, --decode                 Decode printable-binary input\n  -s, --spaces                 Preserve literal spaces while encoding\n  -t, --tabs                   Preserve literal tabs while encoding\n  -n, --crlf                   Preserve literal CR and LF while encoding\n  -w, --preserve-whitespace    Preserve spaces, tabs, CR, and LF\n  -P, --preserve=CHARS         Preserve selected bytes while encoding\n  -p, --passthrough            Copy original input to stdout; encoded form to stderr\n  -S, --strip-whitespace       Remove transport whitespace before decoding\n  -C, --container              Encode or decode a printable-binary-file container\n      --range START-END        Limit input to an inclusive byte range\n      --start N --end N        Set inclusive range bounds\n      --mappings               Print the character mapping table\n      --mappings-json          Print mapping data as JSON\n      --mappings-csv           Print mapping data as CSV\n      --about                  Print implementation metadata\n  -f, --format NxM          Group raw PB output (bare -f uses 8x10)\n  -X, --hexlike              Uppercase hex runs prefixed by Οχ, not ASCII 0x\n  -h, --help                   Show this help\n"
+help_text = "Usage: printable-binary-roc [OPTIONS] [INPUT]\n\nOptions:\n  -d, --decode                 Decode printable-binary input\n  -s, --spaces                 Preserve literal spaces while encoding\n  -t, --tabs                   Preserve literal tabs while encoding\n  -n, --crlf                   Preserve literal CR and LF while encoding\n  -w, --preserve-whitespace    Preserve spaces, tabs, CR, and LF\n  -P, --preserve=CHARS         Preserve selected bytes while encoding\n  -p, --passthrough            Copy original input to stdout; encoded form to stderr\n  -S, --strip-whitespace       Ignore transport whitespace tokens while decoding\n      --strict                 Withhold decoded payload on bytewise errors\n      --ndjson-stderr          Emit bytewise diagnostics as JSON lines\n  -C, --container              Encode or decode a printable-binary-file container\n      --range START-END        Limit input to an inclusive byte range\n      --start N --end N        Set inclusive range bounds\n      --mappings               Print the character mapping table\n      --mappings-json           Print mapping data as JSON\n      --mappings-csv           Print mapping data as CSV\n      --about                  Print implementation metadata\n  -f, --format NxM          Group raw PB output (bare -f uses 8x10)\n  -X, --hexlike              Uppercase hex runs prefixed by Οχ, not ASCII 0x\n  -h, --help                   Show this help\n\nRaw bytewise decoding preserves unknown bytes and exits with the invalid span count (at most 255). Diagnostics are not supported with --container or --hexlike.\n"

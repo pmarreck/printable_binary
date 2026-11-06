@@ -17,6 +17,12 @@ test "CLI textual: recovery renderers are pure and JSON escapes warnings" {
 	try std.testing.expectEqualStrings("summary", parsed.value.object.get("type").?.string);
 	try std.testing.expectEqual(@as(i64, 6), parsed.value.object.get("invalid_bytes").?.integer);
 	try std.testing.expectEqualStrings("a\"b\nc", parsed.value.object.get("warnings").?.array.items[0].string);
+	const failed = try diagnostics.incompleteLine(std.testing.allocator, &.{"a\"b\nc"}, 1);
+	defer std.testing.allocator.free(failed);
+	const failure = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, failed, .{});
+	defer failure.deinit();
+	try std.testing.expect(failure.value.object.get("invalid_events").? == .null);
+	try std.testing.expectEqualStrings("a\"b\nc", failure.value.object.get("warnings").?.array.items[0].string);
 }
 
 pub const Options = struct {

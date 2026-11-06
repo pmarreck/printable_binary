@@ -116,7 +116,7 @@ typedef enum {
 typedef enum {
     PB_DECODE_NONE = 0,              /**< Default decoding */
     PB_DECODE_SPACES_MODE = 1 << 0,  /**< Treat literal spaces as data */
-    PB_DECODE_STRIP_WS = 1 << 1      /**< Strip whitespace before decoding */
+    PB_DECODE_STRIP_WS = 1 << 1      /**< Ignore whitespace tokens without joining glyph fragments */
 } pb_decode_flags_t;
 
 /**
@@ -183,6 +183,33 @@ pb_ffi_result_t pb_decode(
     size_t input_len,
     unsigned int flags
 );
+
+/** A borrowed invalid wire span. Byte offsets are zero-based; lengths need not
+ * match. bytes has input_length bytes, NOT a NUL-terminated string. Neither the
+ * event pointer nor bytes may outlive the callback. */
+typedef struct {
+    size_t input_offset, output_offset, input_length, output_length;
+    const unsigned char *bytes;
+} pb_decode_event_t;
+
+/** Return zero to continue, nonzero to abort and release partially built output.
+ * context is caller-owned and is forwarded unchanged. NULL callback is allowed. */
+typedef int (*pb_decode_event_fn)(void *context, const pb_decode_event_t *event);
+
+typedef struct {
+    pb_ffi_result_t output;
+    size_t invalid_events, invalid_bytes;
+} pb_decode_report_t;
+
+/** Recover bytewise input with exact totals and streaming event callbacks.
+ * input_base is added to original-wire input offsets, never output offsets.
+ * On success output.error_code is zero even if invalid_events is nonzero.
+ * Fatal errors have no output; code 2 means callback failure, code 1 means
+ * invalid arguments, overflow or allocation failure. Counts are complete only
+ * on success. Release successful output with pb_free, including empty output.
+ * Available through the Zig C ABI, like pb_decode. */
+pb_decode_report_t pb_decode_report(const char *input, size_t input_len,
+    unsigned int flags, size_t input_base, pb_decode_event_fn callback, void *context);
 
 /**
  * Format encoded output into groups for readability.

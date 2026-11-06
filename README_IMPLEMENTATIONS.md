@@ -101,11 +101,18 @@ fallible sink. Their CLIs use recovery automatically, offer `--strict` to suppre
 output on errors and `--ndjson-stderr` for structured diagnostics. Strict textual
 library validators remain separate. The reporting path uses bounded token
 lookahead and no retained event list; the whole-value codec still buffers input
-and output. See [decode recovery](README.md#decode-recovery-zig-and-rust).
+and output. All bytewise CLI ports share the recovery/NDJSON matrix; see
+[decode recovery and language APIs](README.md#decode-recovery).
 
 ### C Implementation
 
 The standalone C CLI provides the full file, formatting, mapping, passthrough, and container interface. It has its own `c-out/` products. The `ffi` implementation instead exercises the Zig core through its public C ABI and retains the library and headers alongside the C CLI.
+
+C, APE and WASM share the exact-map recovery kernel and bounded diagnostic
+renderer while remaining separate built/tested implementations. The Zig-backed
+C ABI adds `pb_decode_report`, whose caller-owned callback receives borrowed
+pointer-plus-length spans. Callback failure aborts decoding and releases the
+partial result; successful results, including empty ones, use `pb_free`.
 
 ### Cosmopolitan APE
 
@@ -127,7 +134,7 @@ The compiler comes from the official Roc nightly overlay, with an immutable offi
 
 The self-contained Rust crate provides `encode`, `decode`, `encode_into`, and `decode_into`, with caller-owned buffer reuse. Their `_with_options` variants accept `EncodeOptions { spaces }` and `DecodeOptions { spaces, strip_whitespace }`; the original functions keep their raw defaults. Whitespace stripping ignores literal ASCII space, TAB, CR, and LF, except that spaces mode retains literal spaces. Encoded data glyphs still decode normally.
 
-Its stdin CLI supports `-d`/`--decode`, `-s`/`--spaces`, and `--strip-whitespace`. File arguments, formatting, mapping reports, runtime map overrides, and containers belong to the full CLIs. The build script generates tables from a crate-local mapping copy, never a repository-parent file. The complete suite compares that copy with the canonical map and builds/tests the extracted Cargo package offline.
+Its stdin CLI supports `-d`/`--decode`, `-s`/`--spaces`, `--strip-whitespace`, textual/tag selection, `--strict`, and `--ndjson-stderr`. File arguments, formatting, mapping reports, runtime map overrides, and containers belong to the full CLIs. The build script generates tables from a crate-local mapping copy, never a repository-parent file. The complete suite compares that copy with the canonical map and builds/tests the extracted Cargo package offline.
 
 The Rust library additionally exposes `textual::encode`/`textual::decode` for
 tagged Unicode-preserving values, `textual::encode_payload`/`decode_payload` for
@@ -138,7 +145,8 @@ noncanonical payload spellings. Its Unicode 16.0 policy data is inside the crate
 neither compilation nor packaged use depends on a sibling checkout or Node.
 The complete Rust check independently compares every Unicode scalar with the
 pinned Node oracle and verifies arbitrary-byte and canonicality cases. This does
-not change the raw stdin CLI or claim mixed-region/streaming support.
+not claim mixed-region/streaming support. CLI textual decoding uses the separate
+recovery API, while these library textual validators remain strict.
 
 The `test-rust` Nix result retains native unit/integration test executables,
 the raw CLI, the textual example adapter and an independent Zig reference.
@@ -199,7 +207,7 @@ preparation and runtime startup count as execution, not compilation.
 `packages.<system>.preparedRuntime` retains the exact Linux runtime bundle.
 Adding a required Nix check without an explicit runtime recipe fails evaluation.
 The complete entrypoint remains `./test`; cached results are not fresh runtime
-measurements. Roc's 61 compiler-driven unit cases remain a required mixed
+measurements. Roc's compiler-driven unit cases remain a required mixed
 prerequisite and are explicitly excluded from execution-only timing. No
 whole-project execution-budget pass follows from that exception while its
 policy remains unresolved.
@@ -214,14 +222,14 @@ consumers. Required assertions, safety-enabled unit tests and portable-runtime
 checks remain in the complete gate.
 
 The Elixir check retains its compiled application, ExUnit and doctest modules.
-It retires the compilation tree before running all seven cases and independent
+It retires the compilation tree before running every declared case and independent
 Zig differentials over all byte values and seeded binary input. The canonical
 map fixture is embedded during test compilation, not read from a stale build
 path. Fresh execution includes fixture generation and VM startup; two Erlang
 schedulers and two asynchronous cases bound its runtime concurrency.
 
 The Roc result likewise retains its CLI and independent Zig reference for
-fresh shared CLI/container, formatting-parity and muting checks. Its 61 unit
+fresh shared CLI/container, formatting-parity and muting checks. Its unit
 cases still run through the pinned compiler's `roc test`: that compiler does
 not export a test executable. Those checks remain required, but their mixed
 compilation/execution phase and cached verdicts are not runtime-only evidence.

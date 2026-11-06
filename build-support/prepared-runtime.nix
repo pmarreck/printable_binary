@@ -46,10 +46,19 @@ let
 			test ! -e ${checks.test-cli-layout.canonicalLegacyAlias} || exit 1
 			bash tests/test_cli_layout ${zig} ./bin/printable-binary-luajit || exit 1
 		'';
-		test-js = shared "./bin/printable-binary-node.js" + ''bash tests/test_node_cli_stats || exit 1'';
-		test-lua = shared "./bin/printable-binary-luajit";
+		test-js = shared "./bin/printable-binary-node.js" + ''
+			bash tests/test_node_cli_stats || exit 1
+			node tests/cli/test-recovery.mjs ./bin/printable-binary-node.js Node || exit 1
+			node tests/js/test_recovery_cli.js ./bin/printable-binary-node.js Node || exit 1
+		'';
+		test-lua = shared "./bin/printable-binary-luajit" + ''
+			node tests/cli/test-recovery.mjs ./bin/printable-binary-luajit LuaJIT || exit 1
+			node tests/js/test_recovery_cli.js ./bin/printable-binary-luajit LuaJIT || exit 1
+			luajit tests/lua/test-recovery.lua || exit 1
+		'';
 		test-js-unit = ''
 			node tests/js/test_printable_binary.js || exit 1
+			node tests/js/test_recovery.js || exit 1
 			node tests/benchmark/textual_size/test.mjs || exit 1
 		'';
 		test-container-node = container "./bin/printable-binary-node.js";
@@ -85,6 +94,7 @@ let
 		test-elixir = ''bash tests/cli/test-elixir-prepared ${native "test-elixir"} ${zig} || exit 1'';
 		test-ffi-cli = ''
 			bash tests/unit/test-ffi-smoke-driver ${ffi} ${native "test-ffi-cli"}/libexec/ffi-smoke-input || exit 1
+			node tests/cli/test-recovery.mjs ${ffi} FFI || exit 1
 		'';
 		test-leak = ''
 			bash tests/unit/test-leak-driver || exit 1
@@ -106,6 +116,7 @@ let
 		test-roc = ''
 			bash tests/unit/test-roc-toolchain-pin || exit 1
 			bash tests/cli/test-roc-prepared ${native "test-roc"} || exit 1
+			node tests/cli/test-recovery.mjs ${native "test-roc"}/bin/printable-binary-roc Roc || exit 1
 		'';
 		test-build-all = builtins.replaceStrings [ "patchShebangs tests/fixtures" ]
 			[ "# Shebangs are patched in the prepared source." ] checks.test-build-all.buildPhase;
@@ -162,6 +173,6 @@ assert !(lib.hasInfix "patchShebangs" recipes.test-build-all);
 pkgs.linkFarm "printable-binary-prepared-runtime" (
 	[ { name = "source"; path = "${bundle}/source"; }
 		{ name = "expected"; path = pkgs.writeText "runtime-case-inventory" (lib.concatMapStrings (name: identifier name + "\n") ordered); }
-		{ name = "scope"; path = pkgs.writeText "runtime-case-scope" "Runtime cases only. Roc's 61 compiler-driven unit cases remain a mixed prerequisite, not fresh execution.\n"; }
+		{ name = "scope"; path = pkgs.writeText "runtime-case-scope" "Runtime cases only. Roc's 72 compiler-driven unit cases remain a mixed prerequisite, not fresh execution.\n"; }
 	] ++ map (name: { name = "cases/${identifier name}"; path = caseScript name; }) names
 )

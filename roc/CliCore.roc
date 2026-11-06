@@ -10,6 +10,8 @@ CliCore := {}.{
 		tabs: False,
 		crlf: False,
 		strip_whitespace: False,
+		strict: False,
+		ndjson_stderr: False,
 		preserve: [],
 		container: False,
 		hexlike: False,
@@ -23,6 +25,38 @@ CliCore := {}.{
 
 	parse : List(Str) -> ParseResult
 	parse = |args| parse_args(args, 0, CliCore.default_options)
+
+	## Warning storage is bounded independently of input/error event count.
+	warnings : List(U8), Options, List(List(U8)) -> Warnings
+	warnings = |input, options, mapping| {
+		var $warnings = { messages: [], omitted: 0 }
+		match CliCore.range_warning(input, options.range_start, options.range_end) {
+			NoRangeWarning => {}
+			RangeEndClamped => { $warnings = add_warning($warnings, "range end exceeds input size; clamping") }
+			RangeStartExceedsInput => { $warnings = add_warning($warnings, "range start exceeds input size") }
+			EmptyRange => { $warnings = add_warning($warnings, "empty range") }
+		}
+		if options.decode and options.spaces and options.strip_whitespace and CliCore.has_indented_spaces_after_newline(input) {
+			$warnings = add_warning($warnings, "spaces after newline are preserved by --spaces while --strip-whitespace is active")
+		}
+		if Bool.not(options.container) {
+			if options.decode and options.passthrough {
+				$warnings = add_warning($warnings, "--passthrough ignored in decode mode")
+			}
+			if options.decode and options.hexlike and Bool.not(Hexlike.has_prefix(input)) {
+				$warnings = add_warning($warnings, "no hexlike (Οχ) sequences found in input")
+				if Codec.is_likely_double_encoded(input, mapping) {
+					$warnings = add_warning($warnings, "input appears to contain standard printable-binary encoding")
+				}
+			} else if options.decode and Bool.not(options.hexlike) and Hexlike.detect(input) {
+				$warnings = add_warning($warnings, "input appears to contain hexlike (Οχ) encoding; use --hexlike -d to decode")
+			}
+			if Bool.not(options.decode) and Bool.not(options.hexlike) and Bool.not(options.no_double_encode_check) and Codec.is_likely_double_encoded(input, mapping) {
+				$warnings = add_warning($warnings, "input appears to be already encoded; continuing may double-encode it")
+			}
+		}
+		$warnings
+	}
 
 	transform : List(U8), Options, List(List(U8)) -> List(U8)
 	transform = |input, options, mapping| {
@@ -41,6 +75,12 @@ CliCore := {}.{
 		}
 	}
 
+	range_input : List(U8), Options -> { bytes : List(U8), input_base : U64 }
+	range_input = |input, options| {
+		start = resolve_start(options.range_start, U64.to_i64_wrap(List.len(input)))
+		{ bytes: apply_range(input, options.range_start, options.range_end), input_base: if start < 0 0 else I64.to_u64_wrap(start) }
+	}
+
 	range_warning : List(U8), MaybeIndex, MaybeIndex -> RangeWarning
 	range_warning = |input, start_option, end_option| {
 		length = U64.to_i64_wrap(List.len(input))
@@ -56,7 +96,7 @@ CliCore := {}.{
 		}
 		if start_exceeds {
 			RangeStartExceedsInput
-		} else if start > end {
+		} else if start > end and (start_option != Absent or end_option != Absent) {
 			EmptyRange
 		} else if end_needs_clamp {
 			RangeEndClamped
@@ -89,6 +129,8 @@ Options : {
 	tabs : Bool,
 	crlf : Bool,
 	strip_whitespace : Bool,
+	strict : Bool,
+	ndjson_stderr : Bool,
 	preserve : List(U8),
 	container : Bool,
 	hexlike : Bool,
@@ -107,6 +149,17 @@ InputSource : [StandardInput, Input(Str)]
 ParseResult : [Run(Options), Help, About, MappingTable, MappingJson, MappingCsv, ParseError(Str)]
 
 RangeWarning : [NoRangeWarning, RangeEndClamped, RangeStartExceedsInput, EmptyRange]
+
+Warnings : { messages : List(Str), omitted : U64 }
+
+add_warning : Warnings, Str -> Warnings
+add_warning = |warnings, message| {
+	if List.len(warnings.messages) < 8 {
+		{ ..warnings, messages: List.append(warnings.messages, message) }
+	} else {
+		{ ..warnings, omitted: warnings.omitted + 1 }
+	}
+}
 
 parse_args : List(Str), U64, Options -> ParseResult
 parse_args = |args, index, options| {
@@ -135,6 +188,10 @@ parse_args = |args, index, options| {
 				parse_args(args, index + 1, { ..options, spaces: True, tabs: True, crlf: True })
 			} else if argument == "--strip-whitespace" or argument == "-S" {
 				parse_args(args, index + 1, { ..options, strip_whitespace: True })
+			} else if argument == "--strict" {
+				parse_args(args, index + 1, { ..options, strict: True })
+			} else if argument == "--ndjson-stderr" {
+				parse_args(args, index + 1, { ..options, ndjson_stderr: True })
 			} else if argument == "--passthrough" or argument == "-p" {
 				parse_args(args, index + 1, { ..options, passthrough: True })
 			} else if argument == "--container" or argument == "-C" {

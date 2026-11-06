@@ -43,6 +43,7 @@ local PrintableBinary = {}
 
 local encode_map = {} -- number (0-255) -> string (UTF-8 bytes)
 local decode_map = {} -- string (UTF-8 bytes) -> number (0-255)
+local decode_trie = {}
 
 local control_names = {
   "NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL",
@@ -139,6 +140,13 @@ end
 local function def_char(byte_val, utf8_str)
   encode_map[byte_val] = utf8_str
   decode_map[utf8_str] = byte_val
+  local node = decode_trie
+  for i = 1, #utf8_str do
+    local byte = utf8_str:byte(i)
+    if not node[byte] then node[byte] = {} end
+    node = node[byte]
+  end
+  node.value = byte_val
 end
 
 local function load_character_map()
@@ -200,7 +208,8 @@ local function build_maps()
 end
 
 -- Build the encoding maps when module is loaded
-build_maps()
+local map_loaded, map_error = pcall(build_maps)
+if not map_loaded and not arg then error(map_error, 0) end
 
 -- Build set of "high-confidence" glyphs for double-encode detection
 -- These are glyphs unlikely to appear in normal text, signaling already-encoded data
@@ -469,9 +478,10 @@ function PrintableBinary.encode(binary_data, options)
 end
 
 -- Decode printable UTF-8 back to binary
-local function warn_spaces_after_newline(str)
+local function warn_spaces_after_newline(str, emit)
   if str:match("\r\n  +") or str:match("\n  +") or str:match("\r  +") then
-    io.stderr:write("Warning: spaces after newline are treated as data in --spaces mode\n")
+    local message = "Warning: spaces after newline are treated as data in --spaces mode\n"
+    if emit then emit(message) else io.stderr:write(message) end
   end
 end
 
@@ -486,107 +496,181 @@ local function utf8_char_length(byte)
 end
 
 function PrintableBinary.decode(printable_string, options)
+  local output = PrintableBinary.decode_report(printable_string, options)
+  return output
+end
+
+-- The callback borrows input through event.input and the one-based input_start;
+-- it may throw to abort immediately. No copied spans or event lists are kept.
+function PrintableBinary.decode_report(printable_string, options, emit)
   if type(printable_string) ~= "string" then
     error("Input must be a string")
   end
 
   options = options or {}
   local spaces_mode = options.spaces == true
-  local strip_whitespace = options.strip_whitespace == true
-  local skip_clean = options.skip_clean == true
+  local strip_whitespace = options.strip_whitespace == true and not options.skip_clean
   local warn_on_indent = options.warn_on_indent == true
 
-  -- For debugging
-  local debug_mode = os.getenv("DEBUG")
-  local function debug_print(msg)
-    if debug_mode then
-      io.stderr:write("# DEBUG DECODE: " .. msg .. "\n")
-    end
-  end
-
-  -- Clean up the input string (only if strip_whitespace is enabled)
   if spaces_mode and warn_on_indent then
     warn_spaces_after_newline(printable_string)
   end
-
-  local cleaned_string = printable_string
-  if not skip_clean and strip_whitespace then
-    if spaces_mode then
-      cleaned_string = cleaned_string:gsub("[\r\n\t]", "")
-    else
-      cleaned_string = cleaned_string:gsub("[\r\n\t ]", "")
-    end
+  local base = options.input_offset or 0
+  if type(base) ~= 'number' or base < 0 or base % 1 ~= 0 or base + #printable_string > 9007199254740991 then
+    error('Input offset must be a nonnegative safe integer')
   end
-
-  debug_print("Input length: " .. #printable_string .. ", Cleaned length: " .. #cleaned_string)
-
-  -- Now proceed with normal decoding
-  -- Decode shrinks (each glyph -> 1 byte), so output never exceeds the input
-  -- length: reserve once and write bytes straight into the buffer via FFI,
-  -- avoiding a per-byte string.char allocation + the table + the final concat.
-  local out_cap = #cleaned_string
+  if emit ~= nil and type(emit) ~= 'function' then error('Diagnostic callback must be a function') end
+  local out_cap = #printable_string
   if out_cap < 1 then out_cap = 1 end
   local dbuf = buffer.new(out_cap)
   local dptr = dbuf:reserve(out_cap)
   local dn = 0
   local i = 1
-  local s_len = #cleaned_string
-
-  -- Process the string one character at a time
+  local s_len = #printable_string
+  local invalid_start, invalid_output
+  local summary = {invalid_events = 0, invalid_bytes = 0}
+  local function close_event()
+    if not invalid_start then return end
+    local length = i - invalid_start
+    if emit then emit({type = 'error', input_offset = base + invalid_start - 1,
+      output_offset = invalid_output, input_length = length, output_length = dn - invalid_output,
+      input = printable_string, input_start = invalid_start}) end
+    summary.invalid_events = summary.invalid_events + 1
+    summary.invalid_bytes = summary.invalid_bytes + length
+    invalid_start = nil
+  end
   while i <= s_len do
-    local matched_char = nil
-
-    if spaces_mode and cleaned_string:sub(i, i) == " " then
-      dptr[dn] = 32; dn = dn + 1
-      i = i + 1
-      matched_char = " "
-    end
-
-    -- A glyph's byte length is fixed by its UTF-8 leading byte (self-synchronizing),
-    -- so resolve it with ONE substring + lookup instead of brute-forcing all four
-    -- lengths (the map has no 4-byte glyphs, and lengths never overlap in UTF-8).
-    if not matched_char then
-      local len = utf8_char_length(string.byte(cleaned_string, i))
-      if i + len - 1 <= s_len then
-        local sub = string.sub(cleaned_string, i, i + len - 1)
-        if decode_map[sub] then
-          dptr[dn] = decode_map[sub]; dn = dn + 1
-          i = i + len
-          matched_char = sub
-        end
+    local byte = printable_string:byte(i)
+    local ignored = strip_whitespace and (byte == 32 or byte == 9 or byte == 13 or byte == 10)
+      and not (spaces_mode and byte == 32)
+    local value, length
+    if spaces_mode and byte == 32 then value, length = 32, 1
+    elseif not ignored then
+      local node = decode_trie
+      local next_pos = i
+      while next_pos <= s_len do
+        node = node[printable_string:byte(next_pos)]
+        if not node then break end
+        if node.value ~= nil then value, length = node.value, next_pos - i + 1 end
+        next_pos = next_pos + 1
       end
     end
-
-    -- If we didn't match any character in our map, pass through the UTF-8 character intact
-    if not matched_char then
-      local byte = string.byte(cleaned_string, i)
-      local char_len = utf8_char_length(byte)
-
-      -- Make sure we don't go past the end of the string
-      if i + char_len - 1 > s_len then
-        char_len = s_len - i + 1
-      end
-
-      -- Pass through the entire UTF-8 character
-      local utf8_char = string.sub(cleaned_string, i, i + char_len - 1)
-      ffi.copy(dptr + dn, utf8_char, char_len); dn = dn + char_len
-
-      debug_print("Passing through unrecognized UTF-8 character at position " .. i .. ": " .. utf8_char)
-      i = i + char_len
+    if ignored or length then
+      close_event()
+      if ignored then i = i + 1
+      else dptr[dn] = value; dn = dn + 1; i = i + length end
+    else
+      if not invalid_start then invalid_start, invalid_output = i, dn end
+      dptr[dn] = byte; dn = dn + 1; i = i + 1
     end
   end
-
+  close_event()
   dbuf:commit(dn)
   local result = dbuf:tostring()
-  debug_print("Decoded " .. #cleaned_string .. " input bytes to " .. #result .. " output bytes")
-
-  return result
+  return result, summary
 end
 
 -- If running as a script rather than being required as a module
 if arg then
+  local ndjson_stderr = false
+  for _, value in ipairs(arg) do if value == '--ndjson-stderr' then ndjson_stderr = true end end
+  local cli_warnings, failure_text = {}, {}
+  local real_io, real_os = io, os
+  local function checked_write(stream, ...)
+    local success, reason = stream:write(...)
+    if not success then error(reason or 'Output write failed', 0) end
+    return success
+  end
+  local function checked_flush(stream)
+    local success, reason = stream:flush()
+    if not success then error(reason or 'Output flush failed', 0) end
+  end
+  -- JSON text must stay valid even when an I/O error contains a non-UTF-8 path.
+  local function quote_json(text)
+    local parts, i = {'"'}, 1
+    while i <= #text do
+      local byte = text:byte(i)
+      if byte < 128 then
+        parts[#parts + 1] = json_escape(text:sub(i, i))
+        i = i + 1
+      else
+        local length = byte >= 0xc2 and byte <= 0xdf and 2
+          or byte >= 0xe0 and byte <= 0xef and 3
+          or byte >= 0xf0 and byte <= 0xf4 and 4 or 0
+        local valid = length > 0 and i + length - 1 <= #text
+        for next_pos = i + 1, i + length - 1 do
+          local next_byte = text:byte(next_pos)
+          if not next_byte or next_byte < 0x80 or next_byte > 0xbf then valid = false end
+        end
+        local second = text:byte(i + 1) or 0
+        if byte == 0xe0 and second < 0xa0 or byte == 0xed and second > 0x9f
+          or byte == 0xf0 and second < 0x90 or byte == 0xf4 and second > 0x8f then valid = false end
+        if valid then parts[#parts + 1] = text:sub(i, i + length - 1); i = i + length
+        else parts[#parts + 1] = string.format('\\u%04x', byte); i = i + 1 end
+      end
+    end
+    parts[#parts + 1] = '"'
+    return table.concat(parts)
+  end
+  local function warnings_json()
+    local parts = {}
+    for _, message in ipairs(cli_warnings) do parts[#parts + 1] = quote_json(message) end
+    return '[' .. table.concat(parts, ',') .. ']'
+  end
+  local function report_event(event)
+    if ndjson_stderr then
+      checked_write(real_io.stderr, string.format(
+        '{"type":"error","input_offset":%d,"output_offset":%d,"input_length":%d,"output_length":%d,"hex":"',
+        event.input_offset, event.output_offset, event.input_length, event.output_length))
+    else
+      checked_write(real_io.stderr, string.format(
+        'Invalid input: input_offset=%d output_offset=%d input_length=%d output_length=%d hex=',
+        event.input_offset, event.output_offset, event.input_length, event.output_length))
+    end
+    -- Fixed-size formatting chunks borrow the original input by index.
+    for start = event.input_start, event.input_start + event.input_length - 1, 256 do
+      local parts = {}
+      for index = start, math.min(start + 255, event.input_start + event.input_length - 1) do
+        parts[#parts + 1] = string.format('%02x', event.input:byte(index))
+      end
+      checked_write(real_io.stderr, table.concat(parts))
+    end
+    checked_write(real_io.stderr, ndjson_stderr and '"}\n' or '\n')
+    checked_flush(real_io.stderr)
+  end
+  local function main()
+  if not map_loaded then error(map_error, 0) end
+  -- Scope checked stream adapters to the CLI. Library users keep their own I/O.
+  local io = setmetatable({
+    stderr = {write = function(self, ...)
+      local message = table.concat({...})
+      if ndjson_stderr then
+        if message:match('^Warning:') then cli_warnings[#cli_warnings + 1] = message:gsub('\n$', '')
+        else failure_text[#failure_text + 1] = message end
+      else checked_write(real_io.stderr, message) end
+      return self
+    end},
+    stdout = {write = function(self, ...) checked_write(real_io.stdout, ...); return self end},
+    write = function(...) return checked_write(real_io.stdout, ...) end,
+    read = function(...)
+      local value, reason = real_io.read(...)
+      if value == nil then error(reason or 'Input read failed', 0) end
+      return value
+    end,
+  }, {__index = real_io})
+  local os = setmetatable({exit = function(status)
+    if status == 0 then real_os.exit(0) end
+    error({cli_exit = true, message = table.concat(failure_text), status = status}, 0)
+  end}, {__index = real_os})
+  if ndjson_stderr then
+    for _, value in ipairs(arg) do
+      if value == '--help' or value == '-h' or value == '--about' then
+        error('--ndjson-stderr cannot be combined with --help/--about', 0)
+      end
+    end
+  end
   local debug_build = false
-  if debug_build then io.stderr:write("\27[33mDEBUG BUILD!\27[0m\n") end
+  if debug_build and not ndjson_stderr then io.stderr:write("\27[33mDEBUG BUILD!\27[0m\n") end
   local function print_usage()
     local progname = arg[0] or "printable-binary"
 
@@ -621,7 +705,9 @@ if arg then
     io.stderr:write("  Omitted bounds: --range -9 (first 10 bytes), --range 10- (byte 10 to EOF)\n")
     io.stderr:write("\n")
     io.stderr:write("Decode options:\n")
-    io.stderr:write("  -S, --strip-whitespace   Strip whitespace before decoding (for block-formatted input)\n")
+    io.stderr:write("  -S, --strip-whitespace   Ignore transport whitespace without joining glyph fragments\n")
+    io.stderr:write("  --strict                Report invalid decode input without emitting payload\n")
+    io.stderr:write("  --ndjson-stderr          Emit JSON error events and a final summary on stderr\n")
     io.stderr:write("\n")
     io.stderr:write("Output options:\n")
     io.stderr:write("  -f[=NxM], --format[=NxM]   Format output in groups\n")
@@ -658,7 +744,7 @@ if arg then
   end
 
   local function debug_print(msg)
-    if os.getenv("DEBUG") then
+    if os.getenv("DEBUG") and not ndjson_stderr then
       io.stderr:write(msg .. "\n")
     end
   end
@@ -671,6 +757,7 @@ if arg then
       os.exit(1)
     end
     local data = file:read("*a")
+    if data == nil then file:close(); error('Input read failed', 0) end
     file:close()
     return data
   end
@@ -694,7 +781,7 @@ if arg then
     return lower == "1" or lower == "true" or lower == "yes"
   end
 
-  local mute_stats = env_value_truthy(os.getenv("PRINTABLE_BINARY_MUTE_STATS"))
+  local mute_stats = ndjson_stderr or env_value_truthy(os.getenv("PRINTABLE_BINARY_MUTE_STATS"))
 
   local function stats_write(message)
     if not mute_stats then
@@ -759,17 +846,17 @@ if arg then
   local skip_double_encode_check = false
   local hexlike_mode = false
   local container_mode = false
+  local strict = false
   local range_start = nil  -- nil means not set
   local range_end = nil    -- nil means not set
 
   -- Parse a range value (supports hex 0x prefix and decimal)
   local function parse_range_value(s)
     if not s or s == "" then return nil end
-    if s:match("^0[xX]") then
-      return tonumber(s, 16)
-    else
-      return tonumber(s)
-    end
+    if not s:match('^0[xX]%x+$') and not s:match('^%-?%d+$') then return nil end
+    local value = tonumber(s)
+    if not value or value % 1 ~= 0 or math.abs(value) > 9007199254740991 then return nil end
+    return value
   end
 
   -- Parse a range spec like "X-Y", "-Y", "X-", or "X"
@@ -796,6 +883,9 @@ if arg then
 
     local s = start_str and parse_range_value(start_str) or nil
     local e = end_str and end_str ~= "" and parse_range_value(end_str) or nil
+    if start_str and s == nil or end_str and end_str ~= '' and e == nil then
+      error('Invalid byte range: ' .. spec, 0)
+    end
 
     return s, e
   end
@@ -871,6 +961,10 @@ if arg then
       os.exit(0)
     elseif current_arg == "--decode" then
       decode_mode = true
+    elseif current_arg == "--strict" then
+      strict = true
+    elseif current_arg == "--ndjson-stderr" then
+      -- Pre-scanned so diagnostics are structured regardless of argument order.
     elseif current_arg == "--passthrough" then
       passthrough_mode = true
     elseif current_arg == "--spaces" or current_arg == "--preserve-spaces" then
@@ -906,7 +1000,7 @@ if arg then
         io.stderr:write("Error: --start requires an argument\n")
         os.exit(1)
       end
-      range_start = tonumber(arg[i])
+      range_start = parse_range_value(arg[i])
       if not range_start then
         io.stderr:write("Error: --start value must be a number\n")
         os.exit(1)
@@ -937,7 +1031,7 @@ if arg then
       format_mode = true
       format_spec = current_arg:match("^%-f=(.*)")
       if format_spec then
-        local group, groups_per_line = format_spec:match("(%d+)x(%d+)")
+        local group, groups_per_line = format_spec:match("^([1-9]%d*)x([1-9]%d*)$")
         if group and groups_per_line then
           format_group = tonumber(group)
           format_groups_per_line = tonumber(groups_per_line)
@@ -952,7 +1046,7 @@ if arg then
       format_mode = true
       format_spec = current_arg:match("^%-%-format=(.*)")
       if format_spec then
-        local group, groups_per_line = format_spec:match("(%d+)x(%d+)")
+        local group, groups_per_line = format_spec:match("^([1-9]%d*)x([1-9]%d*)$")
         if group and groups_per_line then
           format_group = tonumber(group)
           format_groups_per_line = tonumber(groups_per_line)
@@ -1022,6 +1116,16 @@ if arg then
     i = i + 1
   end
 
+  if strict and not decode_mode then error('--strict requires --decode', 0) end
+  if format_group > 9007199254740991 or format_groups_per_line > 9007199254740991 then
+    error('Format dimensions must be positive safe integers', 0)
+  end
+  if (strict or ndjson_stderr) and (hexlike_mode or container_mode) then
+    error('--strict/--ndjson-stderr are supported only in bytewise mode, not --hexlike/--container', 0)
+  end
+  if ndjson_stderr and (mappings_mode or passthrough_mode and not decode_mode) then
+    error('--ndjson-stderr cannot be combined with mappings or encode --passthrough', 0)
+  end
   if mappings_mode then
     output_mappings(mappings_mode)
     os.exit(0)
@@ -1038,6 +1142,9 @@ if arg then
     input_data = read_stdin()
   end
   local input_bytes_read = #input_data
+  local input_offset = 0
+  local output_bytes = 0
+  local summary = {invalid_events = 0, invalid_bytes = 0}
 
   -- Apply byte range if specified
   if range_start ~= nil or range_end ~= nil then
@@ -1069,6 +1176,7 @@ if arg then
       end
       -- Lua strings are 1-indexed, so convert from 0-indexed
       input_data = input_data:sub(range_start + 1, range_end + 1)
+      input_offset = range_start
     end
   end
 
@@ -1169,7 +1277,7 @@ if arg then
       end
     else
       if spaces_mode then
-        warn_spaces_after_newline(input_data)
+        warn_spaces_after_newline(input_data, function(message) io.stderr:write(message) end)
       end
 
       -- Warn if hexlike encoding detected in regular PB decode
@@ -1178,10 +1286,11 @@ if arg then
       end
 
       -- Decode with options (strip_whitespace controls whether whitespace is removed)
-      output = PrintableBinary.decode(input_data, {
+      output, summary = PrintableBinary.decode_report(input_data, {
         spaces = spaces_mode,
-        strip_whitespace = strip_whitespace
-      })
+        strip_whitespace = strip_whitespace,
+        input_offset = input_offset,
+      }, report_event)
 
       if strip_whitespace then
         stats_write("Decoded with whitespace stripping\n")
@@ -1191,7 +1300,10 @@ if arg then
 
     -- Always output decoded data to stdout in decode mode
     -- Passthrough mode doesn't apply to decode mode, as noted in the warning above
-    io.stdout:write(output)
+    if not (strict and summary.invalid_events > 0) then
+      io.stdout:write(output)
+      output_bytes = #output
+    end
 
     -- Set a flag to prevent duplicate output later
     output_already_written = true
@@ -1303,9 +1415,38 @@ if arg then
   else
     -- Normal encode mode, send output to stdout
     io.write(output)
+    output_bytes = #output
   end
 
+  checked_flush(real_io.stdout)
   report_input_throughput(input_bytes_read, throughput_started_at)
+  if ndjson_stderr then
+    local elapsed = math.max(now_seconds() - throughput_started_at, 0.0005)
+    checked_write(real_io.stderr, string.format(
+      '{"type":"summary","invalid_events":%d,"invalid_bytes":%d,"input_bytes":%d,"output_bytes":%d,"complete":true,"elapsed_seconds":%.9f,"input_mbps":%.9f,"warnings":%s}\n',
+      summary.invalid_events, summary.invalid_bytes, input_bytes_read, output_bytes, elapsed,
+      input_bytes_read / 1000000 / elapsed, warnings_json()))
+  elseif summary.invalid_events > 0 then
+    io.stderr:write(string.format('Invalid input: %d events, %d bytes\n', summary.invalid_events, summary.invalid_bytes))
+  end
+  checked_flush(real_io.stderr)
+  return math.min(summary.invalid_events, 255)
+  end
+  local success, result = pcall(main)
+  if not success then
+    pcall(function()
+      local message = type(result) == 'table' and result.message or tostring(result)
+      if ndjson_stderr then
+        checked_write(real_io.stderr, '{"type":"error","fatal":true,"message":' .. quote_json(message) .. '}\n')
+        checked_write(real_io.stderr, '{"type":"summary","complete":false,"invalid_events":null,"invalid_bytes":null,"input_bytes":null,"output_bytes":null,"warnings":' .. warnings_json() .. '}\n')
+      elseif not (type(result) == 'table' and result.cli_exit) then
+        checked_write(real_io.stderr, 'Error: ' .. message .. '\n')
+      end
+      checked_flush(real_io.stderr)
+    end)
+    real_os.exit(1)
+  end
+  real_os.exit(result or 0)
 end
 
 return PrintableBinary

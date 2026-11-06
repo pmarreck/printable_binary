@@ -127,7 +127,7 @@ fn main() -> ExitCode {
 		Err(error) => {
 			if ndjson {
 				let _ = writeln!(stderr, "{{\"type\":\"error\",\"fatal\":true,\"message\":\"{}\"}}", json_string(&error.to_string()));
-				let _ = writeln!(stderr, "{{\"type\":\"summary\",\"complete\":false,\"invalid_events\":null,\"invalid_bytes\":null}}");
+				let _ = writeln!(stderr, "{{\"type\":\"summary\",\"complete\":false,\"invalid_events\":null,\"invalid_bytes\":null,\"input_bytes\":null,\"output_bytes\":null}}");
 			} else { let _ = writeln!(stderr, "Error: {error}"); }
 			ExitCode::FAILURE
 		},

@@ -12,6 +12,20 @@ const isDenoEnv = typeof Deno !== 'undefined' && typeof Deno.readTextFileSync ==
 // A TextEncoder is stateless; share one instead of allocating per character.
 const sharedTextEncoder = new TextEncoder();
 
+// TextEncoder otherwise replaces lone UTF-16 surrogates with U+FFFD, losing data.
+function encodeUtf8String(text) {
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = text.charCodeAt(++i);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error('Unpaired UTF-16 surrogate in input');
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      throw new Error('Unpaired UTF-16 surrogate in input');
+    }
+  }
+  return sharedTextEncoder.encode(text);
+}
+
 const CONTROL_NAMES = [
   'NUL','SOH','STX','ETX','EOT','ENQ','ACK','BEL',
   'BS','TAB','LF','VT','FF','CR','SO','SI',
@@ -143,6 +157,7 @@ class PrintableBinary {
       throw new Error('PrintableBinary: character map must be an array of 256 entries');
     }
 
+    this.decodeTrie = { children: new Map() };
     for (let i = 0; i < 256; i++) {
       const char = mapLines[i];
       if (typeof char !== 'string' || char.length === 0) {
@@ -150,6 +165,12 @@ class PrintableBinary {
       }
       this.encodeMap.set(i, char);
       this.decodeMap.set(char, i);
+      let node = this.decodeTrie;
+      for (const byte of encodeUtf8String(char)) {
+        if (!node.children.has(byte)) node.children.set(byte, { children: new Map() });
+        node = node.children.get(byte);
+      }
+      node.value = i;
     }
   }
 
@@ -305,81 +326,108 @@ class PrintableBinary {
   }
 
   /**
-   * Decode printable UTF-8 string back to binary data
-   * @param {string} printableString - The encoded string to decode
+   * Decode printable wire bytes (or a well-formed UTF-16 string) to binary data.
+   * Unknown bytes are preserved individually, so later mapped glyphs can resume.
+   * @param {string|Uint8Array|ArrayBuffer} input - The encoded input to decode
    * @param {Object} options - Optional decoding options
    * @param {boolean} options.spaces - Treat literal spaces as data (decode them to space bytes)
-   * @param {boolean} options.stripWhitespace - Strip whitespace before decoding (for block-formatted input)
+   * @param {boolean} options.stripWhitespace - Ignore transport whitespace without joining glyph fragments
    * @param {boolean} options.warnOnIndent - Warn if spaces appear after newlines in spaces mode
    * @returns {Uint8Array} The decoded binary data
    */
-  decode(printableString, options = {}) {
-    if (typeof printableString !== 'string') {
-      throw new Error("Input must be a string");
-    }
+  decode(input, options = {}) {
+    return this.decodeReport(input, options).bytes;
+  }
 
-    const spacesMode = options.spaces === true;
-    const stripWhitespace = options.stripWhitespace === true;
-
-    if (spacesMode && options.warnOnIndent) {
-      warnSpacesAfterNewline(printableString);
-    }
-
-    // Only strip whitespace if explicitly requested
-    let cleanedString = printableString;
-    if (stripWhitespace) {
-      cleanedString = spacesMode
-        ? printableString.replace(/[\r\n\t]/g, '')
-        : printableString.replace(/[\r\n\t ]/g, '');
-    }
-
-    const result = [];
-    let i = 0;
-
-    // Process the string one character at a time
-    while (i < cleanedString.length) {
-      if (spacesMode && cleanedString[i] === ' ') {
-        result.push(0x20);
-        i += 1;
-        continue;
+  /**
+   * Return bytes and {invalid_events, invalid_bytes}; emit borrowed invalid spans.
+   * The synchronous callback may throw, which aborts decoding immediately. No
+   * event list or hex strings are retained. inputOffset is an original-wire base.
+   */
+  decodeReport(input, options = {}, onError = () => {}) {
+    if (typeof onError !== 'function') throw new Error('Diagnostic callback must be a function');
+    const scan = this._decodeEvents(input, options);
+    try {
+      for (;;) {
+        const step = scan.next();
+        if (step.done) return step.value;
+        onError(step.value);
       }
-      let matched = false;
+    } finally { scan.return(); }
+  }
 
-      // Try to match longest first (up to 4 code points for our charset)
-      // In JavaScript, some characters may be represented as surrogate pairs
-      for (let len = Math.min(4, cleanedString.length - i); len >= 1; len--) {
-        const sub = cleanedString.substring(i, i + len);
-        const decoded = this.decodeMap.get(sub);
+  /**
+   * Await each diagnostic sink before resuming the same bytewise scan. At most
+   * one borrowed event and one sink promise are live; rejection aborts the scan.
+   */
+  async decodeReportAsync(input, options = {}, onError = () => {}) {
+    if (typeof onError !== 'function') throw new Error('Diagnostic callback must be a function');
+    const scan = this._decodeEvents(input, options);
+    try {
+      for (;;) {
+        const step = scan.next();
+        if (step.done) return step.value;
+        await onError(step.value);
+      }
+    } finally { scan.return(); }
+  }
 
-        if (decoded !== undefined) {
-          result.push(decoded);
-          i += len;
-          matched = true;
-          break;
+  // One scanner serves synchronous libraries and backpressure-aware adapters.
+  // It yields only closed invalid spans, then returns the bytes and summary.
+  *_decodeEvents(input, options) {
+    if (typeof input === 'string') {
+      if (options.spaces && options.warnOnIndent) warnSpacesAfterNewline(input);
+      input = encodeUtf8String(input);
+    } else if (input instanceof ArrayBuffer) {
+      input = new Uint8Array(input);
+    }
+    if (!(input instanceof Uint8Array)) throw new Error('Input must be a string, Uint8Array or ArrayBuffer');
+    const base = options.inputOffset ?? 0;
+    if (!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(base + input.length)) {
+      throw new Error('Input offset must be a nonnegative safe integer');
+    }
+    const output = new Uint8Array(input.length);
+    const summary = { invalid_events: 0, invalid_bytes: 0 };
+    let position = 0, outputLength = 0, invalidStart = -1, invalidOutput = 0;
+    const close = () => {
+      if (invalidStart < 0) return null;
+      const length = position - invalidStart;
+      const event = { type: 'error', input_offset: base + invalidStart, output_offset: invalidOutput,
+        input_length: length, output_length: outputLength - invalidOutput,
+        bytes: input.subarray(invalidStart, position) };
+      summary.invalid_events++;
+      summary.invalid_bytes += length;
+      invalidStart = -1;
+      return event;
+    };
+    while (position < input.length) {
+      const byte = input[position];
+      const ignored = options.stripWhitespace === true &&
+        (byte === 32 || byte === 9 || byte === 13 || byte === 10) && !(options.spaces && byte === 32);
+      let value, length = 0;
+      if (options.spaces && byte === 32) { value = 32; length = 1; }
+      else if (!ignored) {
+        let node = this.decodeTrie;
+        for (let next = position; next < input.length; next++) {
+          node = node.children.get(input[next]);
+          if (!node) break;
+          if (node.value !== undefined) { value = node.value; length = next - position + 1; }
         }
       }
-
-      // If we didn't match any character in our map, pass through the UTF-8 character intact
-      if (!matched) {
-        // Get the code point at current position (handles surrogate pairs)
-        const codePoint = cleanedString.codePointAt(i);
-        if (codePoint !== undefined) {
-          // Encode the code point to UTF-8 bytes and add to result
-          const char = String.fromCodePoint(codePoint);
-          const encoder = sharedTextEncoder;
-          const bytes = encoder.encode(char);
-          for (const byte of bytes) {
-            result.push(byte);
-          }
-          // Advance by the number of UTF-16 code units (1 for BMP, 2 for supplementary)
-          i += char.length;
-        } else {
-          i++;
-        }
+      if (ignored || length) {
+        const event = close();
+        if (event) yield event;
+        if (ignored) position++;
+        else { output[outputLength++] = value; position += length; }
+      } else {
+        if (invalidStart < 0) { invalidStart = position; invalidOutput = outputLength; }
+        output[outputLength++] = byte;
+        position++;
       }
     }
-
-    return new Uint8Array(result);
+    const event = close();
+    if (event) yield event;
+    return { bytes: output.subarray(0, outputLength), summary };
   }
 
   /**
@@ -625,8 +673,8 @@ class PrintableBinary {
    * @returns {string} The encoded printable string
    */
   encodeString(str, options = {}) {
-    const encoder = sharedTextEncoder;
-    const bytes = encoder.encode(str);
+    if (typeof str !== 'string') throw new Error('Input must be a string');
+    const bytes = encodeUtf8String(str);
     return this.encode(bytes, options);
   }
 

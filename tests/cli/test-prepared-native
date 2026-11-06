@@ -35,11 +35,11 @@ if [[ "$kind" == ape ]]; then
 	[[ "$(head -c 2 "$cli")" == MZ ]] || { printf 'FAIL: APE artifact lost its portable header\n' >&2; exit 1; }
 fi
 if [[ "$kind" != zig ]]; then
-	bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$cli" || exit 1
+	bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$cli" 1 || exit 1
 fi
 IMPLEMENTATION_TO_TEST="$cli" bash "$repo_root/tests/cli/test-suite-output" bash "$repo_root/tests/test" || exit 1
 if [[ "$kind" == zig ]]; then
 	node "$repo_root/tests/cli/test-zig-textual.mjs" "$cli" || exit 1
-	node "$repo_root/tests/cli/test-recovery.mjs" "$cli" Zig || exit 1
 fi
+node "$repo_root/tests/cli/test-recovery.mjs" "$cli" "${kind^}" || exit 1
 printf 'PASS: retained %s artifacts execute the complete native CLI contract\n' "$kind"

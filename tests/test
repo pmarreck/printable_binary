@@ -71,13 +71,11 @@ write_all_bytes() {
 	fi
 }
 
-# During the recovery rollout, retain the legacy output assertions and check
-# the event status on implementations advertising the diagnostic contract.
-# The dedicated recovery matrix requires that contract on every port.
+# Unknown input remains byte-preserving, but completed recovery returns the
+# exact event count. The dedicated matrix checks every implementation's reports.
 decode_with_events() {
-	local events=$1 status expected=0
+	local expected=$1 status
 	shift
-	[[ "$HELP_OUTPUT" != *'--ndjson-stderr'* ]] || expected=$events
 	"$SCRIPT" "$@" 2> "$TMP_STATS_STDERR"
 	status=$?
 	if [[ "$status" != "$expected" ]]; then

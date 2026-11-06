@@ -30,4 +30,76 @@ for muted in 1 true yes; do
 		exit 1
 	fi
 done
+node - "$roc_cli" <<'JS' || exit 1
+const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const { openSync, closeSync } = require('node:fs');
+const binary = process.argv[2];
+const run = (args, input = Buffer.alloc(0), extra = {}) => spawnSync(binary, args, {
+	input, maxBuffer: 8 * 1024 * 1024,
+	env: { ...process.env, PRINTABLE_BINARY_MUTE_STATS: '0' }, ...extra,
+});
+const records = result => result.stderr.toString('utf8').trimEnd().split('\n').map(JSON.parse);
+const raw = Buffer.from([255, 128]);
+for (const strict of [false, true]) for (const muted of ['0', '1']) {
+	const result = run(['-d', ...(strict ? ['--strict'] : [])], raw,
+		{ env: { ...process.env, PRINTABLE_BINARY_MUTE_STATS: muted } });
+	assert.equal(result.status, 1, 'automatic recovery applies without diagnostic flags');
+	assert.deepEqual(result.stdout, strict ? Buffer.alloc(0) : raw);
+	assert.match(result.stderr.toString(), /invalid bytewise input/);
+	assert.match(result.stderr.toString(), /hex=ff80\n/, 'human diagnostics retain original wire hex');
+	assert.match(result.stderr.toString(), /Invalid input: 1 events, 2 bytes\n/, 'human aggregate counts remain visible when throughput is muted');
+}
+const encoded = run(['--ndjson-stderr'], raw);
+assert.equal(encoded.status, 0, 'every byte remains valid encode input');
+assert.deepEqual(records(encoded), [{ type: 'summary', invalid_events: 0, invalid_bytes: 0,
+	input_bytes: 2, output_bytes: encoded.stdout.length, complete: true }]);
+const warning = run(['-d', '--spaces', '--strip-whitespace', '--ndjson-stderr'], Buffer.from('A\n  B'));
+assert.equal(warning.status, 0);
+assert.deepEqual(warning.stdout, Buffer.from('A  B'));
+assert.equal(records(warning).length, 1, 'warnings stay in the final summary');
+assert.equal(records(warning)[0].warnings.length, 1, 'warnings are not recovery errors');
+assert.equal(records(warning).at(-1).invalid_events, 0);
+const passthrough = run(['-d', '--passthrough', '--ndjson-stderr'], Buffer.from('A'));
+assert.equal(passthrough.status, 0);
+assert.deepEqual(passthrough.stdout, Buffer.from('A'));
+assert.equal(records(passthrough).length, 1);
+assert.equal(records(passthrough)[0].warnings.length, 1);
+const split = run(['-d', '--strip-whitespace', '--ndjson-stderr'], Buffer.from([194, 32, 182]));
+assert.equal(split.status, 2, 'transport stripping cannot rejoin a split glyph');
+assert.deepEqual(split.stdout, Buffer.from([194, 182]));
+assert.deepEqual(records(split).filter(record => record.type === 'error').map(record => [record.input_offset, record.output_offset, record.hex]), [[0, 0, 'c2'], [2, 1, 'b6']]);
+for (const args of [
+	['--ndjson-stderr', '--bad"\n'], ['--bad"\n', '--ndjson-stderr'],
+	['--ndjson-stderr', '--container'], ['--ndjson-stderr', '--hexlike'],
+	['--ndjson-stderr', '--passthrough'],
+	['--ndjson-stderr', '--strict'],
+	['--ndjson-stderr', '/nonexistent-printable-binary-roc-recovery-input'],
+	['--ndjson-stderr', '.'],
+]) {
+	const result = run(args);
+	assert.notEqual(result.status, 0, `fatal failure required: ${args}`);
+	assert.equal(result.stdout.length, 0);
+	assert.equal(records(result)[0].type, 'error');
+	assert.equal(records(result)[0].fatal, true);
+	assert.deepEqual(records(result).at(-1), { type: 'summary', invalid_events: null,
+		invalid_bytes: null, input_bytes: null, output_bytes: null, complete: false });
+}
+const strictEncode = run(['--strict'], Buffer.from('A'));
+assert.equal(strictEncode.status, 1, '--strict requires bytewise decode mode');
+assert.equal(strictEncode.stdout.length, 0);
+assert.match(strictEncode.stderr.toString(), /--strict.*decode/);
+const full = openSync('/dev/full', 'w');
+try {
+	const result = run(['--ndjson-stderr'], Buffer.from('A'), { stdio: ['pipe', full, 'pipe'] });
+	assert.notEqual(result.status, 0, 'stdout failure propagates');
+	assert.equal(records(result).at(-1).complete, false, 'failed output must not claim completion');
+	const warnedFailure = run(['--ndjson-stderr', '--end', '99'], Buffer.from('A'), { stdio: ['pipe', full, 'pipe'] });
+	assert.notEqual(warnedFailure.status, 0);
+	assert.equal(records(warnedFailure).at(-1).warnings.length, 1, 'fatal summary preserves ordinary warnings');
+	const summaryFailure = run(['--ndjson-stderr'], Buffer.from('A'), { stdio: ['pipe', 'pipe', full] });
+	assert.notEqual(summaryFailure.status, 0, 'final summary stderr failure propagates');
+} finally { closeSync(full); }
+console.log('PASS: Roc automatic/strict recovery, JSON-only warnings, fatal summaries and output failure');
+JS
 printf 'PASS: retained Roc CLI, container, parity and muting contracts\n'

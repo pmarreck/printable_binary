@@ -522,7 +522,7 @@
           test-c = pkgs.stdenv.mkDerivation {
             name = "test-c";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump ];
+            nativeBuildInputs = with pkgs; [ clang python3 xxd hexdump nodejs_24 ];
             buildPhase = ''
               clang -O2 -Wall -Wextra -I. -o test-c-two-byte-domain tests/unit/test-c-two-byte-domain.c
               clang -O3 -Wall -Wextra -I. -o printable-binary-c src/printable_binary.c
@@ -615,6 +615,8 @@
               patchShebangs bin/printable-binary-node.js
               IMPLEMENTATION_TO_TEST=./bin/printable-binary-node.js bash ./tests/cli/test-suite-output bash ./tests/test
               bash ./tests/test_node_cli_stats
+              node tests/cli/test-recovery.mjs ./bin/printable-binary-node.js Node
+              node tests/js/test_recovery_cli.js ./bin/printable-binary-node.js Node
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -624,11 +626,14 @@
           test-lua = pkgs.stdenv.mkDerivation {
             name = "test-lua";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ luajit python3 xxd hexdump ];
+            nativeBuildInputs = with pkgs; [ luajit python3 xxd hexdump nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
               patchShebangs bin/printable-binary-luajit
               IMPLEMENTATION_TO_TEST=./bin/printable-binary-luajit bash ./tests/cli/test-suite-output bash ./tests/test
+              node tests/cli/test-recovery.mjs ./bin/printable-binary-luajit LuaJIT
+              node tests/js/test_recovery_cli.js ./bin/printable-binary-luajit LuaJIT
+              luajit tests/lua/test-recovery.lua
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
           };
@@ -643,6 +648,7 @@
             buildPhase = ''
               export HOME=$TMPDIR
               node tests/js/test_printable_binary.js
+              node tests/js/test_recovery.js
               node tests/benchmark/textual_size/test.mjs
             '';
             installPhase = "mkdir -p $out && touch $out/passed";
@@ -831,7 +837,7 @@
           test-ffi-cli = pkgs.stdenv.mkDerivation {
             name = "test-ffi-cli";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ clang ];
+            nativeBuildInputs = with pkgs; [ clang nodejs_24 ];
             buildPhase = ''
               export HOME=$TMPDIR
               clang -O2 -I. -o pb-ffi src/printable_binary_ffi_main.c ${self.checks.${system}.test-zig}/lib/libprintable_binary.a
@@ -841,6 +847,7 @@
             doCheck = true;
             checkPhase = ''
               bash tests/unit/test-ffi-smoke-driver ./pb-ffi in.bin
+              node tests/cli/test-recovery.mjs ./pb-ffi FFI
             '';
             installPhase = ''
               mkdir -p $out/libexec
@@ -910,7 +917,7 @@
             name = "test-roc";
             src = runtimeSource;
             strictDeps = true;
-            nativeBuildInputs = with pkgs; [ hexdump jq luajit python3 xxd rocCompiler ];
+            nativeBuildInputs = with pkgs; [ hexdump jq luajit python3 xxd rocCompiler nodejs_24 ];
             buildPhase = ''
               export HOME="$TMPDIR/home"
               export XDG_CACHE_HOME="$HOME/.cache"
@@ -936,13 +943,14 @@
             doInstallCheck = true;
             installCheckPhase = ''
               bash tests/cli/test-roc-prepared "$out"
+              node tests/cli/test-recovery.mjs "$out/bin/printable-binary-roc" Roc
             '';
           };
 
           test-build-all = pkgs.stdenvNoCC.mkDerivation {
             name = "test-build-all";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit python3 xxd hexdump ];
+            nativeBuildInputs = with pkgs; [ bash binutils jq file gawk gnumake git luajit python3 xxd hexdump nodejs_24 ];
             buildPhase = ''
               patchShebangs tests/fixtures
               test -x ${printableBinaryApe}/bin/printable-binary-ape.com || exit 1
@@ -990,7 +998,7 @@
           test-ape = pkgs.stdenvNoCC.mkDerivation {
             name = "test-ape";
             src = runtimeSource;
-            nativeBuildInputs = with pkgs; [ cosmoccBin coreutils python3 xxd hexdump bash ];
+            nativeBuildInputs = with pkgs; [ cosmoccBin coreutils python3 xxd hexdump bash nodejs_24 ];
             buildPhase = ''
               export PATH=${cosmoccBin}/bin:$PATH
               export HOME=$TMPDIR

@@ -8,7 +8,38 @@
 
 import fs from 'fs';
 import { performance } from 'node:perf_hooks';
-import PrintableBinary from '../js/printable_binary.js';
+
+const ndjsonStderr = process.argv.slice(2).includes('--ndjson-stderr');
+// The Nix packaging graph toggles this exact constant for Debug products.
+const debugBuild = false;
+const warnings = [];
+let PrintableBinary;
+// Stream failures are handled through writeTo's callback, without a second
+// uncaught EventEmitter error printing a stack trace into structured stderr.
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
+function warning(message) {
+  if (ndjsonStderr) warnings.push(message);
+  else process.stderr.write(`Warning: ${message}\n`);
+}
+
+function diagnosticWrite(text) {
+  return writeTo(process.stderr, text);
+}
+
+async function reportEvent(event) {
+  const { bytes, ...fields } = event;
+  await diagnosticWrite(ndjsonStderr
+    ? JSON.stringify(fields).slice(0, -1) + ',"hex":"'
+    : `Invalid input: input_offset=${event.input_offset} output_offset=${event.output_offset} input_length=${event.input_length} output_length=${event.output_length} hex=`);
+  // Borrow each fixed-size slice. Never retain a hex string for the whole span.
+  for (let offset = 0; offset < bytes.length; offset += 256) {
+    const length = Math.min(256, bytes.length - offset);
+    await diagnosticWrite(Buffer.from(bytes.buffer, bytes.byteOffset + offset, length).toString('hex'));
+  }
+  await diagnosticWrite(ndjsonStderr ? '"}\n' : '\n');
+}
 
 function printUsage() {
   const progname = process.argv[1]
@@ -22,12 +53,14 @@ Usage: ${progname} [options] [file]
 
 Options:
   -d, --decode          Decode mode (default is encode mode)
-  -s, --spaces          Preserve literal spaces (decoder still ignores tabs/newlines/CR)
+  -s, --spaces          Preserve and accept literal data spaces
   -t, --tabs            Preserve literal tabs on encode
   -n, --crlf            Preserve literal CR/LF on encode
   -w, --preserve-whitespace  Preserve all whitespace (spaces + tabs + CRLF)
   -P, --preserve=CHARS  Preserve specific characters on encode
-  -S, --strip-whitespace  Strip whitespace before decoding (for block-formatted input)
+  -S, --strip-whitespace  Ignore transport whitespace without joining glyph fragments
+  --strict             Report invalid decode input without emitting payload
+  --ndjson-stderr       Emit JSON error events and a final summary on stderr
   -p, --passthrough     Pass input to stdout unchanged, send encoded data to stderr
   -f, --format NxM      Format output in groups (e.g. 75x1)
   -f=NXM, --format=NXM  Alternate syntax for specifying formatting
@@ -55,7 +88,7 @@ Range options (select byte range from input before processing):
   Hex offsets supported: --range 0x0A-0xFF
   Omitted bounds: --range -9 (first 10 bytes), --range 10- (byte 10 to EOF)
 
-Encoded output is whitespace-agnostic: you can reflow, indent, or wrap it freely because the decoder ignores real whitespace while rendering quotes, backslashes, tabs, and control bytes as visible, but clearly related, glyphs (e.g., SPACE→␣, TAB→⇥, CR→⏎, LF→↧, single quote→ʼ, double quote→˵, backslash→⧷). With --spaces, literal spaces are treated as data (and we warn on indented lines).
+Use --strip-whitespace to ignore ASCII transport whitespace between complete glyphs. Unknown bytes are preserved and reported. Controls and syntax-sensitive bytes use visible glyphs; --spaces retains literal data spaces and warns about indentation.
 
 If no file is specified, input is read from stdin.
 Output is written to stdout.
@@ -97,13 +130,10 @@ function outputMappings(entries, format) {
 }
 
 function parseOffsetValue(s) {
-  if (!s || s.length === 0) return null;
-  if (s.startsWith('0x') || s.startsWith('0X')) {
-    const val = parseInt(s, 16);
-    return isNaN(val) ? null : val;
-  }
-  const val = parseInt(s, 10);
-  return isNaN(val) ? null : val;
+  if (!/^(?:0[xX][0-9a-fA-F]+|-?\d+)$/.test(s)) throw new Error(`Invalid byte offset: ${s}`);
+  const value = Number(s);
+  if (!Number.isSafeInteger(value)) throw new Error(`Invalid byte offset: ${s}`);
+  return value;
 }
 
 function parseRangeSpec(spec) {
@@ -158,11 +188,11 @@ function parseArgs(argv) {
   let preserveChars = '';
   let hexlikeMode = false;
   let containerMode = false;
+  let strict = false;
 
   const setMappingsFormat = (mode) => {
     if (mappingsFormat && mappingsFormat !== mode) {
-      process.stderr.write('Error: Only one mappings output option can be specified\n');
-      process.exit(1);
+      throw new Error('Only one mappings output option can be specified');
     }
     mappingsFormat = mode;
   };
@@ -184,6 +214,10 @@ function parseArgs(argv) {
       process.exit(0);
     } else if (arg === '-d' || arg === '--decode') {
       decodeMode = true;
+    } else if (arg === '--strict') {
+      strict = true;
+    } else if (arg === '--ndjson-stderr') {
+      // Pre-scanned so parse failures are JSON regardless of option order.
     } else if (arg === '-s' || arg === '--spaces') {
       spacesMode = true;
     } else if (arg === '-f' || arg === '--format') {
@@ -214,8 +248,7 @@ function parseArgs(argv) {
       crlfMode = true;
     } else if (arg === '-P' || arg === '--preserve') {
       if (i + 1 >= argv.length) {
-        process.stderr.write('Error: --preserve requires a value\n');
-        process.exit(1);
+        throw new Error('--preserve requires a value');
       }
       preserveChars = argv[++i];
     } else if (arg.startsWith('--preserve=')) {
@@ -228,36 +261,31 @@ function parseArgs(argv) {
       noDoubleEncodeCheck = true;
     } else if (arg === '--range') {
       if (i + 1 >= argv.length) {
-        process.stderr.write('Error: --range requires an argument\n');
-        process.exit(1);
+        throw new Error('--range requires an argument');
       }
       const parsed = parseRangeSpec(argv[++i]);
       if (!parsed) {
-        process.stderr.write(`Error: Invalid range specification: ${argv[i]}\n`);
-        process.exit(1);
+        throw new Error(`Invalid range specification: ${argv[i]}`);
       }
       if (parsed.start !== null) rangeStart = parsed.start;
       if (parsed.end !== null) rangeEnd = parsed.end;
     } else if (arg.startsWith('--range=')) {
       const parsed = parseRangeSpec(arg.slice(8));
       if (!parsed) {
-        process.stderr.write(`Error: Invalid range specification: ${arg.slice(8)}\n`);
-        process.exit(1);
+        throw new Error(`Invalid range specification: ${arg.slice(8)}`);
       }
       if (parsed.start !== null) rangeStart = parsed.start;
       if (parsed.end !== null) rangeEnd = parsed.end;
     } else if (arg === '--start') {
       if (i + 1 >= argv.length) {
-        process.stderr.write('Error: --start requires an argument\n');
-        process.exit(1);
+        throw new Error('--start requires an argument');
       }
       rangeStart = parseOffsetValue(argv[++i]);
     } else if (arg.startsWith('--start=')) {
       rangeStart = parseOffsetValue(arg.slice(8));
     } else if (arg === '--end') {
       if (i + 1 >= argv.length) {
-        process.stderr.write('Error: --end requires an argument\n');
-        process.exit(1);
+        throw new Error('--end requires an argument');
       }
       rangeEnd = parseOffsetValue(argv[++i]);
     } else if (arg.startsWith('--end=')) {
@@ -277,15 +305,11 @@ function parseArgs(argv) {
           case 'X': hexlikeMode = true; break;
           case 'C': containerMode = true; break;
           default:
-            process.stderr.write(`Error: Unknown option -${ch}\n`);
-            printUsage();
-            process.exit(1);
+            throw new Error(`Unknown option -${ch}`);
         }
       }
     } else if (arg.startsWith('-')) {
-      process.stderr.write(`Error: Unknown option ${arg}\n`);
-      printUsage();
-      process.exit(1);
+      throw new Error(`Unknown option ${arg}`);
     } else if (isPositionalRange(arg)) {
       const parsed = parseRangeSpec(arg);
       if (parsed) {
@@ -294,18 +318,27 @@ function parseArgs(argv) {
       } else if (!filePath) {
         filePath = arg;
       } else {
-        process.stderr.write(`Error: Unexpected argument ${arg}\n`);
-        process.exit(1);
+        throw new Error(`Unexpected argument ${arg}`);
       }
     } else if (!filePath) {
       filePath = arg;
     } else {
-      process.stderr.write(`Error: Unexpected argument ${arg}\n`);
-      process.exit(1);
+      throw new Error(`Unexpected argument ${arg}`);
     }
   }
 
-  return { decodeMode, formatSpec, filePath, mappingsFormat, passthrough, spacesMode, stripWhitespace, tabsMode, crlfMode, preserveChars, rangeStart, rangeEnd, noDoubleEncodeCheck, hexlikeMode, containerMode };
+  if (strict && !decodeMode) throw new Error('--strict requires --decode');
+  if (formatSpec && (!/^[1-9]\d*x[1-9]\d*$/.test(formatSpec) ||
+      !formatSpec.split('x').every(value => Number.isSafeInteger(Number(value))))) {
+    throw new Error(`Invalid format specification: ${formatSpec}; dimensions must be positive integers`);
+  }
+  if ((strict || ndjsonStderr) && (hexlikeMode || containerMode)) {
+    throw new Error('--strict/--ndjson-stderr are supported only in bytewise mode, not --hexlike/--container');
+  }
+  if (ndjsonStderr && (mappingsFormat || (passthrough && !decodeMode))) {
+    throw new Error('--ndjson-stderr cannot be combined with mappings or encode --passthrough');
+  }
+  return { decodeMode, formatSpec, filePath, mappingsFormat, passthrough, spacesMode, stripWhitespace, tabsMode, crlfMode, preserveChars, rangeStart, rangeEnd, noDoubleEncodeCheck, hexlikeMode, containerMode, strict };
 }
 
 async function readInput(filePath) {
@@ -326,7 +359,7 @@ function muteStats() {
 }
 
 function stats(msg) {
-  if (!muteStats()) {
+  if (!ndjsonStderr && !muteStats()) {
     process.stderr.write(msg + '\n');
   }
 }
@@ -348,12 +381,14 @@ function reportInputThroughput(inputBytesRead, startedAt) {
 }
 
 async function main() {
-  const debugBuild = false;
-  if (debugBuild) process.stderr.write('\x1b[33mDEBUG BUILD!\x1b[0m\n');
-  const { decodeMode, formatSpec, filePath, mappingsFormat, passthrough, spacesMode, stripWhitespace, tabsMode, crlfMode, preserveChars, rangeStart, rangeEnd, noDoubleEncodeCheck, hexlikeMode, containerMode } = parseArgs(process.argv.slice(2));
-  const pb = new PrintableBinary();
-
   try {
+    if (debugBuild && !ndjsonStderr) await diagnosticWrite('\x1b[33mDEBUG BUILD!\x1b[0m\n');
+    if (ndjsonStderr && process.argv.slice(2).some(arg => ['-h', '--help', '--about'].includes(arg))) {
+      throw new Error('--ndjson-stderr cannot be combined with --help/--about');
+    }
+    const { decodeMode, formatSpec, filePath, mappingsFormat, passthrough, spacesMode, stripWhitespace, tabsMode, crlfMode, preserveChars, rangeStart, rangeEnd, noDoubleEncodeCheck, hexlikeMode, containerMode, strict } = parseArgs(process.argv.slice(2));
+    ({ default: PrintableBinary } = await import('../js/printable_binary.js'));
+    const pb = new PrintableBinary();
     if (mappingsFormat) {
       const entries = pb.getMappings();
       outputMappings(entries, mappingsFormat);
@@ -363,6 +398,9 @@ async function main() {
     const throughputStartedAt = performance.now();
     let input = await readInput(filePath);
     const inputBytesRead = input.length;
+    let inputOffset = 0;
+    let outputBytes = 0;
+    let summary = { invalid_events: 0, invalid_bytes: 0 };
 
     // Apply byte range if specified
     if (rangeStart !== null || rangeEnd !== null) {
@@ -377,17 +415,18 @@ async function main() {
       }
 
       if (start >= inputLen) {
-        process.stderr.write(`Warning: start offset ${start} exceeds input size ${inputLen}\n`);
+        warning(`start offset ${start} exceeds input size ${inputLen}`);
         input = Buffer.alloc(0);
       } else if (start > end) {
-        process.stderr.write('Warning: start offset exceeds end offset, empty range\n');
+        warning('start offset exceeds end offset, empty range');
         input = Buffer.alloc(0);
       } else {
         if (end >= inputLen) {
-          process.stderr.write(`Warning: end offset ${end} exceeds input size ${inputLen}, clamping to ${inputLen - 1}\n`);
+          warning(`end offset ${end} exceeds input size ${inputLen}, clamping to ${inputLen - 1}`);
           end = inputLen - 1;
         }
         input = input.subarray(start, end + 1);
+        inputOffset = start;
       }
     }
 
@@ -425,12 +464,12 @@ async function main() {
 
     if (decodeMode) {
       if (passthrough) {
-        process.stderr.write('Warning: --passthrough ignored in decode mode\n');
+        warning('--passthrough ignored in decode mode');
       }
-      const inputStr = input.toString('utf8');
       stats(`Decoding mode: Input size is ${input.length} bytes`);
 
       if (hexlikeMode) {
+        const inputStr = input.toString('utf8');
         // Hexlike decode
         const { data: decoded, foundHex } = pb.hexlikeDecode(inputStr, {
           spaces: spacesMode
@@ -451,30 +490,35 @@ async function main() {
         await writeTo(process.stdout, Buffer.from(decoded));
       } else {
         // Warn if hexlike encoding detected in regular PB decode
-        if (PrintableBinary.detectHexlike(inputStr)) {
-          process.stderr.write('Warning: input appears to contain hexlike (\u039F\u03C7) encoding; use --hexlike -d to decode\n');
+        if (input.includes(Buffer.from('Οχ')) && PrintableBinary.detectHexlike(input.toString('utf8'))) {
+          warning('input appears to contain hexlike (\u039F\u03C7) encoding; use --hexlike -d to decode');
+        }
+        if (spacesMode && /[\r\n] {2,}/.test(input.toString('latin1'))) {
+          warning('spaces after newline are treated as data in --spaces mode');
         }
 
         if (stripWhitespace) {
           stats('Decoded with whitespace stripping');
         }
-        const decoded = pb.decode(inputStr, {
+        const result = await pb.decodeReportAsync(input, {
           spaces: spacesMode,
           stripWhitespace: stripWhitespace,
-          warnOnIndent: spacesMode && stripWhitespace
-        });
+          inputOffset,
+        }, reportEvent);
+        const decoded = result.bytes;
+        summary = result.summary;
         stats(`Decoded result size: ${decoded.length} bytes`);
-        await writeTo(process.stdout, Buffer.from(decoded));
+        if (!(strict && summary.invalid_events)) {
+          await writeTo(process.stdout, decoded);
+          outputBytes = decoded.length;
+        }
       }
     } else {
       // Check for double-encoding
       if (!noDoubleEncodeCheck) {
         const deInfo = pb.detectDoubleEncode(input.toString('utf8'));
         if (deInfo.detected) {
-          process.stderr.write(
-            `Warning: Input appears to already be printable-binary encoded (${(deInfo.confidence * 100).toFixed(1)}% detection).\n` +
-            `         Use --no-double-encode-check to suppress this warning.\n`
-          );
+          warning(`Input appears to already be printable-binary encoded (${(deInfo.confidence * 100).toFixed(1)}% detection). Use --no-double-encode-check to suppress this warning.`);
         }
       }
 
@@ -496,6 +540,7 @@ async function main() {
           options.format = formatSpec;
         }
         const encoded = pb.encode(input, options);
+        outputBytes = Buffer.byteLength(encoded, 'utf8');
         stats(`Encoded ${input.length} bytes of input to ${Buffer.byteLength(encoded, 'utf8')} bytes`);
         if (passthrough) {
           await writeTo(process.stdout, input);
@@ -506,9 +551,24 @@ async function main() {
       }
     }
     reportInputThroughput(inputBytesRead, throughputStartedAt);
+    if (ndjsonStderr) {
+      const elapsed_seconds = Math.max((performance.now() - throughputStartedAt) / 1000, 0.0005);
+      await writeTo(process.stderr, JSON.stringify({ type: 'summary', ...summary,
+        input_bytes: inputBytesRead, output_bytes: outputBytes, complete: true,
+        elapsed_seconds, input_mbps: inputBytesRead / 1_000_000 / elapsed_seconds, warnings }) + '\n');
+    } else if (summary.invalid_events) {
+      process.stderr.write(`Invalid input: ${summary.invalid_events} events, ${summary.invalid_bytes} bytes\n`);
+    }
+    process.exitCode = Math.min(summary.invalid_events, 255);
   } catch (err) {
-    process.stderr.write(`Error: ${err.message}\n`);
-    process.exit(1);
+    process.exitCode = 1;
+    try {
+      if (ndjsonStderr) {
+        await diagnosticWrite(JSON.stringify({ type: 'error', fatal: true, message: err.message }) + '\n');
+        await diagnosticWrite(JSON.stringify({ type: 'summary', complete: false, invalid_events: null,
+          invalid_bytes: null, input_bytes: null, output_bytes: null, warnings }) + '\n');
+      } else process.stderr.write(`Error: ${err.message}\n`);
+    } catch (_) { /* Broken diagnostic streams cannot report their own failure. */ }
   }
 }
 

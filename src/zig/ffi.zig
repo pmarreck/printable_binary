@@ -12,6 +12,50 @@ const pb = @import("printable_binary.zig");
 
 const allocation = @import("ffi_allocator");
 
+const DecodeEvent = extern struct {
+	input_offset: usize, output_offset: usize, input_length: usize, output_length: usize,
+	bytes: [*]const u8,
+};
+const DecodeReport = extern struct {
+	output: pb.FFIResult,
+	invalid_events: usize,
+	invalid_bytes: usize,
+};
+const DecodeEventFn = *const fn (?*anyopaque, *const DecodeEvent) callconv(.c) c_int;
+
+/// Reporting variant. Event pointers/spans are borrowed only during callback.
+/// error_code 2 denotes callback failure; other fatal failures use code 1.
+export fn pb_decode_report(input: ?[*]const u8, input_len: usize, flags: c_uint,
+	input_base: usize, callback: ?DecodeEventFn, context: ?*anyopaque) callconv(.c) DecodeReport
+{
+	const failed: DecodeReport = .{ .output = .{ .data = null, .len = 0, .error_code = 1 }, .invalid_events = 0, .invalid_bytes = 0 };
+	if (input == null and input_len != 0) return failed;
+	const Sink = struct {
+		callback: ?DecodeEventFn,
+		context: ?*anyopaque,
+		pub fn event(self: *@This(), value: pb.recovery.ErrorEvent) !void {
+			if (self.callback) |emit| {
+				const borrowed: DecodeEvent = .{ .input_offset = value.input_offset, .output_offset = value.output_offset,
+					.input_length = value.input_length, .output_length = value.output_length, .bytes = value.bytes.ptr };
+				if (emit(self.context, &borrowed) != 0) return error.SinkFailed;
+			}
+		}
+	};
+	var sink: Sink = .{ .callback = callback, .context = context };
+	const bytes = if (input_len != 0) input.?[0..input_len] else &.{};
+	const decoded = pb.recovery.decodeBytewise(allocation.allocator, bytes, .{
+		.spaces = flags & @intFromEnum(pb.DecodeFlags.spaces_mode) != 0,
+		.strip_whitespace = flags & @intFromEnum(pb.DecodeFlags.strip_whitespace) != 0,
+		.input_base = input_base,
+	}, &sink) catch |err| {
+		var result = failed;
+		if (err == error.SinkFailed) result.output.error_code = 2;
+		return result;
+	};
+	return .{ .output = .{ .data = decoded.bytes.ptr, .len = decoded.bytes.len, .error_code = 0 },
+		.invalid_events = decoded.summary.invalid_events, .invalid_bytes = decoded.summary.invalid_bytes };
+}
+
 /// C ABI export for double-encoding detection
 export fn pb_detect_double_encode(input: ?[*]const u8, input_len: usize, threshold: f32) callconv(.c) pb.DoubleEncodeInfo {
 	if (input == null and input_len > 0) {
@@ -208,6 +252,37 @@ test "FFI: null input pointer with nonzero len returns error instead of crashing
 	try std.testing.expect(dbl.confidence == 0.0);
 }
 
+test "FFI: report callback receives borrowed spans and failures release output" {
+	const Callback = struct {
+		count: usize = 0,
+		fail: bool = false,
+		fn emit(context: ?*anyopaque, event: *const DecodeEvent) callconv(.c) c_int {
+			const self: *@This() = @ptrCast(@alignCast(context.?));
+			self.count += 1;
+			if (event.input_offset != 7 or event.output_offset != 0 or event.input_length != 1 or event.output_length != 1 or event.bytes[0] != 0xe0)
+				return 1;
+			return if (self.fail) 1 else 0;
+		}
+	};
+	var callback: Callback = .{};
+	const wire = "\xe0¶";
+	const result = pb_decode_report(wire.ptr, wire.len, 0, 7, Callback.emit, &callback);
+	try std.testing.expectEqual(@as(c_int, 0), result.output.error_code);
+	defer pb_free(result.output.data, result.output.len);
+	try std.testing.expectEqualStrings("\xe0\n", result.output.data.?[0..result.output.len]);
+	try std.testing.expectEqual(@as(usize, 1), result.invalid_events);
+	try std.testing.expectEqual(@as(usize, 1), result.invalid_bytes);
+	try std.testing.expectEqual(@as(usize, 1), callback.count);
+	callback.fail = true;
+	const failed = pb_decode_report(wire.ptr, wire.len, 0, 7, Callback.emit, &callback);
+	try std.testing.expectEqual(@as(c_int, 2), failed.output.error_code);
+	try std.testing.expect(failed.output.data == null);
+	const invalid = pb_decode_report(null, 1, 0, 0, null, null);
+	try std.testing.expect(invalid.output.error_code != 0);
+	const overflow = pb_decode_report(wire.ptr, wire.len, 0, std.math.maxInt(usize), null, null);
+	try std.testing.expect(overflow.output.error_code != 0);
+}
+
 test "FFI: pb_hexlike_encode/decode roundtrip + detect + null safety" {
 	const input = "Hi\xff!";
 	const enc = pb_hexlike_encode(input.ptr, input.len, 0);
@@ -285,6 +360,12 @@ fn exerciseFfiLifecycle(allocator: std.mem.Allocator) !void {
 		const decoded_bytes = try ffiBytes(decoded);
 		defer pb_free(decoded.data, decoded.len);
 		try std.testing.expectEqualSlices(u8, original, decoded_bytes);
+		const report = pb_decode_report(encoded.data, encoded.len, 0, 0, null, null);
+		const reported_bytes = try ffiBytes(report.output);
+		defer pb_free(report.output.data, report.output.len);
+		try std.testing.expectEqualSlices(u8, original, reported_bytes);
+		try std.testing.expectEqual(@as(usize, 0), report.invalid_events);
+		try std.testing.expectEqual(@as(usize, 0), report.invalid_bytes);
 		const formatted = pb_format(encoded.data, encoded.len, 8, 10, 0);
 		_ = try ffiBytes(formatted);
 		defer pb_free(formatted.data, formatted.len);

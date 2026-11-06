@@ -37,5 +37,10 @@ if [[ "$rc" != 0 || -n "$err" ]] || ! cmp -s <(printf '%s' "$out") "$scratch/enc
 	printf 'FAIL: WASM exact encode and muted diagnostics\n' >&2
 	failures=$((failures + 1))
 fi
-if [[ "$failures" == 0 ]]; then printf 'PASS: required WASM help, round trip, and statistics\n'; fi
+if ! node "$repo_root/tests/cli/test-recovery.mjs" "$wasm_cli" WASM > "$scratch/recovery.stdout" 2> "$scratch/recovery.stderr"; then
+	printf 'FAIL: WASM recovery diagnostics\n' >&2
+	cat "$scratch/recovery.stdout" "$scratch/recovery.stderr" >&2
+	failures=$((failures + 1))
+fi
+if [[ "$failures" == 0 ]]; then printf 'PASS: required WASM help, round trip, statistics and recovery\n'; fi
 exit "$failures"

@@ -2,6 +2,23 @@ import CliCore
 import Map
 
 expect {
+	match CliCore.parse(["--strict", "--ndjson-stderr", "-d"]) {
+		Run(options) => options.strict and options.ndjson_stderr and options.decode
+		_ => False
+	}
+}
+
+expect {
+	options = { ..CliCore.default_options, range_start: Present(-3) }
+	CliCore.range_input("abcde".to_utf8(), options) == { bytes: "cde".to_utf8(), input_base: 2 }
+}
+
+expect {
+	options = { ..CliCore.default_options, range_start: Present(-99) }
+	CliCore.range_input("abcde".to_utf8(), options) == { bytes: "abcde".to_utf8(), input_base: 0 }
+}
+
+expect {
 	match CliCore.parse(["-d", "--spaces", "-S", "--range", "0x05-0x09", "input.bin"]) {
 		Run(options) =>
 			options.decode

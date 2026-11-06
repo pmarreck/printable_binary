@@ -68,8 +68,18 @@ var g_warning_total: usize = 0;
 
 fn fatalExit() noreturn {
     if (g_ndjson) {
-        if (g_io) |io| std.Io.File.stderr().writeStreamingAll(io,
-            "{\"type\":\"summary\",\"complete\":false,\"invalid_events\":null,\"invalid_bytes\":null}\n") catch {};
+        if (g_io) |io| {
+            if (g_allocator) |allocator| {
+                if (cli_recovery.incompleteLine(allocator, g_warnings[0..g_warning_count], g_warning_total - g_warning_count)) |line| {
+                    std.Io.File.stderr().writeStreamingAll(io, line) catch {};
+                    std.Io.File.stderr().writeStreamingAll(io, "\n") catch {};
+                    allocator.free(line);
+                    std.process.exit(1);
+                } else |_| {}
+            }
+            std.Io.File.stderr().writeStreamingAll(io,
+                "{\"type\":\"summary\",\"complete\":false,\"invalid_events\":null,\"invalid_bytes\":null,\"input_bytes\":null,\"output_bytes\":null}\n") catch {};
+        }
     }
     std.process.exit(1);
 }
@@ -492,7 +502,7 @@ fn printUsage(io: std.Io) void {
         \\  --no-double-encode-check   Skip detection of already-encoded input
         \\
         \\Decode options:
-        \\  -S, --strip-whitespace     Strip whitespace before decoding (for formatted input)
+        \\  -S, --strip-whitespace     Ignore transport whitespace without joining glyph fragments
         \\
         \\Format and output options:
         \\  -f[=NxM], --format[=NxM]   Format output in groups
@@ -677,7 +687,8 @@ fn runCli(init: std.process.Init) !u8 {
     // Free allocated strings on exit
     defer if (opts.input_file) |f| allocator.free(f);
     defer if (opts.preserve_chars) |p| allocator.free(p);
-    if (opts.ndjson_stderr and opts.passthrough_mode or opts.strict and (!opts.decode_mode or opts.container or opts.hexlike)) {
+    if (opts.ndjson_stderr and (opts.passthrough_mode and !opts.decode_mode or opts.container or opts.hexlike) or
+        opts.strict and (!opts.decode_mode or opts.container or opts.hexlike)) {
         writeStats("Error: incompatible diagnostic/strict options\n", .{});
         fatalExit();
     }

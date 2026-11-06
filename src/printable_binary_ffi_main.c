@@ -27,6 +27,9 @@
 #include "printable_binary.h"
 #include "container_json.h"
 #include "platform_identity.h"
+#include "cli_diagnostics.h"
+#define fprintf pb_cli_fprintf
+#define perror pb_cli_perror
 
 /* Program options */
 typedef struct {
@@ -51,6 +54,7 @@ typedef struct {
     int64_t range_end;
     bool no_double_encode_check;
     bool container_mode;
+    bool strict;
 } options_t;
 
 static bool env_var_truthy(const char *value) {
@@ -97,6 +101,8 @@ static void print_usage(const char *name) {
     fprintf(stderr, "Usage: %s [options] [file]\n", name);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -d, --decode       Decode mode (default is encode mode)\n");
+    fprintf(stderr, "  --strict           Withhold decoded output if input errors occur\n");
+    fprintf(stderr, "  --ndjson-stderr    JSON input errors and final summary (raw PB mode)\n");
     fprintf(stderr, "  -p, --passthrough  Pass input to stdout unchanged, send encoded data to stderr\n");
     fprintf(stderr, "  -X, --hexlike      Hexlike mode (passthrough ASCII as-is, other bytes as \xce\x9f\xcf\x87-prefixed hex)\n");
     fprintf(stderr, "  -C, --container    Container mode: encode a file to a self-verifying .pbf.json\n");
@@ -117,7 +123,7 @@ static void print_usage(const char *name) {
     fprintf(stderr, "\nEncode detection:\n");
     fprintf(stderr, "  --no-double-encode-check   Skip detection of already-encoded input\n");
     fprintf(stderr, "\nDecode options:\n");
-    fprintf(stderr, "  -S, --strip-whitespace     Strip whitespace before decoding\n");
+    fprintf(stderr, "  -S, --strip-whitespace     Ignore transport whitespace without joining glyph fragments\n");
     fprintf(stderr, "\nFormat and output options:\n");
     fprintf(stderr, "  -f[=NxM], --format[=NxM]   Format output in groups (default: 8x10)\n");
     fprintf(stderr, "  --mappings         Show the byte-to-character mapping table\n");
@@ -271,6 +277,10 @@ static options_t parse_options(int argc, char *argv[]) {
                 opts.preserve_chars = strdup(name + 9);
             } else if (strcmp(name, "decode") == 0) {
                 opts.decode_mode = true;
+            } else if (strcmp(name, "strict") == 0) {
+                opts.strict = true;
+            } else if (strcmp(name, "ndjson-stderr") == 0) {
+                /* Enabled before parsing so argument errors are JSON too. */
             } else if (strcmp(name, "passthrough") == 0) {
                 opts.passthrough_mode = true;
             } else if (strcmp(name, "hexlike") == 0) {
@@ -495,7 +505,15 @@ static char *read_input(const char *filename, size_t *len_out) {
 
     while (1) {
         size_t n = fread(buf + len, 1, capacity - len, fp);
-        if (n == 0) break;
+        if (n == 0) {
+            if (ferror(fp)) {
+                perror("Error reading input");
+                free(buf);
+                if (fp != stdin) fclose(fp);
+                exit(1);
+            }
+            break;
+        }
         len += n;
         if (len >= capacity) {
             capacity *= 2;
@@ -515,25 +533,35 @@ static char *read_input(const char *filename, size_t *len_out) {
 }
 
 int main(int argc, char *argv[]) {
-    pb_announce_debug_build();
+    pb_cli_diagnostics_init(argc, argv);
+    if (!pb_cli_diag.ndjson) pb_announce_debug_build();
     options_t opts = parse_options(argc, argv);
+    if ((pb_cli_diag.ndjson && ((opts.passthrough_mode && !opts.decode_mode) || opts.container_mode || opts.hexlike_mode)) ||
+        (opts.strict && (!opts.decode_mode || opts.container_mode || opts.hexlike_mode))) {
+        fprintf(stderr, "Error: diagnostic/strict options require ordinary PB mode without passthrough\n");
+        return 1;
+    }
     if (opts.about_mode) {
         pb_print_about("C FFI");
+        pb_cli_diag.complete = true;
         return 0;
     }
     const char *prog_name = argv[0] ? argv[0] : "printable-binary";
-    bool stats_enabled = !env_var_truthy(getenv("PRINTABLE_BINARY_MUTE_STATS"));
+    bool stats_enabled = !pb_cli_diag.ndjson && !env_var_truthy(getenv("PRINTABLE_BINARY_MUTE_STATS"));
 
     if (getenv("PRINTABLE_BINARY_MAP") != NULL) {
         fprintf(stderr, "Warning: PRINTABLE_BINARY_MAP is ignored by the FFI build (compiled-in map); use the C, Lua, or Node build for custom maps.\n");
     }
     if (opts.help_mode) {
+        pb_cli_diag.help = pb_cli_diag.ndjson;
         print_usage(prog_name);
+        pb_cli_diag.complete = true;
         return 0;
     }
 
     if (opts.mappings_mode) {
         print_mappings(opts.mappings_mode);
+        pb_cli_diag.complete = true;
         return 0;
     }
 
@@ -550,6 +578,7 @@ int main(int argc, char *argv[]) {
     size_t input_len;
     char *input = read_input(opts.input_file, &input_len);
     size_t input_bytes_read = input_len;
+    size_t input_base = 0;
 
     /* Apply byte range if specified (policy logic lives in Zig core) */
     if (opts.has_range_start || opts.has_range_end) {
@@ -575,6 +604,7 @@ int main(int argc, char *argv[]) {
             memmove(input, input + range.offset, range.length);
         }
         input_len = range.length;
+        input_base = range.offset;
     }
 
     if (opts.container_mode) {
@@ -662,6 +692,7 @@ int main(int argc, char *argv[]) {
     }
 
 
+    size_t invalid_events = 0, invalid_bytes = 0, output_bytes = 0;
     if (opts.decode_mode) {
         if (opts.passthrough_mode) {
             fprintf(stderr, "Warning: --passthrough ignored in decode mode\n");
@@ -690,9 +721,13 @@ int main(int argc, char *argv[]) {
         if (opts.spaces_mode) flags |= PB_DECODE_SPACES_MODE;
         if (opts.strip_whitespace) flags |= PB_DECODE_STRIP_WS;
 
-        pb_ffi_result_t result = opts.hexlike_mode
-            ? pb_hexlike_decode(input, input_len, opts.spaces_mode ? 1 : 0)
-            : pb_decode(input, input_len, flags);
+        pb_ffi_result_t result;
+        if (opts.hexlike_mode) result = pb_hexlike_decode(input, input_len, opts.spaces_mode ? 1 : 0);
+        else {
+            pb_decode_report_t report = pb_decode_report(input, input_len, flags, input_base, pb_cli_event, stderr);
+            result = report.output;
+            invalid_events = report.invalid_events; invalid_bytes = report.invalid_bytes;
+        }
         if (result.error_code != 0 || !result.data) {
             fprintf(stderr, "Decode error\n");
             free(input);
@@ -703,7 +738,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Decoded result size: %zu bytes\n", result.len);
         }
 
-        fwrite(result.data, 1, result.len, stdout);
+        if (!opts.strict || invalid_events == 0) output_bytes = fwrite(result.data, 1, result.len, stdout);
         pb_free(result.data, result.len);
     } else {
         /* Encode mode */
@@ -762,7 +797,7 @@ int main(int argc, char *argv[]) {
         if (opts.passthrough_mode) {
             fwrite(output, 1, output_len, stderr);
         } else {
-            fwrite(output, 1, output_len, stdout);
+            output_bytes = fwrite(output, 1, output_len, stdout);
         }
 
         pb_free(result.data, result.len);
@@ -771,10 +806,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    fflush(stdout);
+    if (fflush(stdout) != 0 || ferror(stdout)) {
+        fprintf(stderr, "Error: writing decoded/encoded output failed\n");
+        free(input);
+        if (opts.preserve_chars) free(opts.preserve_chars);
+        return 1;
+    }
     fflush(stderr);
     print_input_throughput(stats_enabled, input_bytes_read, throughput_started_at);
+    int diagnostic_status = pb_cli_summary(invalid_events, invalid_bytes, input_bytes_read, output_bytes, throughput_now_seconds() - throughput_started_at);
     free(input);
     if (opts.preserve_chars) free(opts.preserve_chars);
-    return 0;
+    if (diagnostic_status) return 1;
+    return invalid_events < 255 ? (int)invalid_events : 255;
 }
