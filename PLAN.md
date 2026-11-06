@@ -4,14 +4,14 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Malformed-input parity
 
-- [ ] Add shared malformed-byte regressions and deterministic seeded coverage to the complete suite, then align implementations with automatic byte-preserving fallback and separate canonical validation (implementation authorized 2026-11-06; context: docs/plan_context/current-work.md).
+- [x] Add shared malformed-byte regressions and deterministic seeded coverage, align all implementations with automatic recovery and separate canonical validation, then push and verify CI at 29932c9 (done 2026-11-06 17:09 EST; context: docs/plan_context/current-work.md).
 	- [x] How should recovered input errors be counted and returned? Answer: Count invalid-input events and invalid input bytes separately; a multi-byte error counts as one event, and CLI status saturates the event count at 255 while library/diagnostic totals remain exact (decided 2026-11-06 13:03 EST; context: docs/plan_context/current-work.md).
 	- [x] Should diagnostics include input and output offsets? Answer: Yes, include both as zero-based byte offsets at the start of each event, with input measured in the original encoded stream and output in the decoded stream (decided 2026-11-06 15:33 EST; context: docs/plan_context/current-work.md).
 	- [x] Establish failing library/CLI regressions for contiguous events, dual spans, exact counts/hex, NDJSON purity, sink failure and saturated exit status; missing APIs/flags and false-success I/O witnesses reproduced before fixes (done 2026-11-06 16:53 EST; context: docs/plan_context/current-work.md).
 	- [x] Add Rust recovery/report APIs and structured CLI plus Zig core recovery, preserving strict validators; failing API/CLI controls and the complete local suite pass (done 2026-11-06 15:57 EST; context: docs/plan_context/current-work.md).
 	- [x] Implement Rust and Zig recovery/report APIs and CLI adapters while retaining strict canonical validators and tag guards; complete local suite passes, including seeded mutation oracles and allocation/sink failures (done 2026-11-06 16:15 EST; context: docs/plan_context/current-work.md).
 	- [x] Requalify cross-language recovery after fixing Node diagnostic backpressure; the complete gate passes with the paused-reader regression and all surface/profile checks (done 2026-11-06 17:05 EST; context: docs/plan_context/current-work.md).
-	- [ ] Add bounded seeded coverage, document the APIs/flags, run the complete checks, then push and verify the exact commit in CI.
+	- [x] Add bounded seeded coverage and API/flag documentation, pass the complete and repeat gates, then push 29932c9 and verify all 28 exact-commit CI targets (done 2026-11-06 17:09 EST; context: docs/plan_context/current-work.md).
 
 ## Repository CI
 

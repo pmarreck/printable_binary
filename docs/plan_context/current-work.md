@@ -1607,7 +1607,17 @@ not a queue of errors or promises. The slow-reader test, asynchronous sink parit
 serialized admission and failure propagation now pass the targeted pinned Nix
 checks. The complete 98-check gate and all 26 fresh prepared runtime groups
 passed again at 17:05 EST on 2026-11-06, including the paused-reader control.
-The final repeat and exact-commit publication checks follow before shipment.
+The repeat gate passed at 17:07 EST without removing any checks. Commit
+29932c9538a50b55b4b72c49a586caf2c7968a7e was then pushed and independently
+matched origin/yolo. Exact-commit Mechatron CI passed all 28 targets in 44
+seconds, finishing 2026-11-06T22:09:00Z. The malformed-input parity work is
+shipped. This does not qualify the separate five-second runtime budget or resume
+any held feature.
+
+A durable downstream handoff delivered the verified code revision and Rust API
+guidance after CI passed. This records delivery, not downstream adoption or UI
+verification. The only remaining acknowledgment in this task is the unrelated
+legacy-CI request whose return route is unavailable.
 
 ### Legacy GitHub CI disabled, 2026-11-06
 
