@@ -743,6 +743,7 @@
               cargo build --release --offline --manifest-path rust/Cargo.toml --example textual
               cargo metadata --locked --offline --no-deps --format-version 1 --manifest-path rust/Cargo.toml > rust-test-metadata.json
               node tests/cli/test-rust-textual.mjs ./rust/target/release/examples/textual
+              node tests/cli/test-recovery.mjs ./rust/target/release/printable-binary-rs Rust
               bash tests/cli/test-rust-malformed-utf8 ./rust/target/release/printable-binary-rs
               bash tests/cli/test-rust-spaces ./rust/target/release/printable-binary-rs ${self.checks.${system}.test-zig}/bin/printable-binary
               for i in $(seq 0 255); do printf "\\$(printf '%03o' "$i")"; done > allbytes

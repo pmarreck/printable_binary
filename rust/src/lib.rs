@@ -9,6 +9,8 @@ include!(concat!(env!("OUT_DIR"), "/map.rs"));
 
 /// Canonical Unicode-preserving encoding of arbitrary bytes.
 pub mod textual;
+/// Byte-preserving decode recovery with exact event counts and injected diagnostics.
+pub mod recovery;
 mod textual_policy;
 
 /// Decode a tagged value, or a legacy untagged bytewise value.
@@ -116,55 +118,8 @@ pub fn decode_into(input: &[u8], out: &mut Vec<u8>) {
 
 /// Decode with explicit options into a cleared, reusable caller-owned buffer.
 pub fn decode_into_with_options(input: &[u8], out: &mut Vec<u8>, options: DecodeOptions) {
-    out.clear();
-    let mut i = 0;
-    while i < input.len() {
-        let b0 = input[i];
-        if options.strip_whitespace
-            && matches!(b0, b' ' | b'\t' | b'\r' | b'\n')
-            && !(options.spaces && b0 == b' ')
-        {
-            i += 1;
-            continue;
-        }
-        let len = utf8_len(b0);
-        let mut matched = false;
-        match len {
-            1 => {
-                let v = DECODE_1[b0 as usize];
-                if v >= 0 {
-                    out.push(v as u8);
-                    i += 1;
-                    matched = true;
-                }
-            }
-            2 if (0xc2..=0xdf).contains(&b0)
-                && input.len() - i >= 2
-                && input[i + 1] & 0xc0 == 0x80 =>
-            {
-                let v = DECODE_2[(b0 & 0x1F) as usize][(input[i + 1] & 0x3F) as usize];
-                if v >= 0 {
-                    out.push(v as u8);
-                    i += 2;
-                    matched = true;
-                }
-            }
-            3 if input.len() - i >= 3 => {
-                let key =
-                    ((input[i] as u32) << 16) | ((input[i + 1] as u32) << 8) | input[i + 2] as u32;
-                if let Ok(idx) = DECODE_3.binary_search_by_key(&key, |&(k, _)| k) {
-                    out.push(DECODE_3[idx].1);
-                    i += 3;
-                    matched = true;
-                }
-            }
-            _ => {}
-        }
-        if !matched {
-            out.push(b0);
-            i += 1;
-        }
-    }
+	let result = recovery::decode_bytewise_into(input, out, options, |_| Ok::<_, std::convert::Infallible>(()));
+	match result { Ok(_) => {}, Err(never) => match never {} }
 }
 
 #[cfg(test)]

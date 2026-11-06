@@ -1362,6 +1362,159 @@ was sent to the infrastructure coordinator before any timing retry; normal idle
 CI admission was not interpreted as an exclusive quiet window. The retry remains
 unused while verified deployment and post-restart load assessment are pending.
 
+## Malformed-input parity decision
+
+On 2026-11-06 the owner requested malformed-byte coverage in the complete test
+suites and consistent behavior across implementations. This is additive work;
+the timing-window qualification remains dependent on infrastructure readiness,
+and existing feature holds remain intact.
+
+The accepted textual contract distinguishes raw source bytes from encoded wire
+bytes. Encoding accepts arbitrary source bytes and maps malformed UTF-8 bytes to
+PB glyphs without replacement or loss. Textual decoding requires well-formed,
+canonical encoded UTF-8 and rejects invalid UTF-8, escapes and alternate spellings.
+Successfully decoding a PB glyph can intentionally produce a malformed UTF-8 byte
+or a terminal control byte; decoded output is raw data, not terminal-safe text.
+
+Legacy bytewise decoding is permissive but differs in fallback/resynchronization:
+Rust and Roc advance one unrecognized byte at a time, whereas Zig and C can copy
+a whole candidate sequence, hiding a following recognizable glyph. The Node CLI
+converts wire bytes to a JavaScript string before decoding, and the Elixir sigil
+rejects unknown glyphs. Existing short malformed-byte regressions do not cover
+all these transitions. Inspection identified these differences; the attempted
+focused rerun was still queued when withdrawn, so no fresh reproduction is
+claimed yet.
+
+The owner explicitly asked to discuss the desired behavior before choosing a
+shared policy. Two coherent alternatives are strict rejection of malformed or
+out-of-alphabet wire input, and permissive exact-glyph matching with preservation
+of each unrecognized byte followed by one-byte advancement. The latter retains
+the documented legacy passthrough intent; the former makes bytewise decoding an
+encoded-input validator and avoids silently accepting corrupted wire data. No
+choice had been confirmed at that checkpoint, and no codec behavior has changed. Once settled, first add
+failing cross-implementation cases, then repair adapters and codecs, and include
+bounded seeded mixtures/mutations plus known-valid controls in the complete suite.
+Do not require every mutation to fail: a mutation can produce another valid
+canonical payload, whose decoding and exact canonical re-encoding should agree.
+
+At 12:51 EST the owner selected automatic recovery and opt-in repair suggestions
+such as `--suggest-on-error`, with error counts returned by libraries and reflected
+in CLI status. This remains a design discussion, not an instruction to implement
+the suggestions yet. Suggestions must not silently alter recovered bytes. Keep
+strict canonical validation distinct from the broader recovery adapter; accepting
+damaged or noncanonical wire data does not extend the codec's bijection proof.
+
+The proposed suggestion search covers same-width byte substitutions, one-byte
+insertions/deletions and single-bit changes in a bounded local window. Restrict
+candidates to the active PB alphabet for bytewise input and valid textual tokens
+for textual input. UTF-8 structural validity can be checked algorithmically from
+its one-to-four-byte encoding rules without a table of assigned Unicode names.
+Edit distance supplies candidate proximity, not a calibrated probability of the
+original data. The owner subsequently excluded single-bit insertion/deletion
+because it shifts subsequent byte framing; single-bit flips and whole-byte edits
+remain in the discussion. Candidate
+display must escape controls, and both search work and diagnostic output require
+explicit bounds even when suggestions are enabled.
+
+At that stage two decisions remained open: whether error counts refer to invalid
+bytes, invalid spans or parser recovery events, and how the CLI exposes counts above 255. Unix
+process status preserves only the low eight bits, so blindly returning a count
+of 256 would report success. Proposed handling is an exact library/diagnostic
+count and a saturating CLI status `min(error_count, 255)`; that policy has not yet
+been confirmed. Adjacent diagnostic grouping need not change the defined count,
+and the same event must not be counted again merely because canonical checking
+also notices its representation mismatch. Malformed raw source bytes during
+encoding remain ordinary supported input, not decoder errors.
+
+At 13:03 EST the owner explicitly deferred `--suggest-on-error` to future work.
+Preserve its design above, but do not implement or prioritize it during the
+immediate malformed-input parity work. The immediate counting decision is to
+tally both invalid-input events and invalid input bytes: one error may encompass
+multiple bytes. CLI status is the event count capped at 255; library and stderr
+summary counts remain exact. This supersedes the earlier per-invalid-byte count
+recommendation. Printed diagnostic grouping must not distort either total.
+
+The proposed event boundary is a maximal contiguous region the active decoder
+cannot accept as legitimate encoded tokens, ending at the next accepted token.
+Malformed UTF-8 recovery still advances one byte at a time to find that boundary;
+this does not require one reported event per byte. Offsets are zero-based byte
+offsets in the original encoded input, including any leading tag. Lengths and
+invalid-byte totals refer to encoded input spans, not decoded raw bytes. Never
+count a recovered event twice because later canonical validation notices the
+same mismatch.
+
+The owner proposed `--ndjson-stderr` for streaming diagnostics: one object with
+`type: "error"`, offset, length and original hexadecimal bytes per error event,
+then a final `type: "summary"` object with both totals. Error and summary records
+need not otherwise share their fields. The formatting proposal is for all stderr
+lines under this flag to be JSON, without mixed human statistics or ANSI; existing
+statistics can be fields of the final summary. Diagnostics go to an injected
+library sink/callback rather than being retained as an accumulating list or
+written directly by the pure codec.
+
+For exact full-event hex without an event-sized formatting allocation, a writer
+can open the error object with its offset and hex string, stream hex chunks, and
+append the final length when the event ends. JSON field order is insignificant.
+This streams diagnostics; it does not claim that the existing whole-value textual
+codec has become a streaming codec. Full event-boundary and record-format behavior
+still needs acceptance examples before implementation. No codec behavior has
+changed during this discussion.
+
+At 15:33 EST the owner requested both input and output offsets for each event.
+Use explicit `input_offset` and `output_offset` fields, both zero-based byte
+offsets, never character counts or display columns. Input coordinates refer to
+the original encoded stream including its tag. Output coordinates refer to the
+logical decoded stream for this operation, at the beginning of the recovered
+event, not the operating system's current file position or a flush boundary.
+Maintain independent counters because glyph decoding and tag removal change
+their relationship; neither field can be derived from the other by a fixed
+offset. This remains compatible with streaming diagnostics.
+
+The corresponding span-field proposal is `input_length` and `output_length`
+instead of an ambiguous `length`. Simple invalid-byte passthrough has equal
+lengths; explicit names also describe recovery events whose representation and
+decoded extent differ. Both starting offsets can be written when an event opens,
+and its final lengths appended when it closes, without retaining an event list.
+
+Technical references: [UTF-8 definition](https://www.rfc-editor.org/rfc/rfc3629#section-3)
+and [Linux process exit status](https://man7.org/linux/man-pages/man3/exit.3.html).
+
+The owner subsequently authorized implementation. The first increment adds a
+Rust `recovery` module with borrowed dual-span events, exact counts, a fallible
+diagnostic sink and bounded source-unit lookahead. Existing bytewise convenience
+functions use the same recovery engine while retaining their byte-only return
+surface; the new report APIs expose counts and events. Existing strict textual
+validators remain unchanged in purpose. The Rust CLI uses recovery automatically,
+supports textual selection, `--strict` and `--ndjson-stderr`, and writes full hex
+in fixed-size chunks. Fatal framing/I/O errors remain failures and incomplete
+JSON summaries use null counts rather than fabricated complete totals.
+
+The Zig core exposes the matching recovery/report API with allocation cleanup
+and sink-failure propagation. Canonicality is checked one recovered source unit
+at a time, so no per-character allocation, full canonical re-encoding or event
+list is needed on this recovery path. A noncanonical multi-glyph spelling can
+therefore have different input and output lengths. The encoder and recovery
+checker share their unit-spelling function, while the independent Unicode oracle
+and existing strict whole-buffer checker remain independent verification paths.
+
+TDD evidence: the new packaged Rust tests first failed on the absent recovery
+module, then six recovery/seed/sink tests passed. The shared CLI check next failed
+on its missing NDJSON summary, then passed the implementation. The new Zig test
+first failed on the missing recovery API, then passed. The first complete gate
+exposed the tag-probe relocation's missing new module; its import closure was
+repaired without dropping safety or mutant controls. The subsequent complete
+Linux gate passed at 15:57 EST, including all 26 prepared runtime groups. Roc's
+61 compiler-driven units remain explicitly mixed compile/test work; no fresh
+five-second qualification is claimed. Actual toolchains remain Zig 0.16.0,
+Rust 1.97.1 and the existing pinned Roc nightly, with no upgrade.
+
+This is a coherent partial implementation checkpoint, not full cross-language
+parity. The Zig CLI and C/APE/WASM/FFI, Node, LuaJIT, Roc and Elixir adapters remain
+next, with shared reporting checks added as each surface is implemented. Existing
+malformed-byte preservation checks remain; their expected status now explicitly
+distinguishes migrated Rust recovery from the not-yet-migrated implementations.
+Full parity will remove that transition. Repair suggestions remain deferred.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

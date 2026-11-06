@@ -70,6 +70,7 @@ let
 				${native "test-rust"}/share/original-source-targets.json \
 				${native "test-rust"}/share/original-package-targets.json || exit 1
 			node tests/cli/test-rust-textual.mjs ${native "test-rust"}/libexec/textual-example || exit 1
+			node tests/cli/test-recovery.mjs ${native "test-rust"}/bin/printable-binary-rs Rust || exit 1
 			bash tests/cli/test-rust-malformed-utf8 ${native "test-rust"}/bin/printable-binary-rs || exit 1
 			bash tests/cli/test-rust-spaces ${native "test-rust"}/bin/printable-binary-rs ${zig} || exit 1
 			luajit -e 'for byte=0,255 do io.write(string.char(byte)) end' > allbytes || exit 1

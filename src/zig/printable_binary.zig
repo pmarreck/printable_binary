@@ -234,12 +234,8 @@ pub const EncodeOptions = struct {
 };
 
 /// Decoding options
-pub const DecodeOptions = struct {
-    /// Treat literal spaces as data (decode them to space bytes)
-    spaces: bool = false,
-    /// Strip whitespace before decoding (for formatted input)
-    strip_whitespace: bool = false,
-};
+pub const recovery = @import("recovery.zig").Codec(character_map);
+pub const DecodeOptions = recovery.Options;
 
 /// Format options for grouping encoded output
 pub const FormatOptions = struct {
@@ -1640,4 +1636,40 @@ fn exerciseTextualLifecycle(allocator: std.mem.Allocator) !void {
 
 test "textual: free every owned allocation when any allocation fails" {
 	try std.testing.checkAllAllocationFailures(std.testing.allocator, exerciseTextualLifecycle, .{});
+}
+
+test "recovery: dual spans, resynchronization, canonical units and failed sinks" {
+	const Collector = struct {
+		items: [4]recovery.ErrorEvent = undefined,
+		count: usize = 0,
+		fail: bool = false,
+		pub fn event(self: *@This(), value: recovery.ErrorEvent) !void {
+			if (self.fail) return error.SinkFailed;
+			self.items[self.count] = value;
+			self.count += 1;
+		}
+	};
+	const allocator = std.testing.allocator;
+	var sink: Collector = .{};
+	const wire = "¶\xff\x80A\xe0¶";
+	const result = try recovery.decodeBytewise(allocator, wire, .{}, &sink);
+	defer allocator.free(result.bytes);
+	try std.testing.expectEqualStrings("\n\xff\x80A\xe0\n", result.bytes);
+	try std.testing.expectEqual(@as(usize, 2), result.summary.invalid_events);
+	try std.testing.expectEqual(@as(usize, 3), result.summary.invalid_bytes);
+	try std.testing.expectEqual(@as(usize, 2), sink.items[0].input_offset);
+	try std.testing.expectEqual(@as(usize, 1), sink.items[0].output_offset);
+	try std.testing.expectEqual(@as(usize, 2), sink.items[0].input_length);
+	try std.testing.expectEqual(@as(usize, 4), sink.items[1].output_offset);
+	const bad = try encode(allocator, "中", .{});
+	defer allocator.free(bad);
+	sink.count = 0;
+	const recovered = try recovery.decodeTextualPayload(allocator, bad, &sink);
+	defer allocator.free(recovered.bytes);
+	try std.testing.expectEqualStrings("中", recovered.bytes);
+	try std.testing.expectEqual(@as(usize, 1), sink.count);
+	try std.testing.expectEqual(bad.len, sink.items[0].input_length);
+	try std.testing.expectEqual(@as(usize, 3), sink.items[0].output_length);
+	sink.fail = true;
+	try std.testing.expectError(error.SinkFailed, recovery.decodeBytewise(allocator, "\xff", .{}, &sink));
 }

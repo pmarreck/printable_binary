@@ -2,6 +2,18 @@
 
 History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build evidence are in [docs/plan_context/current-work.md](docs/plan_context/current-work.md).
 
+## Malformed-input parity
+
+- [ ] Add shared malformed-byte regressions and deterministic seeded coverage to the complete suite, then align implementations with automatic byte-preserving fallback and separate canonical validation (implementation authorized 2026-11-06; context: docs/plan_context/current-work.md).
+	- [x] Should recovery be automatic or explicitly selected? Answer: Automatic recovery, with repair suggestions opt-in only and diagnostics/error counts reported separately from decoded bytes; strict validation remains distinct (decided 2026-11-06 12:51 EST; context: docs/plan_context/current-work.md).
+	- [x] How should recovered input errors be counted and returned? Answer: Count invalid-input events and invalid input bytes separately; a multi-byte error counts as one event, and CLI status saturates the event count at 255 while library/diagnostic totals remain exact (decided 2026-11-06 13:03 EST; context: docs/plan_context/current-work.md).
+	- [x] Should diagnostics include input and output offsets? Answer: Yes, include both as zero-based byte offsets at the start of each event, with input measured in the original encoded stream and output in the decoded stream (decided 2026-11-06 15:33 EST; context: docs/plan_context/current-work.md).
+	- [ ] Establish failing library/CLI regressions for contiguous events, dual spans, exact counts/hex, NDJSON purity, sink failure and saturated exit status.
+	- [x] Add Rust recovery/report APIs and structured CLI plus Zig core recovery, preserving strict validators; failing API/CLI controls and the complete local suite pass (done 2026-11-06 15:57 EST; context: docs/plan_context/current-work.md).
+	- [ ] Implement Rust and Zig recovery/report APIs and CLI adapters while retaining strict canonical validators and tag guards.
+	- [ ] Align C, APE, WASM, FFI, LuaJIT, Node, Roc and Elixir bytewise behavior/reporting with the shared contract and explicitly verify every declared surface.
+	- [ ] Add bounded seeded coverage, document the APIs/flags, run the complete checks, then push and verify the exact commit in CI.
+
 ## Optional stream tagging
 
 - [ ] Evaluate a Latin-friendly high-byte alphabet retaining rough alphabetic progression, UTF-8 byte economy, and terminal readability; compatibility breaks are permitted, but select the replacement repertoire explicitly (context: docs/plan_context/current-work.md).
@@ -12,6 +24,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Deferred features
 
+- [ ] Implement opt-in --suggest-on-error only when resumed: bounded, mode-aware candidates for byte substitutions/insertions/deletions and single-bit flips, never single-bit insertion/deletion or automatic repair (context: docs/plan_context/current-work.md).
 - [ ] Implement approved container metadata injection only when that deferred feature is resumed (context: docs/plans/2026-07-21-container-metadata-injection-design.md).
 - [ ] Measure reusable-output ownership only if a consumer needs it; retain the current owned-slice API until then (context: docs/plan_context/current-work.md).
 
@@ -26,14 +39,6 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 - [ ] Measure complete-suite execution separately from compilation/setup/queue wait and meet the few-seconds budget without reducing coverage, using bounded concurrency where safe.
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 		- [ ] Should Roc unit checks remain explicitly mixed compile/test timing, or should test-artifact export be a separate compiler task? Its pinned compiler caches verdicts and publishes no test executable; owner decision pending.
-		- [x] Integrate all 26 declared runtime groups through ./test with separate admission/setup/execution timing; both one- and twelve-CPU runs pass with no skips, while Roc's 61 compiler-driven units remain explicitly mixed (done 2026-11-02 11:26 EST; commits 9ba2926, 1a3a3df; context: docs/plan_context/current-work.md).
-			- [x] Reduce measured harness costs without dropping cases or safety checks; controlled core, Node CLI and controller comparisons pass, but full runtime remains over budget (done 2026-11-02 11:26 EST; commits f667748, 1a3a3df; context: docs/plan_context/current-work.md).
-				- [x] Verify fork-free fixtures and first-wave control scheduling through complete gates and 26/26 fresh execution at 6.45 seconds, still over budget (done 2026-11-02 10:34 EST; context: docs/plan_context/current-work.md).
-				- [x] Parallelize all six runner-control suites with private state, an independent exact-argv/duplicate/failure driver and full-gate verification; five continuation controls failed before dispatch changed (done 2026-11-02 10:34 EST; context: docs/plan_context/current-work.md).
-				- [x] Replace 512 all-byte fixture forks per shared CLI run with a one-process generator checked against literal hex; complete original CLI inventories and full gate pass (done 2026-11-02 10:34 EST; context: docs/plan_context/current-work.md).
-				- [x] Replace controller scope dummy artifacts with exact recording ports; all real adapter tests remain, full gate passes and controlled old/new/new/old execution takes 3.46/2.65/2.60/3.48 seconds (done 2026-11-02 11:26 EST; commit 1a3a3df; context: docs/plan_context/current-work.md).
-				- [x] Split all 42 mapping cases into three ordered groups of fourteen; original CLI inventories and full gate pass, and controlled old/new/new/old Node execution takes 3.97/1.68/1.74/3.86 seconds (done 2026-11-02 11:26 EST; commit 1a3a3df; context: docs/plan_context/current-work.md).
-	- [x] May a quiet timing window be coordinated? Answer: Yes, defer new admissions without canceling running jobs; preserve the existing resource limits (approved 2026-11-02 13:22 EST; context: docs/plan_context/current-work.md).
 	- [ ] Coordinate the approved quiet timing window, then perform one complete qualification retry with exact prepared artifacts and unchanged limits; await the infrastructure coordinator's verified admission control and cleared storage pressure before using the retry (context: docs/plan_context/current-work.md).
 		- [x] May the infrastructure agent implement and verify a bounded, automatically expiring drain-only admission pause? Answer: Yes, without interrupting running jobs; existing resource limits remain unchanged (approved 2026-11-02 13:35 EST; context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.

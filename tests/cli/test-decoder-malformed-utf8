@@ -2,11 +2,14 @@
 # Malformed bytes must not alias canonical glyphs through masked table indexes.
 set -u
 binary="${1:?Usage: test-decoder-malformed-utf8 PREPARED_CLI}"
+expected_status=${2:-0}
 scratch="$(mktemp -d)" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 for input in $'\xe2\x07\xa5' $'\xe2\x87\x25' $'\xc2\x36' $'\x82\xb6' $'\xe2\xb6'; do
 	printf '%s' "$input" > "$scratch/input"
-	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" -d < "$scratch/input" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/input" "$scratch/actual"; then
+	PRINTABLE_BINARY_MUTE_STATS=1 "$binary" -d < "$scratch/input" > "$scratch/actual" 2> "$scratch/stderr"
+	status=$?
+	if [[ "$status" != "$expected_status" ]] || ! cmp -s "$scratch/input" "$scratch/actual"; then
 		printf 'FAIL: decoder changed malformed or truncated UTF-8 bytes (%q)\n' "$input" >&2
 		exit 1
 	fi

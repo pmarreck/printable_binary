@@ -65,7 +65,9 @@ check_host_product() {
 	fi
 	case "$impl" in
 		zig|ffi|rust|c|ape|wasm)
-			if ! bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$product/bin/$entry" > "$scratch/stdout" 2> "$scratch/stderr"; then
+			malformed_status=0
+			[[ "$impl" != rust ]] || malformed_status=1
+			if ! bash "$repo_root/tests/cli/test-decoder-malformed-utf8" "$product/bin/$entry" "$malformed_status" > "$scratch/stdout" 2> "$scratch/stderr"; then
 				printf 'FAIL: installed %s malformed-byte contract: %s\n' "$impl" "$(<"$scratch/stderr")" >&2
 				failures=$((failures + 1))
 			fi

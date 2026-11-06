@@ -33,6 +33,11 @@ const TEXTUAL_NAMESPACE: &[u8] = "\u{f000}ρΤ".as_bytes();
 const BYTEWISE_END: &[u8] = "\u{f000}/ρΒ".as_bytes();
 const TEXTUAL_END: &[u8] = "\u{f000}/ρΤ".as_bytes();
 
+/// Recognize the reserved opener namespace even if its version is malformed.
+pub fn has_reserved_prefix(input: &[u8]) -> bool {
+	input.starts_with(BYTEWISE_NAMESPACE) || input.starts_with(TEXTUAL_NAMESPACE)
+}
+
 fn glyph(byte: u8) -> &'static [u8] {
 	if byte == b' ' {
 		return b" ";
@@ -75,28 +80,37 @@ fn sensitive(character: char) -> bool {
 		.is_ok()
 }
 
+// The one authoritative spelling of a source unit, shared by encoding and
+// recovery validation. A unit is one valid scalar or one malformed source byte.
+pub(crate) fn encode_unit(bytes: &[u8], character: Option<char>, output: &mut [u8; 12]) -> usize {
+	let mut length = 0;
+	let mut append = |part: &[u8]| {
+		output[length..length + part.len()].copy_from_slice(part);
+		length += part.len();
+	};
+	match character {
+		None => append(glyph(bytes[0])),
+		Some(c) if c.is_ascii() => append(glyph(c as u8)),
+		Some(MARKER_CHAR) => { append(MARKER.as_bytes()); append(bytes); },
+		Some(c) if sensitive(c) => { for &byte in bytes { append(glyph(byte)); } },
+		Some(_) => {
+			if mapped(bytes).is_some() { append(MARKER.as_bytes()); }
+			append(bytes);
+		},
+	}
+	length
+}
+
 /// Encode arbitrary bytes as a canonical, untagged textual payload. Source is
 /// always raw; literal markers/tags are quoted rather than interpreted.
 pub fn encode_payload(input: &[u8]) -> Vec<u8> {
 	let mut output = Vec::with_capacity(input.len().saturating_mul(3));
+	let mut unit = [0u8; 12];
 	for chunk in input.utf8_chunks() {
 		for (offset, character) in chunk.valid().char_indices() {
 			let bytes = &chunk.valid().as_bytes()[offset..offset + character.len_utf8()];
-			if character.is_ascii() {
-				output.extend_from_slice(glyph(character as u8));
-			} else if character == MARKER_CHAR {
-				output.extend_from_slice(MARKER.as_bytes());
-				output.extend_from_slice(bytes);
-			} else if sensitive(character) {
-				for &byte in bytes {
-					output.extend_from_slice(glyph(byte));
-				}
-			} else {
-				if mapped(bytes).is_some() {
-					output.extend_from_slice(MARKER.as_bytes());
-				}
-				output.extend_from_slice(bytes);
-			}
+			let length = encode_unit(bytes, Some(character), &mut unit);
+			output.extend_from_slice(&unit[..length]);
 		}
 		for &byte in chunk.invalid() {
 			output.extend_from_slice(glyph(byte));

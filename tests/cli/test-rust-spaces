@@ -22,7 +22,11 @@ for spaces in false true; do
 		printf '\t\r\n ' > "$scratch/formatted"
 		cat "$scratch/expected" >> "$scratch/formatted"
 		if ! PRINTABLE_BINARY_MUTE_STATS=1 "$zig" "${decode_args[@]}" < "$scratch/formatted" > "$scratch/expected-decoded" 2> "$scratch/stderr"; then exit 1; fi
-		if ! PRINTABLE_BINARY_MUTE_STATS=1 "$rust" "${decode_args[@]}" < "$scratch/formatted" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/expected-decoded" "$scratch/actual"; then
+		PRINTABLE_BINARY_MUTE_STATS=1 "$rust" "${decode_args[@]}" < "$scratch/formatted" > "$scratch/actual" 2> "$scratch/stderr"
+		status=$?
+		expected_status=0
+		[[ "$strip" != false ]] || expected_status=1
+		if [[ "$status" != "$expected_status" ]] || ! cmp -s "$scratch/expected-decoded" "$scratch/actual"; then
 			printf 'FAIL: Rust spaces=%s strip=%s decoder must match Zig\n' "$spaces" "$strip" >&2
 			failures=$((failures + 1))
 		fi

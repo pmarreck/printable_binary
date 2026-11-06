@@ -93,30 +93,37 @@ pub fn Codec(comptime map: [256][]const u8) type {
 		}
 
 		/// Caller owns the result. Incomplete/invalid source bytes use PB glyphs.
+		pub const EncodedUnit = struct { bytes: [4 * max_expansion]u8, length: usize, consumed: usize };
+		pub fn encodeUnit(input: []const u8) EncodedUnit {
+			var result: EncodedUnit = .{ .bytes = undefined, .length = 0, .consumed = 1 };
+			const unit = scalar(input) orelse {
+				append(&result.bytes, &result.length, glyph(input[0]));
+				return result;
+			};
+			result.consumed = unit.len;
+			const bytes = input[0..unit.len];
+			if (unit.cp < 128) append(&result.bytes, &result.length, glyph(@intCast(unit.cp)))
+			else if (unit.cp == 0xf000) {
+				append(&result.bytes, &result.length, marker);
+				append(&result.bytes, &result.length, bytes);
+			} else if (sensitive(unit.cp)) {
+				for (bytes) |byte| append(&result.bytes, &result.length, glyph(byte));
+			} else {
+				if (reverse.has(bytes)) append(&result.bytes, &result.length, marker);
+				append(&result.bytes, &result.length, bytes);
+			}
+			return result;
+		}
+
 		pub fn encodePayload(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 			const output = try allocator.alloc(u8, try std.math.mul(usize, input.len, max_expansion));
 			errdefer allocator.free(output);
 			var source: usize = 0;
 			var target: usize = 0;
 			while (source < input.len) {
-				const unit = scalar(input[source..]) orelse {
-					append(output, &target, glyph(input[source]));
-					source += 1;
-					continue;
-				};
-				const bytes = input[source..][0..unit.len];
-				if (unit.cp < 128) {
-					append(output, &target, glyph(@intCast(unit.cp)));
-				} else if (unit.cp == 0xf000) {
-					append(output, &target, marker);
-					append(output, &target, bytes);
-				} else if (sensitive(unit.cp)) {
-					for (bytes) |byte| append(output, &target, glyph(byte));
-				} else {
-					if (reverse.has(bytes)) append(output, &target, marker);
-					append(output, &target, bytes);
-				}
-				source += unit.len;
+				const unit = encodeUnit(input[source..]);
+				append(output, &target, unit.bytes[0..unit.length]);
+				source += unit.consumed;
 			}
 			return allocator.realloc(output, target);
 		}
