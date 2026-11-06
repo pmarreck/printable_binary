@@ -72,6 +72,7 @@ annotate=[
 	src/container_json.h = Shared pure transport-resistant flat-JSON helpers for the .pbf.json container (C FFI + standalone C)
 	src/platform_identity.h = C, FFI, APE, and WASM CLI identity adapter
 	src/zig/cli_textual.zig = Pure explicit CLI mode selection, canonical conversion and tagged-output ingress guard
+	src/zig/cli_recovery.zig = Pure error and summary rendering with a bounded-memory stderr event sink
 	src/zig/ffi.zig = C ABI (FFI) export surface: all 12 pb_* C functions; root of libprintable_binary.a; keeps C symbols OUT of the importable printable_binary module so static (musl) consumers don't collide
 	src/zig/ffi_allocator.zig = Production page allocator adapter for C ABI result ownership
 	src/zig/main.zig = Zig canonical CLI adapter with input-throughput status reporting and compact-map codec integration.

@@ -10,7 +10,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 	- [x] Should diagnostics include input and output offsets? Answer: Yes, include both as zero-based byte offsets at the start of each event, with input measured in the original encoded stream and output in the decoded stream (decided 2026-11-06 15:33 EST; context: docs/plan_context/current-work.md).
 	- [ ] Establish failing library/CLI regressions for contiguous events, dual spans, exact counts/hex, NDJSON purity, sink failure and saturated exit status.
 	- [x] Add Rust recovery/report APIs and structured CLI plus Zig core recovery, preserving strict validators; failing API/CLI controls and the complete local suite pass (done 2026-11-06 15:57 EST; context: docs/plan_context/current-work.md).
-	- [ ] Implement Rust and Zig recovery/report APIs and CLI adapters while retaining strict canonical validators and tag guards.
+	- [x] Implement Rust and Zig recovery/report APIs and CLI adapters while retaining strict canonical validators and tag guards; complete local suite passes, including seeded mutation oracles and allocation/sink failures (done 2026-11-06 16:15 EST; context: docs/plan_context/current-work.md).
 	- [ ] Align C, APE, WASM, FFI, LuaJIT, Node, Roc and Elixir bytewise behavior/reporting with the shared contract and explicitly verify every declared surface.
 	- [ ] Add bounded seeded coverage, document the APIs/flags, run the complete checks, then push and verify the exact commit in CI.
 
@@ -40,5 +40,4 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 	- [ ] Prepare all remaining exact test artifacts and separate fresh complete-suite execution from compilation, including the tag-probe safety/mutant builds.
 		- [ ] Should Roc unit checks remain explicitly mixed compile/test timing, or should test-artifact export be a separate compiler task? Its pinned compiler caches verdicts and publishes no test executable; owner decision pending.
 	- [ ] Coordinate the approved quiet timing window, then perform one complete qualification retry with exact prepared artifacts and unchanged limits; await the infrastructure coordinator's verified admission control and cleared storage pressure before using the retry (context: docs/plan_context/current-work.md).
-		- [x] May the infrastructure agent implement and verify a bounded, automatically expiring drain-only admission pause? Answer: Yes, without interrupting running jobs; existing resource limits remain unchanged (approved 2026-11-02 13:35 EST; context: docs/plan_context/current-work.md).
 - [ ] Finish active authorized work, retain explicit holds, resolve remaining framing choices, run the complete gates to green, then push and verify the exact commit in CI.

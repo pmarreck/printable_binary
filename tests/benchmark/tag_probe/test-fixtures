@@ -12,10 +12,20 @@ if ! luajit "$repo_root/tests/benchmark/tag_probe/generate-fixtures.lua" "$repo_
 fi
 cases=(ascii spaces alphabet unicode sparse dense encoded_header)
 counts=(0 0 0 0 1 2 0)
+invalid_events=(0 3 0 3 2 3 0)
 for index in "${!cases[@]}"; do
 	name="${cases[index]}"
-	if ! PRINTABLE_BINARY_MUTE_STATS=1 "$binary" -d < "$scratch/fixtures/$name.input" > "$scratch/actual" 2> "$scratch/stderr" || ! cmp -s "$scratch/actual" "$scratch/fixtures/$name.expected" || [[ -s "$scratch/stderr" ]]; then
+	PRINTABLE_BINARY_MUTE_STATS=1 "$binary" -d < "$scratch/fixtures/$name.input" > "$scratch/actual" 2> "$scratch/stderr"
+	status=$?
+	expected=${invalid_events[index]}
+	if [[ "$status" != "$expected" ]] || ! cmp -s "$scratch/actual" "$scratch/fixtures/$name.expected"; then
 		printf 'FAIL: %s fixture must match the prepared raw decoder\n' "$name" >&2; exit 1
+	fi
+	if [[ "$expected" == 0 ]]; then
+		[[ ! -s "$scratch/stderr" ]] || exit 1
+	else
+		grep -q "Invalid input: $expected events," "$scratch/stderr" || exit 1
+		[[ "$(grep -c 'input_offset=' "$scratch/stderr")" == "$expected" ]] || exit 1
 	fi
 	count="$(<"$scratch/fixtures/$name.count")"
 	if [[ "$count" != "${counts[index]}" ]]; then

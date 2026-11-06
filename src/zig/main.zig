@@ -12,6 +12,7 @@ const std = @import("std");
 const pb = @import("printable_binary");
 const identity = @import("platform_identity.zig");
 const cli_textual = @import("cli_textual.zig");
+const cli_recovery = @import("cli_recovery.zig");
 
 const Options = struct {
     codec: cli_textual.Options = .{},
@@ -34,6 +35,8 @@ const Options = struct {
     no_double_encode_check: bool = false,
     hexlike: bool = false,
     container: bool = false,
+    ndjson_stderr: bool = false,
+    strict: bool = false,
 };
 
 const MappingsMode = enum { none, table, json, csv };
@@ -55,6 +58,21 @@ var g_environ_map: ?*const std.process.Environ.Map = null;
 // raw POSIX-syscall approach didn't compile on Windows because Windows has no
 // POSIX write syscall and the libc shim expects a HANDLE, not an i32 fd.
 var g_io: ?std.Io = null;
+var g_allocator: ?std.mem.Allocator = null;
+var g_ndjson = false;
+var g_output_bytes: usize = 0;
+var g_recovery_summary: pb.recovery.Summary = .{};
+var g_warnings: [8][]const u8 = undefined;
+var g_warning_count: usize = 0;
+var g_warning_total: usize = 0;
+
+fn fatalExit() noreturn {
+    if (g_ndjson) {
+        if (g_io) |io| std.Io.File.stderr().writeStreamingAll(io,
+            "{\"type\":\"summary\",\"complete\":false,\"invalid_events\":null,\"invalid_bytes\":null}\n") catch {};
+    }
+    std.process.exit(1);
+}
 
 // Fire-and-forget unbuffered write helper. Drops the write on the floor if
 // io isn't initialized yet (shouldn't happen since main() sets g_io before
@@ -63,6 +81,23 @@ var g_io: ?std.Io = null;
 // no error propagation, just emit the bytes and move on.
 fn rawWriteAll(file: std.Io.File, bytes: []const u8) void {
     const io = g_io orelse return;
+    if (g_ndjson and file.handle == std.Io.File.stderr().handle) {
+        const allocator = g_allocator orelse return;
+        if (std.mem.startsWith(u8, bytes, "Warning")) {
+            g_warning_total += 1;
+            if (g_warning_count < g_warnings.len) {
+                g_warnings[g_warning_count] = allocator.dupe(u8, bytes) catch return;
+                g_warning_count += 1;
+            }
+            return;
+        }
+        const message = std.json.Stringify.valueAlloc(allocator,
+            .{ .type = "error", .fatal = true, .message = bytes }, .{}) catch return;
+        defer allocator.free(message);
+        file.writeStreamingAll(io, message) catch {};
+        file.writeStreamingAll(io, "\n") catch {};
+        return;
+    }
     file.writeStreamingAll(io, bytes) catch {};
 }
 
@@ -91,10 +126,18 @@ fn writeOutput(io: std.Io, data: []const u8, to_stderr: bool) !void {
         var w = std.Io.File.stdout().writerStreaming(io, &buf);
         try w.interface.writeAll(data);
         try w.interface.flush();
+        g_output_bytes += data.len;
     }
 }
 
 fn writeStats(comptime fmt: []const u8, args: anytype) void {
+    if (g_ndjson) {
+        if (comptime !(std.mem.startsWith(u8, fmt, "Warning") or std.mem.startsWith(u8, fmt, "Error") or
+            std.mem.indexOf(u8, fmt, "error:") != null)) return;
+        var buffer: [1024]u8 = undefined;
+        rawWriteAll(std.Io.File.stderr(), std.fmt.bufPrint(&buffer, fmt, args) catch return);
+        return;
+    }
     // Check if stats output is muted
     if (g_environ_map) |env| {
         if (env.get("PRINTABLE_BINARY_MUTE_STATS")) |v| {
@@ -109,13 +152,25 @@ fn writeStats(comptime fmt: []const u8, args: anytype) void {
 
 /// Report end-to-end CLI throughput in input bytes so expansion from UTF-8
 /// glyphs cannot be mistaken for codec speed; the timer includes read and write I/O.
-fn writeInputThroughput(io: std.Io, input_bytes_read: usize, started_at: std.Io.Timestamp) void {
+fn writeInputThroughput(io: std.Io, input_bytes_read: usize, started_at: std.Io.Timestamp) !void {
     const finished = std.Io.Timestamp.now(io, .awake);
     const elapsed_seconds = @max(
         @as(f64, @floatFromInt(finished.nanoseconds - started_at.nanoseconds)) / 1_000_000_000.0,
         0.0005,
     );
     const megabytes = @as(f64, @floatFromInt(input_bytes_read)) / 1_000_000.0;
+    if (g_ndjson) {
+        const allocator = g_allocator.?;
+        const line = try cli_recovery.summaryLine(allocator, .{
+            .summary = g_recovery_summary, .input_bytes = input_bytes_read, .output_bytes = g_output_bytes,
+            .elapsed_seconds = elapsed_seconds, .debug = @import("builtin").mode == .Debug,
+            .warnings = g_warnings[0..g_warning_count], .warnings_omitted = g_warning_total - g_warning_count,
+        });
+        defer allocator.free(line);
+        try std.Io.File.stderr().writeStreamingAll(io, line);
+        try std.Io.File.stderr().writeStreamingAll(io, "\n");
+        return;
+    }
     writeStats("Input throughput: {d:.2} MB read in {d:.3} s ({d:.2} MB/s)\n", .{
         megabytes,
         elapsed_seconds,
@@ -256,6 +311,10 @@ fn parseArgs(allocator: std.mem.Allocator, args: []const []const u8) !Options {
                 opts.about_mode = true;
             } else if (std.mem.eql(u8, name, "decode")) {
                 opts.decode_mode = true;
+            } else if (std.mem.eql(u8, name, "ndjson-stderr")) {
+                opts.ndjson_stderr = true;
+            } else if (std.mem.eql(u8, name, "strict")) {
+                opts.strict = true;
             } else if (std.mem.eql(u8, name, "textual")) {
                 opts.codec.textual = true;
             } else if (std.mem.eql(u8, name, "decode-auto")) {
@@ -395,6 +454,8 @@ fn printUsage(io: std.Io) void {
         \\
         \\Options:
         \\  -d, --decode       Decode mode (default is encode mode)
+        \\  --ndjson-stderr    JSON recovery events and a final summary on stderr
+        \\  --strict           Reject invalid input without emitting recovered payload
         \\  -p, --passthrough  Pass input to stdout unchanged, send encoded data to stderr
         \\
         \\Encoding modes:
@@ -445,7 +506,14 @@ fn printUsage(io: std.Io) void {
         \\If no file is specified, input is read from stdin.
         \\
     ;
-    std.Io.File.stderr().writeStreamingAll(io, help) catch {};
+    if (g_ndjson) {
+        const allocator = g_allocator.?;
+        const line = std.json.Stringify.valueAlloc(allocator,
+            .{ .type = "summary", .invalid_events = 0, .invalid_bytes = 0, .help = help }, .{}) catch return;
+        defer allocator.free(line);
+        std.Io.File.stderr().writeStreamingAll(io, line) catch {};
+        std.Io.File.stderr().writeStreamingAll(io, "\n") catch {};
+    } else std.Io.File.stderr().writeStreamingAll(io, help) catch {};
 }
 
 // ASCII names for control characters and special bytes
@@ -562,27 +630,37 @@ fn printMappings(mode: MappingsMode) !void {
 // Main Entry Point
 // ============================================================================
 
-pub fn main(init: std.process.Init) !void {
+pub fn main(init: std.process.Init) void {
+    const status = runCli(init) catch |err| {
+        writeStats("Error: {s}\n", .{@errorName(err)});
+        fatalExit();
+    };
+    if (status != 0) std.process.exit(status);
+}
+
+fn runCli(init: std.process.Init) !u8 {
     const allocator = init.gpa;
     const io = init.io;
     g_environ_map = init.environ_map;
     g_io = io;
-    if (@import("builtin").mode == .Debug) {
-        rawWriteAll(std.Io.File.stderr(), "\x1b[33mDEBUG BUILD!\x1b[0m\n");
-    }
+    g_allocator = allocator;
+    defer for (g_warnings[0..g_warning_count]) |warning| allocator.free(warning);
 
     // Materialize argv as []const []const u8 (toSlice gives [:0]const u8 entries)
     const args_z = try init.minimal.args.toSlice(init.arena.allocator());
     const args_buf = try init.arena.allocator().alloc([]const u8, args_z.len);
     for (args_z, 0..) |a, idx| args_buf[idx] = a;
+    for (args_buf) |arg| if (std.mem.eql(u8, arg, "--ndjson-stderr")) { g_ndjson = true; };
+    if (@import("builtin").mode == .Debug and !g_ndjson)
+        rawWriteAll(std.Io.File.stderr(), "\x1b[33mDEBUG BUILD!\x1b[0m\n");
 
     for (args_buf) |a| {
         if (std.mem.eql(u8, a, "--bench")) {
             runBench(io, allocator) catch |e| {
                 writeStats("bench error: {}\n", .{e});
-                std.process.exit(1);
+                fatalExit();
             };
-            return;
+            return 0;
         }
     }
 
@@ -594,19 +672,23 @@ pub fn main(init: std.process.Init) !void {
             error.MultipleInputFiles => writeStats("Error: Multiple input files specified\n", .{}),
             else => writeStats("Error parsing arguments: {}\n", .{err}),
         }
-        std.process.exit(1);
+        fatalExit();
     };
     // Free allocated strings on exit
     defer if (opts.input_file) |f| allocator.free(f);
     defer if (opts.preserve_chars) |p| allocator.free(p);
+    if (opts.ndjson_stderr and opts.passthrough_mode or opts.strict and (!opts.decode_mode or opts.container or opts.hexlike)) {
+        writeStats("Error: incompatible diagnostic/strict options\n", .{});
+        fatalExit();
+    }
 
     if (opts.help_mode) {
         printUsage(io);
-        return;
+        return 0;
     }
     if (opts.about_mode) {
         writeStdout("printable-binary 1.0.0 (Zig) Encode bytes as printable UTF-8; " ++ identity.fields ++ "\n");
-        return;
+        return 0;
     }
 
     cli_textual.validate(opts.codec, opts.decode_mode) catch |err| {
@@ -615,13 +697,13 @@ pub fn main(init: std.process.Init) !void {
             error.RawInputEncodeOnly => writeStats("Error: --raw-input requires textual encoding, not decoding\n", .{}),
             else => writeStats("Error: incompatible codec modes ({s})\n", .{@errorName(err)}),
         }
-        std.process.exit(1);
+        fatalExit();
     };
     if (opts.codec.active() and (opts.container or opts.hexlike or opts.format_mode or opts.passthrough_mode or
         opts.tabs_mode or opts.crlf_mode or opts.preserve_chars != null or (opts.codec.textual and opts.strip_whitespace)))
     {
         writeStats("Error: incompatible formatting, container or preservation options for textual/tag-aware mode\n", .{});
-        std.process.exit(1);
+        fatalExit();
     }
 
     // The Zig build uses a compiled-in map and cannot honor a runtime PRINTABLE_BINARY_MAP
@@ -634,7 +716,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (opts.mappings_mode != .none) {
         try printMappings(opts.mappings_mode);
-        return;
+        return 0;
     }
 
     // Measure the user-visible pipeline: input read, codec work, and output write.
@@ -643,12 +725,13 @@ pub fn main(init: std.process.Init) !void {
     // Read input (I/O boundary)
     const raw_input = readInput(io, allocator, opts.input_file) catch |err| {
         writeStats("Error reading input: {}\n", .{err});
-        std.process.exit(1);
+        fatalExit();
     };
     defer allocator.free(raw_input);
 
     // Apply byte range if specified (policy logic lives in core library)
     var input: []const u8 = raw_input;
+    var input_base: usize = 0;
     if (opts.range_start != null or opts.range_end != null) {
         const range = pb.applyRange(raw_input.len, opts.range_start, opts.range_end);
         switch (range.warning) {
@@ -662,6 +745,35 @@ pub fn main(init: std.process.Init) !void {
             .none => {},
         }
         input = raw_input[range.offset .. range.offset + range.length];
+        input_base = range.offset;
+    }
+
+    if (opts.decode_mode and !opts.container and !opts.hexlike) {
+        if (opts.passthrough_mode) rawWriteAll(std.Io.File.stderr(), "Warning: --passthrough ignored in decode mode\n");
+        if (!opts.codec.active() and opts.spaces_mode and opts.strip_whitespace and
+            (std.mem.indexOf(u8, input, "\n  ") != null or std.mem.indexOf(u8, input, "\r  ") != null))
+            writeStats("Warning: spaces after newline are treated as data in --spaces mode\n", .{});
+        if (!opts.codec.active() and pb.detectHexlike(input)) rawWriteAll(std.Io.File.stderr(),
+            "Warning: input appears to contain hexlike (Οχ) encoding; use --hexlike -d to decode\n");
+        var sink: cli_recovery.Sink = .{ .io = io, .ndjson = opts.ndjson_stderr, .input_base = input_base };
+        const decoded = if (opts.codec.auto_decode)
+            try pb.recovery.decodeAuto(allocator, input, .{ .spaces = opts.spaces_mode, .strip_whitespace = opts.strip_whitespace }, &sink)
+        else if (opts.codec.textual)
+            (if (opts.codec.untagged) try pb.recovery.decodeTextualPayload(allocator, input, &sink)
+             else try pb.recovery.decodeTextual(allocator, input, &sink))
+        else try pb.recovery.decodeBytewise(allocator, input, .{ .spaces = opts.spaces_mode, .strip_whitespace = opts.strip_whitespace }, &sink);
+        defer allocator.free(decoded.bytes);
+        g_recovery_summary = decoded.summary;
+        if (!opts.strict or decoded.summary.invalid_events == 0) try writeOutput(io, decoded.bytes, false);
+        if (!g_ndjson and decoded.summary.invalid_events != 0) {
+            var buffer: [128]u8 = undefined;
+            rawWriteAll(std.Io.File.stderr(), try std.fmt.bufPrint(&buffer, "Invalid input: {d} events, {d} bytes\n",
+                .{ decoded.summary.invalid_events, decoded.summary.invalid_bytes }));
+        }
+        writeStats("Decoding mode: Input size is {d} bytes\n", .{input.len});
+        writeStats("Decoded result size: {d} bytes\n", .{decoded.bytes.len});
+        try writeInputThroughput(io, raw_input.len, throughput_started_at);
+        return decoded.summary.exitCode();
     }
 
     if (opts.codec.active()) {
@@ -672,22 +784,22 @@ pub fn main(init: std.process.Init) !void {
             if (err == error.AlreadyTaggedInput) {
                 writeStats("Error: input starts with a reserved tag; use --raw-input to encode literal source bytes\n", .{});
             } else writeStats("Codec error: {s}\n", .{@errorName(err)});
-            std.process.exit(1);
+            fatalExit();
         };
         defer allocator.free(output);
         writeStats("Processed {d} input bytes to {d} output bytes\n", .{ input.len, output.len });
         try writeOutput(io, output, false);
-        writeInputThroughput(io, raw_input.len, throughput_started_at);
-        return;
+        try writeInputThroughput(io, raw_input.len, throughput_started_at);
+        return 0;
     }
 
     if (opts.container) {
         handleContainer(io, allocator, opts, input) catch |err| {
             writeStats("Container error: {}\n", .{err});
-            std.process.exit(1);
+            fatalExit();
         };
-        writeInputThroughput(io, raw_input.len, throughput_started_at);
-        return;
+        try writeInputThroughput(io, raw_input.len, throughput_started_at);
+        return 0;
     }
 
     if (opts.decode_mode) {
@@ -702,7 +814,7 @@ pub fn main(init: std.process.Init) !void {
                 .spaces = opts.spaces_mode,
             }) catch |err| {
                 writeStats("Decode error: {}\n", .{err});
-                std.process.exit(1);
+                fatalExit();
             };
             defer allocator.free(dr.data);
 
@@ -751,7 +863,7 @@ pub fn main(init: std.process.Init) !void {
                 .strip_whitespace = opts.strip_whitespace,
             }) catch |err| {
                 writeStats("Decode error: {}\n", .{err});
-                std.process.exit(1);
+                fatalExit();
             };
             defer allocator.free(decoded);
 
@@ -780,7 +892,7 @@ pub fn main(init: std.process.Init) !void {
                 .spaces = opts.spaces_mode,
             }) catch |err| {
                 writeStats("Encode error: {}\n", .{err});
-                std.process.exit(1);
+                fatalExit();
             };
             defer allocator.free(encoded);
 
@@ -795,7 +907,7 @@ pub fn main(init: std.process.Init) !void {
                 .preserve_chars = opts.preserve_chars orelse &.{},
             }) catch |err| {
                 writeStats("Encode error: {}\n", .{err});
-                std.process.exit(1);
+                fatalExit();
             };
             defer allocator.free(encoded);
 
@@ -810,7 +922,7 @@ pub fn main(init: std.process.Init) !void {
                     .use_tabs = opts.spaces_mode,
                 }) catch |err| {
                     writeStats("Format error: {}\n", .{err});
-                    std.process.exit(1);
+                    fatalExit();
                 };
                 output = formatted.?;
             }
@@ -820,7 +932,8 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
-    writeInputThroughput(io, raw_input.len, throughput_started_at);
+    try writeInputThroughput(io, raw_input.len, throughput_started_at);
+    return 0;
 }
 
 // ============================================================================
@@ -935,12 +1048,12 @@ fn handleContainer(io: std.Io, allocator: std.mem.Allocator, opts: Options, inpu
     // single-line-JSON validity and the tab/CR/LF-stripping transport-resistance.
     if (opts.tabs_mode or opts.crlf_mode or opts.preserve_chars != null) {
         writeStats("Error: --tabs/--crlf/-w/--preserve are not supported with --container (only --spaces is honored; other whitespace stays encoded)\n", .{});
-        std.process.exit(1);
+        fatalExit();
     }
     if (opts.decode_mode) {
         const data_raw = jsonGetString(input, "data") orelse {
             writeStats("Error: not a printable-binary-file container (missing 'data')\n", .{});
-            std.process.exit(1);
+            fatalExit();
         };
         // Flagless crc-probe: no schema flag records whether --spaces was used; the
         // crc32_encoded oracle disambiguates. Try keeping literal spaces (DATA in a
@@ -968,13 +1081,13 @@ fn handleContainer(io: std.Io, allocator: std.mem.Allocator, opts: Options, inpu
                 } else {
                     allocator.free(stripped);
                     writeStats("Error: container crc32_encoded mismatch (data corrupted)\n", .{});
-                    std.process.exit(1);
+                    fatalExit();
                 }
             }
         }
         const decoded = pb.decode(allocator, clean, .{ .spaces = spaces }) catch |err| {
             writeStats("Container decode error: {}\n", .{err});
-            std.process.exit(1);
+            fatalExit();
         };
         defer allocator.free(decoded);
         if (jsonGetString(input, "crc32")) |want| {
@@ -982,7 +1095,7 @@ fn handleContainer(io: std.Io, allocator: std.mem.Allocator, opts: Options, inpu
             const got = std.fmt.bufPrint(&gb, "{x:0>8}", .{pb.crc32(decoded)}) catch unreachable;
             if (!std.mem.eql(u8, got, want)) {
                 writeStats("Error: container crc32 mismatch (decoded data corrupted)\n", .{});
-                std.process.exit(1);
+                fatalExit();
             }
         }
         writeStats("Decoded container: {d} bytes\n", .{decoded.len});
@@ -990,7 +1103,7 @@ fn handleContainer(io: std.Io, allocator: std.mem.Allocator, opts: Options, inpu
     } else {
         const data = pb.encode(allocator, input, .{ .spaces = opts.spaces_mode }) catch |err| {
             writeStats("Container encode error: {}\n", .{err});
-            std.process.exit(1);
+            fatalExit();
         };
         defer allocator.free(data);
         const clean = try canonicalPayload(allocator, data, opts.spaces_mode);

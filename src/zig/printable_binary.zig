@@ -234,7 +234,7 @@ pub const EncodeOptions = struct {
 };
 
 /// Decoding options
-pub const recovery = @import("recovery.zig").Codec(character_map);
+pub const recovery = @import("recovery.zig").Codec(character_map, decodeLookup, isSelfMappedBlock16);
 pub const DecodeOptions = recovery.Options;
 
 /// Format options for grouping encoded output
@@ -500,9 +500,9 @@ fn decodeDefault(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
             }
         }
 
-        @memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);
-        pos += actual_len;
-        i += actual_len;
+        result[pos] = input[i];
+        pos += 1;
+        i += 1;
     }
 
     return allocator.realloc(result, pos);
@@ -518,67 +518,11 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8, options: DecodeOp
         return decodeDefault(allocator, input);
     }
 
-    // Optionally strip whitespace (pre-allocated buffer, no ArrayList)
-    var cleaned: []const u8 = undefined;
-    var cleaned_buf: ?[]u8 = null;
-    defer if (cleaned_buf) |buf| allocator.free(buf);
-
-    if (options.strip_whitespace) {
-        var buf = try allocator.alloc(u8, input.len);
-        var buf_len: usize = 0;
-        for (input) |c| {
-            const skip = if (options.spaces)
-                (c == '\n' or c == '\r' or c == '\t')
-            else
-                (c == '\n' or c == '\r' or c == '\t' or c == ' ');
-            if (!skip) {
-                buf[buf_len] = c;
-                buf_len += 1;
-            }
-        }
-        cleaned_buf = buf;
-        cleaned = buf[0..buf_len];
-    } else {
-        cleaned = input;
-    }
-
-    // Pre-allocate output buffer (decode output <= input size)
-    var result = try allocator.alloc(u8, cleaned.len);
-    errdefer allocator.free(result);
-
-    var i: usize = 0;
-    var pos: usize = 0;
-    while (i < cleaned.len) {
-        // Handle literal spaces in spaces mode
-        if (options.spaces and cleaned[i] == ' ') {
-            result[pos] = ' ';
-            pos += 1;
-            i += 1;
-            continue;
-        }
-
-        const seq_len = utf8SeqLen(cleaned[i]);
-        const remaining = cleaned.len - i;
-        const actual_len: usize = if (seq_len > remaining) remaining else seq_len;
-
-        // Direct table lookup — O(1) for 1-byte and 2-byte, no inner loop
-        if (actual_len == seq_len) {
-            if (decodeLookup(cleaned[i .. i + actual_len])) |byte| {
-                result[pos] = byte;
-                pos += 1;
-                i += actual_len;
-                continue;
-            }
-        }
-
-        // Pass through unrecognized or truncated UTF-8 sequences
-        @memcpy(result[pos..][0..actual_len], cleaned[i..][0..actual_len]);
-        pos += actual_len;
-        i += actual_len;
-    }
-
-    // Shrink to actual size (realloc avoids a second allocation + full memcpy)
-    return allocator.realloc(result, pos);
+    const Ignore = struct {
+        pub fn event(_: *@This(), _: recovery.ErrorEvent) error{}!void {}
+    };
+    var sink: Ignore = .{};
+    return (try recovery.decodeBytewise(allocator, input, options, &sink)).bytes;
 }
 
 /// Format encoded output into groups for readability.
@@ -1672,4 +1616,78 @@ test "recovery: dual spans, resynchronization, canonical units and failed sinks"
 	try std.testing.expectEqual(@as(usize, 3), sink.items[0].output_length);
 	sink.fail = true;
 	try std.testing.expectError(error.SinkFailed, recovery.decodeBytewise(allocator, "\xff", .{}, &sink));
+	try std.testing.expectError(error.SinkFailed, recovery.decodeTextualPayload(allocator, "\xff", &sink));
+	try std.testing.expectError(error.Overflow, recovery.decodeBytewise(allocator, "AB", .{ .input_base = std.math.maxInt(usize) }, &sink));
+}
+
+fn exerciseRecoveryLifecycle(allocator: std.mem.Allocator) !void {
+	const Sink = struct { pub fn event(_: *@This(), _: recovery.ErrorEvent) !void {} };
+	var sink: Sink = .{};
+	const bytewise = try recovery.decodeBytewise(allocator, "¶\xffA", .{}, &sink);
+	defer allocator.free(bytewise.bytes);
+	const textual_result = try recovery.decodeAuto(allocator, textual.tag ++ "中\xffA", .{}, &sink);
+	defer allocator.free(textual_result.bytes);
+	try std.testing.expectEqualStrings("中\xffA", textual_result.bytes);
+}
+
+test "recovery: free every owned allocation on any allocation failure" {
+	try std.testing.checkAllAllocationFailures(std.testing.allocator, exerciseRecoveryLifecycle, .{});
+}
+
+test "recovery: seeded wire mutations agree with the strict whole-value oracle" {
+	const Sink = struct {
+		wire: []const u8,
+		count: usize = 0, invalid_bytes: usize = 0,
+		input_end: ?usize = null, output_end: usize = 0,
+		pub fn event(self: *@This(), value: recovery.ErrorEvent) !void {
+			try std.testing.expect(value.input_length > 0);
+			try std.testing.expectEqualSlices(u8, value.bytes, self.wire[value.input_offset..][0..value.input_length]);
+			if (self.input_end) |end| try std.testing.expect(end < value.input_offset);
+			try std.testing.expect(self.output_end <= value.output_offset);
+			self.input_end = value.input_offset + value.input_length;
+			self.output_end = value.output_offset + value.output_length;
+			self.count += 1; self.invalid_bytes += value.input_length;
+		}
+	};
+	const Random = struct {
+		state: u32 = 0x70627431,
+		fn next(self: *@This()) u32 {
+			self.state ^= self.state << 13; self.state ^= self.state >> 17; self.state ^= self.state << 5;
+			return self.state;
+		}
+	};
+	const allocator = std.testing.allocator;
+	var random: Random = .{};
+	for (0..512) |case| {
+		var source: [96]u8 = undefined;
+		const length = random.next() % source.len;
+		for (source[0..length]) |*byte| byte.* = @truncate(random.next());
+		const encoded = try textual.encodePayload(allocator, source[0..length]);
+		defer allocator.free(encoded);
+		var wire = try allocator.alloc(u8, encoded.len + 1);
+		defer allocator.free(wire);
+		@memcpy(wire[0..encoded.len], encoded);
+		var size = encoded.len;
+		const index = random.next() % (size + 1);
+		switch (case % 4) {
+			0 => { std.mem.copyBackwards(u8, wire[index + 1..][0..size - index], wire[index..size]); wire[index] = @truncate(random.next()); size += 1; },
+			1 => if (index < size) { std.mem.copyForwards(u8, wire[index..][0..size - index - 1], wire[index + 1..size]); size -= 1; },
+			2 => if (index < size) { wire[index] ^= @as(u8, 1) << @intCast(random.next() % 8); },
+			else => {},
+		}
+		var sink: Sink = .{ .wire = wire[0..size] };
+		const result = try recovery.decodeTextualPayload(allocator, wire[0..size], &sink);
+		defer allocator.free(result.bytes);
+		try std.testing.expectEqual(sink.count, result.summary.invalid_events);
+		try std.testing.expectEqual(sink.invalid_bytes, result.summary.invalid_bytes);
+		try std.testing.expect(sink.output_end <= result.bytes.len);
+		if (textual.decodePayload(allocator, wire[0..size])) |strict| {
+			defer allocator.free(strict);
+			try std.testing.expectEqualSlices(u8, strict, result.bytes);
+			try std.testing.expectEqual(@as(usize, 0), sink.count);
+		} else |err| {
+			if (err == error.OutOfMemory) return err;
+			try std.testing.expect(sink.count > 0);
+		}
+	}
 }

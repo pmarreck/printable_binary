@@ -40,5 +40,6 @@ fi
 IMPLEMENTATION_TO_TEST="$cli" bash "$repo_root/tests/cli/test-suite-output" bash "$repo_root/tests/test" || exit 1
 if [[ "$kind" == zig ]]; then
 	node "$repo_root/tests/cli/test-zig-textual.mjs" "$cli" || exit 1
+	node "$repo_root/tests/cli/test-recovery.mjs" "$cli" Zig || exit 1
 fi
 printf 'PASS: retained %s artifacts execute the complete native CLI contract\n' "$kind"

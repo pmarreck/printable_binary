@@ -1,7 +1,7 @@
 //! Byte-preserving recovery with bounded token lookahead and borrowed events.
 const std = @import("std");
 
-pub fn Codec(comptime map: [256][]const u8) type {
+pub fn Codec(comptime map: [256][]const u8, comptime lookup: fn ([]const u8) ?u8, comptime literalBlock: fn (*const [16]u8) bool) type {
 	return struct {
 		const Textual = @import("textual.zig").Codec(map);
 		pub const Options = struct { spaces: bool = false, strip_whitespace: bool = false, input_base: usize = 0 };
@@ -14,11 +14,6 @@ pub fn Codec(comptime map: [256][]const u8) type {
 			input_offset: usize, output_offset: usize, input_length: usize, output_length: usize, bytes: []const u8,
 		};
 		pub const Decoded = struct { bytes: []u8, summary: Summary };
-		const reverse = std.StaticStringMap(u8).initComptime(blk: {
-			var pairs: [256]struct { []const u8, u8 } = undefined;
-			for (map, 0..) |entry, byte| pairs[byte] = .{ entry, @intCast(byte) };
-			break :blk pairs;
-		});
 		const Token = struct { consumed: usize, bytes: [4]u8, length: usize };
 		const Pending = struct { input: usize, output: usize };
 		const Events = struct {
@@ -50,7 +45,7 @@ pub fn Codec(comptime map: [256][]const u8) type {
 		fn mapped(input: []const u8) ?Mapping {
 			const length = width(input[0]);
 			if (length > input.len) return null;
-			const byte = reverse.get(input[0..length]) orelse return null;
+			const byte = lookup(input[0..length]) orelse return null;
 			return .{ .byte = byte, .length = length };
 		}
 		pub fn decodeBytewise(allocator: std.mem.Allocator, input: []const u8, options: Options, sink: anytype) !Decoded {
@@ -59,6 +54,11 @@ pub fn Codec(comptime map: [256][]const u8) type {
 			errdefer allocator.free(output);
 			var source: usize = 0; var target: usize = 0; var events: Events = .{};
 			while (source < input.len) {
+				if (input.len - source >= 16 and literalBlock(input[source..][0..16])) {
+					try events.close(input, source, target, options.input_base, sink);
+					@memcpy(output[target..][0..16], input[source..][0..16]);
+					source += 16; target += 16; continue;
+				}
 				const byte = input[source];
 				const ignored = options.strip_whitespace and (byte == ' ' or byte == '\t' or byte == '\r' or byte == '\n') and !(options.spaces and byte == ' ');
 				const known: ?Mapping = if (options.spaces and byte == ' ') .{ .byte = ' ', .length = 1 } else mapped(input[source..]);
@@ -82,13 +82,13 @@ pub fn Codec(comptime map: [256][]const u8) type {
 				if (length < input.len) {
 					if (scalar(input[length..])) |next_length| {
 						const next = input[length..][0..next_length];
-						const quoted = reverse.get(next);
+						const quoted = lookup(next);
 						if (std.mem.eql(u8, next, Textual.marker) or (next_length > 1 and quoted != null and quoted.? != ' ')) {
 							result.consumed += next_length; result.length = next_length; @memcpy(result.bytes[0..next_length], next);
 						}
 					}
 				}
-			} else if (reverse.get(bytes)) |byte| {
+			} else if (lookup(bytes)) |byte| {
 				if (byte != ' ') { result.bytes[0] = byte; result.length = 1; }
 			}
 			return result;

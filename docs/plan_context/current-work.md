@@ -1515,6 +1515,37 @@ malformed-byte preservation checks remain; their expected status now explicitly
 distinguishes migrated Rust recovery from the not-yet-migrated implementations.
 Full parity will remove that transition. Repair suggestions remain deferred.
 
+### Zig CLI recovery increment, 2026-11-06
+
+The canonical Zig CLI now uses the report API automatically for bytewise,
+explicit textual and auto-tag decoding. `--strict` withholds payload on invalid
+input; `--ndjson-stderr` emits complete dual-span/hex events and one summary.
+Ranges retain original-stream input offsets. Ordinary warnings remain separate
+from errors. Reporting retains the native direct tables and 16-byte literal
+fast path, with one-byte resynchronization also applied to the legacy Zig API.
+
+The shared CLI regression first failed on the absent flag. Subsequent checks
+exposed full-size hex chunks disappearing because an inferred narrow integer
+wrapped a 512-byte length. An explicit usize fixes it; 255/256/257-byte boundary
+cases and a 65,539-byte event retain full exact hex assertions. Existing shared
+suite cases still assert unchanged recovered output, now also checking event
+statuses. Accidental here-string newlines were removed from clean-input tests;
+intentional malformed and whitespace cases remain covered.
+
+Both native libraries now compare 512 deterministic wire mutations with their
+strict whole-buffer textual validators, checking zero-error equivalence and
+exact event spans/totals. Zig additionally induces every allocation failure on
+the recovery ownership path and tests sink failures and offset overflow. These
+bounded tests are part of the complete suite, not an opt-in fuzz run.
+
+The complete local Nix gate passed on 2026-11-06 at 16:15 EST, including all 26
+prepared runtime groups, installed native/cross-platform products and the
+tag-probe safety/mutant controls. This is not a five-second timing qualification.
+The preceding Rust/core commit dec7fe36e72f1d2b5dc326fc680ac5d4262e66ef is pushed
+and its exact-commit CI result passed all 28 targets. Remaining work is reporting
+parity for C/APE/WASM, the C-FFI adapter, Node, LuaJIT, Roc and Elixir, then the
+final shared matrix and shipping checks. No held feature has been resumed.
+
 ## Latin-friendly alphabet investigation: unadopted candidate
 
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and

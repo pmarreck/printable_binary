@@ -91,3 +91,38 @@ fn seeded_arbitrary_byte_inputs_have_no_false_positive_textual_errors() {
 		}
 	}
 }
+
+#[test]
+fn seeded_wire_mutations_agree_with_the_strict_whole_value_oracle() {
+	let mut state = 0x7062_7431u32;
+	let mut next = || { state ^= state << 13; state ^= state >> 17; state ^= state << 5; state };
+	for case in 0..512 {
+		let source: Vec<u8> = (0..(next() as usize % 96)).map(|_| next() as u8).collect();
+		let mut wire = textual::encode_payload(&source);
+		let index = next() as usize % (wire.len() + 1);
+		match case % 4 {
+			0 => wire.insert(index, next() as u8),
+			1 if index < wire.len() => { wire.remove(index); }
+			2 if index < wire.len() => wire[index] ^= 1 << (next() % 8),
+			_ => {}
+		}
+		let mut spans = Vec::new();
+		let recovered = recovery::decode_textual_payload(&wire, |event| {
+			assert!(event.input_length > 0);
+			assert_eq!(event.bytes, &wire[event.input_offset..event.input_offset + event.input_length]);
+			spans.push((event.input_offset, event.output_offset, event.input_length, event.output_length));
+			Ok::<_, ()>(())
+		}).unwrap();
+		assert_eq!(recovered.summary.invalid_events, spans.len(), "case={case}");
+		assert_eq!(recovered.summary.invalid_bytes, spans.iter().map(|s| s.2).sum(), "case={case}");
+		for pair in spans.windows(2) {
+			assert!(pair[0].0 + pair[0].2 < pair[1].0, "events must be maximal contiguous regions");
+			assert!(pair[0].1 + pair[0].3 <= pair[1].1);
+		}
+		for span in &spans { assert!(span.1 + span.3 <= recovered.bytes.len()); }
+		match textual::decode_payload(&wire) {
+			Ok(strict) => { assert_eq!(strict, recovered.bytes, "case={case}"); assert_eq!(spans.len(), 0, "case={case}"); }
+			Err(_) => assert!(!spans.is_empty(), "noncanonical input went unreported: case={case} wire={wire:?}"),
+		}
+	}
+}

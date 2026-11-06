@@ -16,7 +16,14 @@ const check = (input, output, events, args = []) => {
 	assert.deepEqual(result.stdout, emitted);
 	const lines = result.stderr.toString('utf8').trimEnd().split('\n').map(line => JSON.parse(line));
 	const summary = lines.pop();
-	assert.deepEqual(lines, events);
+	assert.equal(lines.length, events.length, 'one line per contiguous error event');
+	for (let i = 0; i < events.length; i++) {
+		const { hex: actualHex, ...actual } = lines[i];
+		const { hex: expectedHex, ...expected } = events[i];
+		assert.deepEqual(actual, expected);
+		assert.equal(actualHex.length, expectedHex.length, 'full hex, including events larger than the formatting buffer');
+		assert(actualHex === expectedHex, 'exact offending wire bytes');
+	}
 	assert.equal(summary.type, 'summary');
 	assert.equal(summary.invalid_events, events.length);
 	assert.equal(summary.invalid_bytes, events.reduce((n, event) => n + event.input_length, 0));
@@ -32,8 +39,10 @@ check(Buffer.from([255, 32, 128]), Buffer.from([255, 128]), [error(0, 0, 'ff'), 
 check(Buffer.from(' A␣'), Buffer.from(' A '), [], ['--spaces']);
 const repeated = Buffer.from(Array.from({ length: 300 }, () => [255, 65]).flat());
 check(repeated, repeated, Array.from({ length: 300 }, (_, index) => error(index * 2, index * 2, 'ff')));
-const large = Buffer.alloc(65539, 255);
-check(large, large, [error(0, 0, large.toString('hex'))]);
+for (const size of [255, 256, 257, 65539]) {
+	const large = Buffer.alloc(size, 255);
+	check(large, large, [error(0, 0, large.toString('hex'))]);
+}
 if (['Rust', 'Zig'].includes(implementation)) {
 	const tag = Buffer.from('\uf000ρΤ1_');
 	const input = Buffer.concat([tag, Buffer.from('中'), Buffer.from([255, 128]), Buffer.from('A')]);
@@ -42,5 +51,8 @@ if (['Rust', 'Zig'].includes(implementation)) {
 	check(Buffer.from('中'), Buffer.from('中'), [], ['--textual', '--untagged']);
 	check(Buffer.from('\uf000A'), Buffer.from('\uf000A'), [error(0, 0, 'ef8080')], ['--textual', '--untagged']);
 	check(Buffer.from('\n"'), Buffer.from('\n"'), [error(0, 0, '0a22')], ['--textual', '--untagged']);
+}
+if (implementation === 'Zig') {
+	check(Buffer.from([65, 65, 65, 65, 255, 128, 66]), Buffer.from([255, 128, 66]), [error(4, 0, 'ff80')], ['--start', '4']);
 }
 console.log(`PASS: ${implementation} recovery events, dual spans, exact hex, NDJSON and saturated exit status`);

@@ -71,6 +71,27 @@ write_all_bytes() {
 	fi
 }
 
+# During the recovery rollout, retain the legacy output assertions and check
+# the event status on implementations advertising the diagnostic contract.
+# The dedicated recovery matrix requires that contract on every port.
+decode_with_events() {
+	local events=$1 status expected=0
+	shift
+	[[ "$HELP_OUTPUT" != *'--ndjson-stderr'* ]] || expected=$events
+	"$SCRIPT" "$@" 2> "$TMP_STATS_STDERR"
+	status=$?
+	if [[ "$status" != "$expected" ]]; then
+		printf 'FAIL: decode status %s, expected %s\n' "$status" "$expected" >&2
+		cat "$TMP_STATS_STDERR" >&2
+		return 1
+	fi
+	if [[ "$expected" != 0 ]] && ! grep -q 'input_offset=' "$TMP_STATS_STDERR"; then
+		printf 'FAIL: recovered input must include byte-offset diagnostics\n' >&2
+		return 1
+	fi
+	cat "$TMP_STATS_STDERR" >&2
+}
+
 group_basic() {
 ###############################################################################
 # BASIC FUNCTIONALITY TESTS
@@ -131,7 +152,7 @@ else
     echo "Got: $ENCODED"
     exit 1
 fi
-DECODED=$("$SCRIPT" --spaces -d <<<"A B  C") || exit 1
+DECODED=$(printf '%s' 'A B  C' | "$SCRIPT" --spaces -d) || exit 1
 if [[ "$DECODED" == "A B  C" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -143,7 +164,7 @@ fi
 
 # Test 2d: Spaces option still decodes ␣ as space
 echo -e "${BLUE}Test #2d: Spaces decode ␣ + literal spaces${NC}"
-DECODED=$("$SCRIPT" --spaces -d <<<"A␣B C") || exit 1
+DECODED=$(printf '%s' 'A␣B C' | "$SCRIPT" --spaces -d) || exit 1
 if [[ "$DECODED" == "A B C" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -707,7 +728,7 @@ echo -n "Test data" > "$PASSTHROUGH_BINARY"
 ENCODED=$("$SCRIPT" "$PASSTHROUGH_BINARY") || exit 1
 
 # Now try to decode with passthrough
-PRINTABLE_BINARY_MUTE_STATS= "$SCRIPT" --decode --passthrough <(echo "$ENCODED") > "$PASSTHROUGH_STDOUT" 2> "$PASSTHROUGH_STDERR" || exit 1
+PRINTABLE_BINARY_MUTE_STATS= "$SCRIPT" --decode --passthrough <(printf '%s' "$ENCODED") > "$PASSTHROUGH_STDOUT" 2> "$PASSTHROUGH_STDERR" || exit 1
 
 # Check if a warning about ignored passthrough was generated
 if grep -q "Warning: --passthrough ignored in decode mode" "$PASSTHROUGH_STDERR"; then
@@ -771,7 +792,7 @@ echo -e "\n${YELLOW}Running decode pass-through tests...${NC}"
 echo -e "${BLUE}Test: Unrecognized ASCII passes through on decode${NC}"
 # The exclamation mark ! encodes to ǃ, so raw ! is not in decode map
 # With pass-through, raw ! should survive decode unchanged
-RESULT=$(echo -n 'hi there!;' | "$SCRIPT" -d 2>/dev/null) || exit 1
+RESULT=$(echo -n 'hi there!;' | decode_with_events 2 -d 2>/dev/null) || exit 1
 if [[ "$RESULT" == "hi there!;" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -783,7 +804,7 @@ fi
 
 # Test: Whitespace passes through by default on decode (NEW DEFAULT)
 echo -e "${BLUE}Test: Whitespace passes through by default on decode${NC}"
-RESULT=$(echo -n 'hello world' | "$SCRIPT" -d 2>/dev/null) || exit 1
+RESULT=$(echo -n 'hello world' | decode_with_events 1 -d 2>/dev/null) || exit 1
 if [[ "$RESULT" == "hello world" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -795,7 +816,7 @@ fi
 
 # Test: Tabs pass through by default on decode
 echo -e "${BLUE}Test: Tabs pass through by default on decode${NC}"
-RESULT=$(printf 'a\tb' | "$SCRIPT" -d 2>/dev/null) || exit 1
+RESULT=$(printf 'a\tb' | decode_with_events 1 -d 2>/dev/null) || exit 1
 if [[ "$RESULT" == $'a\tb' ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -807,7 +828,7 @@ fi
 
 # Test: Newlines pass through by default on decode
 echo -e "${BLUE}Test: Newlines pass through by default on decode${NC}"
-RESULT=$(printf 'a\nb' | "$SCRIPT" -d 2>/dev/null) || exit 1
+RESULT=$(printf 'a\nb' | decode_with_events 1 -d 2>/dev/null) || exit 1
 if [[ "$RESULT" == $'a\nb' ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -820,9 +841,9 @@ fi
 # Test: Decode is idempotent (multiple passes yield same result)
 echo -e "${BLUE}Test: Decode is idempotent${NC}"
 INPUT="hello world!;"
-PASS1=$(echo -n "$INPUT" | "$SCRIPT" -d 2>/dev/null) || exit 1
-PASS2=$(echo -n "$PASS1" | "$SCRIPT" -d 2>/dev/null) || exit 1
-PASS3=$(echo -n "$PASS2" | "$SCRIPT" -d 2>/dev/null) || exit 1
+PASS1=$(echo -n "$INPUT" | decode_with_events 2 -d 2>/dev/null) || exit 1
+PASS2=$(echo -n "$PASS1" | decode_with_events 2 -d 2>/dev/null) || exit 1
+PASS3=$(echo -n "$PASS2" | decode_with_events 2 -d 2>/dev/null) || exit 1
 if [[ "$PASS1" == "$PASS2" && "$PASS2" == "$PASS3" && "$PASS3" == "$INPUT" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -837,7 +858,7 @@ fi
 # Test: Multi-byte UTF-8 not in decode map passes through intact
 echo -e "${BLUE}Test: Multi-byte UTF-8 passes through intact${NC}"
 # 世界 are not in the encode map, so they should pass through
-RESULT=$(echo -n 'Hello 世界' | "$SCRIPT" -d 2>/dev/null) || exit 1
+RESULT=$(echo -n 'Hello 世界' | decode_with_events 1 -d 2>/dev/null) || exit 1
 if [[ "$RESULT" == "Hello 世界" ]]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -1612,7 +1633,7 @@ fi
 # H19: Regular PB decode warns if Οχ sequences detected
 echo -e "${BLUE}Test H19: Regular decode warns on hexlike content${NC}"
 HEXLIKE_INPUT="Hello ${OX}2C20 World"
-STDERR_OUTPUT=$(printf '%s' "$HEXLIKE_INPUT" | "$SCRIPT" -d 2>&1 >/dev/null) || exit 1
+STDERR_OUTPUT=$(printf '%s' "$HEXLIKE_INPUT" | decode_with_events 2 -d 2>&1 >/dev/null) || exit 1
 if [[ "$STDERR_OUTPUT" == *"hexlike"* ]] || [[ "$STDERR_OUTPUT" == *"hex"*"encod"* ]]; then
     echo -e "${GREEN}PASS${NC}"
 else

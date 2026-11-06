@@ -2,6 +2,23 @@
 const std = @import("std");
 const pb = @import("printable_binary");
 
+test "CLI textual: recovery renderers are pure and JSON escapes warnings" {
+	const diagnostics = @import("cli_recovery.zig");
+	var buffer: [256]u8 = undefined;
+	const event = pb.recovery.ErrorEvent{ .input_offset = 10, .output_offset = 3,
+		.input_length = 6, .output_length = 2, .bytes = "abcdef" };
+	try std.testing.expectEqualStrings("{\"type\":\"error\",\"input_offset\":10,\"output_offset\":3,\"input_length\":6,\"output_length\":2,\"hex\":\"",
+		try diagnostics.eventHeader(&buffer, event, true));
+	const line = try diagnostics.summaryLine(std.testing.allocator, .{ .summary = .{ .invalid_events = 1, .invalid_bytes = 6 },
+		.input_bytes = 20, .output_bytes = 12, .elapsed_seconds = 2, .debug = true, .warnings = &.{"a\"b\nc"} });
+	defer std.testing.allocator.free(line);
+	const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, line, .{});
+	defer parsed.deinit();
+	try std.testing.expectEqualStrings("summary", parsed.value.object.get("type").?.string);
+	try std.testing.expectEqual(@as(i64, 6), parsed.value.object.get("invalid_bytes").?.integer);
+	try std.testing.expectEqualStrings("a\"b\nc", parsed.value.object.get("warnings").?.array.items[0].string);
+}
+
 pub const Options = struct {
 	textual: bool = false,
 	auto_decode: bool = false,

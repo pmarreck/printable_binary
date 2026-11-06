@@ -279,7 +279,7 @@ printf 'Hi\x00\xff!' | printable-binary -X
 printf 'Hi\x00\xff!' | printable-binary -X | printable-binary -X -d | xxd
 ```
 
-### Textual Mode (Zig CLI)
+### Textual Mode (Zig and Rust CLIs)
 
 Use `--textual` for readable multilingual text embedded in arbitrary bytes:
 
@@ -293,8 +293,9 @@ printable-binary --textual input.bin | printable-binary --decode-auto > restored
 Textual v1 preserves ordinary spaces, eligible Unicode, joiners and combining
 marks, while visibly encoding controls and syntax-sensitive characters.
 Malformed UTF-8 bytes use compact PB glyphs; literal reserved glyphs and U+F000
-are quoted. No normalization or lossy repair occurs. Canonical decoding rejects
-alternate bytewise spellings of preserved Unicode.
+are quoted. No normalization or lossy repair occurs. Strict canonical validators
+reject alternate bytewise spellings of preserved Unicode. CLI decoding recovers
+and reports invalid spellings instead of silently accepting them as canonical.
 
 Output is tagged by default. `--textual -d` requires one textual value;
 `--decode-auto` reads tagged textual/bytewise values or legacy untagged bytewise
@@ -311,6 +312,28 @@ values. Ranges and statistics count input bytes, not characters or display
 columns. CJK/emoji can span columns and combining marks can occupy none.
 This is whole-value decoding, not mixed excerpt parsing or bounded-memory
 streaming. The [format contract](docs/CODEC_MODES.md) specifies the guarantees.
+
+### Decode Recovery (Zig and Rust)
+
+Decode preserves malformed wire bytes and resumes one byte at a time until the
+next recognized token. Bytewise also reports valid Unicode outside its alphabet;
+textual accepts eligible Unicode but reports malformed quotes and noncanonical
+spellings. A contiguous invalid region is one event. Encoding arbitrary source
+bytes, including malformed UTF-8, remains valid and does not produce input errors.
+
+Errors go to stderr even when statistics are muted. Each gives zero-based input
+and decoded-output byte offsets, both span lengths, and the original wire bytes
+in hex. Input offsets include tags and any range selection's starting offset.
+The exit status is the event count, capped at 255; full counts remain exact.
+`--strict` reports the same errors but withholds decoded output if any occur.
+Fatal framing or I/O failures remain fatal, not guessed repairs.
+
+Use `--ndjson-stderr` for streaming JSON error records and a final
+`"type":"summary"` record with separate `invalid_events` and `invalid_bytes`
+totals. Warnings are retained separately in the summary, not counted as errors.
+An incomplete fatal operation has `complete:false`, not a successful summary.
+Repair suggestions are deferred. Other implementation adapters are being aligned
+with this contract; their current behavior is not yet equivalent.
 
 ### As a Lua Library
 

@@ -37,10 +37,10 @@ for (const prefix of ['\uF000ρΤ1_', '\uF000ρΒ_', '\uF000ρΤ2_']) {
 	ok(['--textual', '--raw-input'], Buffer.from(prefix), Buffer.concat([Buffer.from(tag), escaped]));
 	ok(['--textual', '--untagged'], Buffer.from(prefix), escaped);
 }
-rejected(['--textual', '-d'], Buffer.from(tag + '\uF000A'), /InvalidEscape/);
+rejected(['--textual', '-d', '--strict'], Buffer.from(tag + '\uF000A'), /invalid encoded input/);
 rejected(['--textual', '-d'], payload, /MissingTag/);
 rejected(['--decode-auto'], Buffer.from('\uF000ρΤ2_'), /UnsupportedVersion/);
-rejected(['--decode-auto', '-S'], Buffer.from(tag + '\n'), /NonCanonical/);
+rejected(['--decode-auto', '-S', '--strict'], Buffer.from(tag + '\n'), /invalid encoded input/);
 for (const raw of [Buffer.from([0xff, 0, 0xe4, 0xb8]), Buffer.from([0xf4, 0x90, 0x80, 0x80])]) {
 	const encoded = invoke(['--textual'], raw);
 	assert.equal(encoded.status, 0);

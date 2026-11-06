@@ -95,6 +95,14 @@ encoding/`-d` and the C ABI remain bytewise. Tagged-output ingress guards do not
 apply to raw library calls. Mixing textual with formatting/container/preservation
 features is rejected rather than weakening canonicality.
 
+The Zig and Rust `recovery` modules return decoded bytes plus exact invalid-event
+and invalid-wire-byte totals, and emit borrowed dual-span events through a
+fallible sink. Their CLIs use recovery automatically, offer `--strict` to suppress
+output on errors and `--ndjson-stderr` for structured diagnostics. Strict textual
+library validators remain separate. The reporting path uses bounded token
+lookahead and no retained event list; the whole-value codec still buffers input
+and output. See [decode recovery](README.md#decode-recovery-zig-and-rust).
+
 ### C Implementation
 
 The standalone C CLI provides the full file, formatting, mapping, passthrough, and container interface. It has its own `c-out/` products. The `ffi` implementation instead exercises the Zig core through its public C ABI and retains the library and headers alongside the C CLI.

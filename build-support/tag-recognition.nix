@@ -14,11 +14,15 @@ pkgs.stdenvNoCC.mkDerivation {
 		cp src/zig/printable_binary.zig tests/benchmark/tag_probe/core.zig
 		# Preserve the relocated core's relative import closure inside this source.
 		cp src/zig/textual.zig src/zig/textual_policy.zig src/zig/recovery.zig tests/benchmark/tag_probe/
-		test "$(grep -Fc '@memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);' tests/benchmark/tag_probe/core.zig)" = 1
+		test "$(grep -Fxc '        result[pos] = input[i];' tests/benchmark/tag_probe/core.zig)" = 1
 		substituteInPlace tests/benchmark/tag_probe/core.zig --replace-fail \
-			'@memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);' \
-			'@import("tag_probe").onMiss(input[i..]);
-		        @memcpy(result[pos..][0..actual_len], input[i..][0..actual_len]);'
+			'        result[pos] = input[i];
+        pos += 1;
+        i += 1;' \
+			'        @import("tag_probe").onMiss(input[i..]);
+        result[pos] = input[i];
+        pos += 1;
+        i += 1;'
 		zig build tag-probe -Dtag-probe=true -Doptimize=ReleaseFast \
 			${pkgs.lib.optionalString pkgs.stdenv.isLinux "-Dtarget=${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-musl"} --prefix "$out"
 		zig build tag-probe-test-bin -Dtag-probe=true -Doptimize=ReleaseSafe \

@@ -87,10 +87,10 @@ Thus a preserved scalar must use its literal or quoted spelling, never its
 bytewise spelling; malformed bytes and excluded scalars must use their PB
 spelling. Unnecessary quotes and raw sensitive characters are not canonical.
 
-The whole-buffer Rust and Zig implementations check this rule by re-encoding
-the recovered bytes and comparing exact input bytes. A production checker may
-instead validate the same local conditions incrementally. Accepting redundant
-spellings for convenience would widen the language and forfeit the second
+The strict whole-buffer Rust and Zig validators check this rule by re-encoding
+the recovered bytes and comparing exact input bytes. Their recovery APIs check
+source-unit spellings with bounded lookahead. Accepting redundant spellings as
+canonical would widen the language and forfeit the second
 inverse identity over that wider set.
 
 ### Two inverse identities
@@ -195,6 +195,46 @@ is bijective. Existing framing decisions remain recorded in
 codec dispatch, quoting context and ingress guards need integration tests.
 
 ## Implementation evidence
+
+### Recovery versus canonical validation
+
+The Zig and Rust CLIs automatically recover invalid encoded input. This is an
+error-handling policy, not an expansion of either canonical target language.
+Strict textual library validators remain available. `--strict` CLI decoding
+uses the same recovery diagnostics but emits no decoded payload when errors
+occur. No recovery path guesses replacement bytes or inserts U+FFFD.
+
+Bytewise recovery accepts exact active-map glyphs and the selected literal-space
+or ignored-transport-whitespace options. Every other byte is preserved and
+reported, advancing one byte until the next recognized token. Ignored whitespace
+does not splice together fragments of a UTF-8 glyph. Textual recovery preserves
+malformed UTF-8 and a malformed/dangling marker, then continues token parsing;
+noncanonical spellings are decoded but reported. Adjacent invalid units form one
+maximal event; an accepted token, including ignored whitespace, ends the event.
+Malformed source bytes on **encode** remain ordinary valid source input and use
+the documented PB fallback without errors.
+
+Each event borrows its original offending wire span and provides `input_offset`,
+`output_offset`, `input_length` and `output_length`. Positions and lengths are
+bytes, zero-based. Input positions refer to the original encoded stream,
+including a tag and any pre-decode range base. Output positions refer to the
+logical decoded stream, independent of buffering, file offsets or strict-mode
+output suppression. The lengths can differ, for example when several PB glyphs
+noncanonically spell one preserved Unicode scalar.
+
+`--ndjson-stderr` emits one `"type":"error"` record per event, with those four
+fields and `hex` containing all offending wire bytes. The final
+`"type":"summary"` record carries exact `invalid_events` and `invalid_bytes`,
+actual `input_bytes`/`output_bytes`, and `complete:true`. CLI exit status is
+`min(invalid_events, 255)`. Ordinary warnings are separate from invalid-input
+events. Fatal framing or I/O errors produce an incomplete failure summary,
+not fabricated complete counts. Full hex is streamed in fixed-size chunks;
+events need not be retained. Input/output codec buffering is still whole-value.
+
+The remaining language adapters are not yet reporting-equivalent. Their rollout
+is tracked in PLAN; this section describes the implemented Zig/Rust contract,
+not a claim that every CLI already supports the flags. Opt-in repair suggestions
+remain deferred and never authorize automatic repair.
 
 [The size study](TEXTUAL_SIZE_STUDY.md) implements both an explicit malformed-
 byte escape and the selected compact fallback construction, with canonical
