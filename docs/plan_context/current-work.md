@@ -1632,6 +1632,17 @@ later retry. This delivery issue does not block the project build or shipment.
 
 ## Latin-friendly alphabet investigation: unadopted candidate
 
+Decision on 2026-11-07: retain the current high-byte alphabet and park replacement
+work unless explicitly resumed. Short UTF-8 representations and monospace
+appearance in terminals were deliberate original selection criteria. The current
+high half uses 125 two-byte glyphs and three three-byte glyphs, whereas every
+entry in the mathematical-letter candidate below takes four bytes. The candidate
+may look suitably monospaced in some fonts, but that does not remove its size
+cost or establish universal font coverage and terminal width. The current
+tradeoff is preferred for now. No production mapping, format version, or literal
+quoting behavior changes. The following experiment is retained as historical
+evidence, not an active selection task.
+
 A bounded Node/Unicode 16.0 experiment kept the low half of the current map and
 replaced its 128 high-byte glyphs with lowercase mathematical Latin-looking
 symbols. The five contiguous styles start at U+1D41A, U+1D482, U+1D5BA, U+1D5EE
@@ -1673,12 +1684,15 @@ Replacing only the high half still leaves twelve Latin-script low-byte glyphs:
 `07 0e 0f 10 13 16 1a 1d 1e 21 24 3f`. They would still require literal quoting;
 this candidate is not a complete Latin-free alphabet. Its four-byte entries
 also require a fresh audit of every production buffer/lookup path before use.
-The owner has a queued font-preview question. No alphabet has changed. Since
-textual v1 is now used in persisted consumer logs, any incompatible map must
-get a distinct format version and retain v1 decoding, not silently replace v1.
+The previously queued font-preview question is no longer a selection blocker:
+the candidate is unadopted and the investigation is parked. No alphabet has
+changed. Since textual v1 is now used in persisted consumer logs, any future
+incompatible map must get a distinct format version and retain v1 decoding, not
+silently replace v1.
 
 ## Decisions that remain deferred or on hold
 
+- A Latin-friendly high-byte replacement alphabet is parked by the 2026-11-07 decision above; retain the current compact, terminal-oriented tradeoff unless explicitly resumed.
 - Container metadata injection is specified in [the approved design](../plans/2026-07-21-container-metadata-injection-design.md), but remains a deferred feature rather than the active milestone.
 - Reusable encode/decode output capacity is conditional on an actual consumer need. The current owned-slice API shrinks its allocation before returning; changing ownership requires an explicit API design. Repeated calls must not expose stale bytes from an earlier, longer result.
 - The raw Rust GUI/Zig transport protocol is explicitly on hold pending its specification. Container-format work does not authorize inventing that protocol.

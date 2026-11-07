@@ -19,8 +19,8 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Optional stream tagging
 
-- [ ] Evaluate a Latin-friendly high-byte alphabet retaining rough alphabetic progression, UTF-8 byte economy, and terminal readability; compatibility breaks are permitted, but select the replacement repertoire explicitly (context: docs/plan_context/current-work.md).
-	- [ ] Await font-distinction feedback on `𝐚 𝒂 𝖺 𝗮 𝚊`, then select or reject a concrete versioned textual repertoire without changing existing bytewise/v1 data interpretation.
+- [x] Should the Latin-friendly candidate replace the high-byte alphabet? Answer: Keep the current tradeoff for its mostly two-byte UTF-8 glyphs and terminal monospace appearance; park replacement work unless explicitly resumed (done 2026-11-07 08:38 EST; context: docs/plan_context/current-work.md).
+	- [x] Is font-distinction feedback on `𝐚 𝒂 𝖺 𝗮 𝚊` still needed before choosing a repertoire? Answer: No replacement is being selected; retain the experiment without claiming verified font coverage or terminal width (done 2026-11-07 08:38 EST; context: docs/plan_context/current-work.md).
 - [ ] Specify optional `ρΒ_`/`ρΒ1_` v1 tagging with reserved-prefix errors, standard martini quoting, a leading-tag encoder guard/raw-input override, and single-pass excerpts before implementation (context: docs/plan_context/current-work.md).
 	- [ ] Should mixed-excerpt decoding reject openers inside an active frame and closers outside any frame, or allow implicit switches/literal stray closers? Owner decision pending; EOF still permits an omitted final closer.
 	- [ ] Reconcile textual payload quoting with single-pass mixed-region framing and test parser transitions before adding excerpt decoding.
