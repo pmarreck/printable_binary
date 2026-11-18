@@ -1616,8 +1616,8 @@ any held feature.
 
 A durable downstream handoff delivered the verified code revision and Rust API
 guidance after CI passed. This records delivery, not downstream adoption or UI
-verification. The only remaining acknowledgment in this task is the unrelated
-legacy-CI request whose return route is unavailable.
+verification. The unrelated legacy-CI acknowledgment was subsequently handed
+off to the coordinator as recorded below.
 
 ### Legacy GitHub CI disabled, 2026-11-06
 
@@ -1626,9 +1626,52 @@ GitHub Actions workflow named CI (ID 237360640) was independently observed activ
 disabled with the GitHub CLI, and re-read as disabled_manually. The system
 pages-build-deployment workflow (ID 196960300) remains active, and the tracked
 .github/workflows/ci.yml file is unchanged. No historical workflow was deleted.
-An acknowledgment remains pending because the requester's approved durable
-delivery route is unreachable; the inbound note remains pending locally for a
-later retry. This delivery issue does not block the project build or shipment.
+The requester's approved durable delivery route was unreachable. On 2026-11-13,
+the coordinator independently verified the disabled workflow, acknowledged the
+handoff and accepted ownership of the remaining remote relay. That closes the
+project's local acknowledgment obligation, not proof that the original remote
+requester received it. The two completed inbox envelopes can be retired
+recoverably. No networking, service or additional workflow changes are needed.
+
+## Rust 1.100 toolchain upgrade, 2026-11-18
+
+The owner explicitly authorized upgrading to Rust 1.100.x, clarifying the initial
+1.00.x typo. The previous shared native-package, test and dev-shell bundle is
+Rust/Cargo 1.97.1. The November 13 assessment found no 1.100.0 entry in the locked
+Rust provider, so only that flake input will be refreshed. The official stable
+release notes currently list 1.100.0 as the available 1.100 release.
+
+The unchanged complete `./test --option substitute false` entry point passed on
+2026-11-18 at 16:14 EST, reusing successful existing check derivations rather
+than rerunning them. Qualification after the change must include the Rust
+package and the complete suite with retained source/package tests, shared
+Rust/Zig vectors, textual canonicality and malformed-input diagnostics. Keep
+Cargo.lock, edition 2021, the unspecified MSRV, Unicode 16.0 textual policy,
+canonical Zig selection and all explicit feature holds unchanged. Foreign-system
+evaluation is not evidence of native execution on those platforms.
+
+The Rust provider alone was updated to
+6b05b928a40211beecaaa294e6f719aa2145a2a8. An independent comparison of the old and
+new lock-file nodes confirmed that no other input changed. The shared bundle is
+now pinned to 1.100.0, and both the build-time and prepared-runtime exact-version
+checks require Rust and Cargo 1.100.0. The selected Linux bundle reports rustc
+1.100.0 (0ef1bc386), Cargo 1.100.0, rustfmt 1.11.0-stable and Clippy 0.1.100.
+
+The Linux ReleaseFast Rust package built through `nix build`, and its `--about`
+reports the Linux amd64 GNU compilation target. The complete host test gate
+passed all 98 checks and all 26 prepared runtime groups at 16:19 EST, including
+all six retained Rust source test targets and all six packaged-crate targets.
+The Cargo JSON artifact export continues to work with the new intermediate
+layout. No Rust source changes, new lint suppressions or reduced tests were
+needed. The existing suite does not configure separate rustfmt/Clippy gates;
+installed component versions are not claims of running such gates.
+
+`nix flake check --all-systems --no-build --no-write-lock-file` also passed for
+all declared systems. Linux arm64 and macOS arm64 were evaluated, not natively
+built or executed during this qualification. Native execution evidence is
+Linux amd64 only. Nix sandboxing remained enabled; resource limits and the
+separate quiet-window performance-qualification hold were not changed. Shipping
+still requires push verification and exact-commit CI success.
 
 ## Latin-friendly alphabet investigation: unadopted candidate
 

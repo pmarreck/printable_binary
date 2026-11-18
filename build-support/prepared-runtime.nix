@@ -14,7 +14,10 @@ let
 	recipes = {
 		rust-toolchain-pin = ''
 			case "$(${rustToolchain}/bin/rustc --version)" in
-				"rustc 1.97.1 "*) ;; *) exit 1 ;;
+				"rustc 1.100.0 "*) ;; *) exit 1 ;;
+			esac
+			case "$(${rustToolchain}/bin/cargo --version)" in
+				"cargo 1.100.0 "*) ;; *) exit 1 ;;
 			esac
 		'';
 		test-cli-groups = ''

@@ -2,6 +2,13 @@
 
 History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build evidence are in [docs/plan_context/current-work.md](docs/plan_context/current-work.md).
 
+## Rust 1.100 toolchain
+
+- [ ] Upgrade the shared Nix Rust bundle to stable 1.100.x with only the Rust provider input refreshed; preserve Cargo.lock, edition, codec policy and canonical Zig selection (authorized 2026-11-18 16:12 EST; context: docs/plan_context/current-work.md).
+	- [x] Confirm the unchanged complete test entry point passes before changing the compiler; existing successful derivations were reused (done 2026-11-18 16:14 EST; context: docs/plan_context/current-work.md).
+	- [x] Build the Rust package, pass all 98 host checks and 26 prepared runtime groups, and evaluate all three declared systems without claiming foreign native execution (done 2026-11-18 16:19 EST; context: docs/plan_context/current-work.md).
+	- [ ] Push the qualified Rust upgrade and verify exact-commit CI.
+
 ## Malformed-input parity
 
 - [x] Add shared malformed-byte regressions and deterministic seeded coverage, align all implementations with automatic recovery and separate canonical validation, then push and verify CI at 29932c9 (done 2026-11-06 17:09 EST; context: docs/plan_context/current-work.md).
@@ -15,7 +22,7 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Repository CI
 
-- [ ] Deliver the pending acknowledgment for the disabled legacy GitHub CI workflow when the requesting coordinator's durable-message route is reachable; the workflow file and Pages remain unchanged (context: docs/plan_context/current-work.md).
+- [x] Is the legacy CI acknowledgment still project-owned? Answer: No; the coordinator acknowledged the completed action and accepted the remaining remote relay obligation, without claiming receipt by the original requester; the workflow file and Pages remain unchanged (done 2026-11-18 16:14 EST; context: docs/plan_context/current-work.md).
 
 ## Optional stream tagging
 

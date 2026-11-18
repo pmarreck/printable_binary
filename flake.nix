@@ -39,7 +39,7 @@
           overlays = [ rust-overlay.overlays.default ];
         };
         zig = zig-overlay.packages.${system}."0.16.0";
-        rustToolchain = pkgs.rust-bin.stable."1.97.1".default;
+        rustToolchain = pkgs.rust-bin.stable."1.100.0".default;
         rocNightly = roc-overlay.packages.${system}."nightly-2026-10-04-130536d";
         rocCompiler = assert rocSource.rev == rocNightly.compilerCommit; rocNightly;
         rocLinkerInputs = pkgs.fetchurl {
@@ -494,9 +494,17 @@
           } ''
             actual="$(rustc --version)"
             case "$actual" in
-              "rustc 1.97.1 "*) ;;
+              "rustc 1.100.0 "*) ;;
               *)
-                echo "expected rustc 1.97.1, got $actual" >&2
+                echo "expected rustc 1.100.0, got $actual" >&2
+                exit 1
+                ;;
+            esac
+            actual="$(cargo --version)"
+            case "$actual" in
+              "cargo 1.100.0 "*) ;;
+              *)
+                echo "expected cargo 1.100.0, got $actual" >&2
                 exit 1
                 ;;
             esac
