@@ -1670,8 +1670,14 @@ installed component versions are not claims of running such gates.
 all declared systems. Linux arm64 and macOS arm64 were evaluated, not natively
 built or executed during this qualification. Native execution evidence is
 Linux amd64 only. Nix sandboxing remained enabled; resource limits and the
-separate quiet-window performance-qualification hold were not changed. Shipping
-still requires push verification and exact-commit CI success.
+separate quiet-window performance-qualification hold were not changed.
+
+The final precommit repeat gate passed without reducing coverage. Upgrade commit
+e065b0c6217d95af3419bde8ec5989340e2b51b8 was pushed and independently matched
+origin/yolo. Exact-commit Mechatron CI passed all 28 targets in 52 seconds,
+finishing 2026-11-18T21:22:48Z. This ships the Rust toolchain upgrade; the remaining
+PLAN closure changes only documentation and does not extend foreign-platform
+execution evidence or resume any held feature.
 
 ## Latin-friendly alphabet investigation: unadopted candidate
 

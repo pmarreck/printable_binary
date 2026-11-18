@@ -4,10 +4,10 @@ History is in [docs/PLAN_LOG.md](docs/PLAN_LOG.md); decisions and current build 
 
 ## Rust 1.100 toolchain
 
-- [ ] Upgrade the shared Nix Rust bundle to stable 1.100.x with only the Rust provider input refreshed; preserve Cargo.lock, edition, codec policy and canonical Zig selection (authorized 2026-11-18 16:12 EST; context: docs/plan_context/current-work.md).
+- [x] Upgrade the shared Nix Rust bundle to 1.100.0 with only the Rust provider input refreshed, preserving Cargo.lock, edition, codec policy and canonical Zig selection; pushed e065b0c and verified all 28 exact-commit CI targets (done 2026-11-18 16:23 EST; context: docs/plan_context/current-work.md).
 	- [x] Confirm the unchanged complete test entry point passes before changing the compiler; existing successful derivations were reused (done 2026-11-18 16:14 EST; context: docs/plan_context/current-work.md).
 	- [x] Build the Rust package, pass all 98 host checks and 26 prepared runtime groups, and evaluate all three declared systems without claiming foreign native execution (done 2026-11-18 16:19 EST; context: docs/plan_context/current-work.md).
-	- [ ] Push the qualified Rust upgrade and verify exact-commit CI.
+	- [x] Push e065b0c, independently match the remote ref and verify all 28 exact-commit CI targets in 52 seconds (done 2026-11-18 16:23 EST; context: docs/plan_context/current-work.md).
 
 ## Malformed-input parity
 
